@@ -8,9 +8,7 @@ import {
   DomainValidationError,
   ConflictError,
 } from '../../../../src/contexts/identity/domain/exceptions/user/error';
-// @ts-expect-error - Module will be created in src/contexts/identity/application/commands/register_user/command.ts during GREEN
 import { RegisterUserCommand } from '../../../../src/contexts/identity/application/commands/register_user/command';
-// @ts-expect-error - Module will be created in src/contexts/identity/application/commands/register_user/handler.ts during GREEN
 import { RegisterUserCommandHandler } from '../../../../src/contexts/identity/application/commands/register_user/handler';
 
 describe('Application Command Handler: RegisterUserCommandHandler', () => {
