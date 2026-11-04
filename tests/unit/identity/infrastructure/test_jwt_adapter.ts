@@ -2,7 +2,6 @@ import {
   AuthTokenClaims,
   TokenProviderPort,
 } from '../../../../src/contexts/identity/application/ports/security/token_provider';
-// @ts-expect-error - Module will be implemented in the green phase
 import { JwtTokenAdapter } from '../../../../src/contexts/identity/infrastructure/security/jwt_adapter';
 
 describe('Infrastructure Adapter: JwtTokenAdapter', () => {
