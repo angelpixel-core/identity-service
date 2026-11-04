@@ -22,3 +22,4 @@ Feature: Tenant User Registration
     When another user attempts to register with "user@acme.com" in tenant "acme-corp"
     Then the system should catch a ConflictError
     And the response status code should be 409 Conflict
+

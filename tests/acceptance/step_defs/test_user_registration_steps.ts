@@ -3,7 +3,7 @@ import request from 'supertest';
 // @ts-expect-error - Module will be created in interfaces/http/server.ts during slice assembly
 import { app } from '../../../interfaces/http/server';
 
-describe('Feature: Tenant User Registration (BDD Acceptance)', () => {
+describe('Feature: Tenant User Registration', () => {
   describe('Scenario: Successful tenant user registration', () => {
     it('should register user and return 201 with JWT containing tenantId claim', async () => {
       const response = await request(app)
@@ -49,3 +49,4 @@ describe('Feature: Tenant User Registration (BDD Acceptance)', () => {
     });
   });
 });
+
