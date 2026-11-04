@@ -117,3 +117,4 @@ describe('Aggregate Root: User', () => {
     });
   });
 });
+
