@@ -135,3 +135,4 @@ describe('Application Command Handler: RegisterUserCommandHandler', () => {
     });
   });
 });
+
