@@ -3,7 +3,6 @@
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-// @ts-expect-error - Component will be implemented in the green phase
 import { RegisterForm } from '../../../interfaces/web/client/contexts/identity/ui/components/register_form';
 
 describe('Web UI Component: RegisterForm (E2E / Integration)', () => {
