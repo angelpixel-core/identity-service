@@ -70,3 +70,4 @@ describe('Infrastructure Adapter: JwtTokenAdapter', () => {
     });
   });
 });
+
