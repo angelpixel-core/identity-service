@@ -8,3 +8,4 @@ export interface RegisterUserResponseDTO {
   readonly tenantId: string;
   readonly accessToken: string;
 }
+
