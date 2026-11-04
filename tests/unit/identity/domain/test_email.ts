@@ -1,7 +1,4 @@
-// Intentionally importing Value Objects to test before implementation (TDD RED)
-// @ts-expect-error - Module will be created in src/contexts/identity/domain/value_objects/email/value.ts
 import { Email } from '../../../../src/contexts/identity/domain/value_objects/email/value';
-// @ts-expect-error - Module will be created in src/contexts/identity/domain/exceptions/user/error.ts
 import { DomainValidationError } from '../../../../src/contexts/identity/domain/exceptions/user/error';
 
 describe('Value Object: Email', () => {
