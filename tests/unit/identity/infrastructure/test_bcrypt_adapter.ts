@@ -1,5 +1,4 @@
 import { HashProviderPort } from '../../../../src/contexts/identity/application/ports/security/hash_provider';
-// @ts-expect-error - Module will be created in src/contexts/identity/infrastructure/security/bcrypt_adapter.ts during GREEN
 import { BcryptAdapter } from '../../../../src/contexts/identity/infrastructure/security/bcrypt_adapter';
 
 describe('Infrastructure Adapter: BcryptAdapter', () => {
