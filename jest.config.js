@@ -2,7 +2,12 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  testMatch: ['**/tests/**/*.test.ts', '**/tests/**/*.spec.ts'],
+  testMatch: [
+    '**/tests/**/*.test.[tj]s?(x)',
+    '**/tests/**/*.spec.[tj]s?(x)',
+    '**/tests/**/test_*.[tj]s?(x)',
+  ],
+  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
   transform: {
     '^.+\\.tsx?$': [
       'ts-jest',
@@ -16,3 +21,4 @@ module.exports = {
   clearMocks: true,
   restoreMocks: true,
 };
+
