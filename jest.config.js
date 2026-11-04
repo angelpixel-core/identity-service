@@ -2,7 +2,11 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  testMatch: ['**/tests/**/*.test.ts', '**/tests/**/*.spec.ts'],
+  testMatch: [
+    '**/tests/**/*.test.ts',
+    '**/tests/**/*.spec.ts',
+    '**/tests/**/test_*.ts',
+  ],
   transform: {
     '^.+\\.tsx?$': [
       'ts-jest',
@@ -16,3 +20,4 @@ module.exports = {
   clearMocks: true,
   restoreMocks: true,
 };
+
