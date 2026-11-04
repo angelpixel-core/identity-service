@@ -27,3 +27,4 @@ export class ConflictError extends DomainError {
     super(message);
   }
 }
+
