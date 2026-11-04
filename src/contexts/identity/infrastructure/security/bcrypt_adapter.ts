@@ -36,3 +36,4 @@ export class BcryptAdapter implements HashProviderPort {
     }
   }
 }
+
