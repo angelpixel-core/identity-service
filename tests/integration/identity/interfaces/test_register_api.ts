@@ -1,5 +1,4 @@
 import request from 'supertest';
-// @ts-expect-error - Module will be implemented in the green phase
 import { createApp } from '../../../../interfaces/http/server';
 
 describe('Integration API: POST /api/v1/auth/register', () => {

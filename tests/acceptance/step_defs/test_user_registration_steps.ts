@@ -1,6 +1,5 @@
 import request from 'supertest';
 // Intentionally importing the Express app which will be implemented in interfaces/http/server.ts
-// @ts-expect-error - Module will be created in interfaces/http/server.ts during slice assembly
 import { app } from '../../../interfaces/http/server';
 
 describe('Feature: Tenant User Registration', () => {
