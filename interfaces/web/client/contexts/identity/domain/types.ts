@@ -19,3 +19,4 @@ export interface UserProfile {
   readonly email: string;
   readonly tenantId: string;
 }
+
