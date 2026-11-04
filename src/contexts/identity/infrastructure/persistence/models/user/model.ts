@@ -10,3 +10,4 @@ export interface UserDatabaseModel {
   readonly created_at: Date;
   readonly updated_at: Date;
 }
+
