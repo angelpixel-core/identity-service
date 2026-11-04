@@ -133,3 +133,4 @@ describe('Integration API: POST /api/v1/auth/register', () => {
     });
   });
 });
+
