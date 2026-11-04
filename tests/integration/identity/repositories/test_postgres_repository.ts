@@ -2,7 +2,6 @@ import { User } from '../../../../src/contexts/identity/domain/entities/user/agg
 import { Email } from '../../../../src/contexts/identity/domain/value_objects/email/value';
 import { TenantId } from '../../../../src/contexts/identity/domain/value_objects/tenant_id/value';
 import { UserRepositoryPort } from '../../../../src/contexts/identity/application/ports/user/repository';
-// @ts-expect-error - Module will be implemented in the green phase
 import { PostgresUserRepository, DatabaseClient } from '../../../../src/contexts/identity/infrastructure/persistence/repositories/user/repository';
 
 describe('Infrastructure Persistence: PostgresUserRepository', () => {
