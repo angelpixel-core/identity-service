@@ -1,6 +1,5 @@
 import { Email } from '../../../../src/contexts/identity/domain/value_objects/email/value';
 import { TenantId } from '../../../../src/contexts/identity/domain/value_objects/tenant_id/value';
-// @ts-expect-error - Module will be created in src/contexts/identity/domain/entities/user/aggregate.ts during GREEN
 import { User } from '../../../../src/contexts/identity/domain/entities/user/aggregate';
 import { DomainValidationError } from '../../../../src/contexts/identity/domain/exceptions/user/error';
 
