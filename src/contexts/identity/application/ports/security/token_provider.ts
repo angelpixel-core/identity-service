@@ -15,3 +15,4 @@ export interface TokenProviderPort {
   generateToken(claims: AuthTokenClaims): Promise<string>;
   verifyToken(token: string): Promise<AuthTokenClaims>;
 }
+

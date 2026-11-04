@@ -13,3 +13,4 @@ export interface UserRepositoryPort {
   findById(id: string, tenantId: TenantId): Promise<User | null>;
   findByEmail(email: Email, tenantId: TenantId): Promise<User | null>;
 }
+
