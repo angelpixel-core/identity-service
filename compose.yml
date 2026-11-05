@@ -1,9 +1,9 @@
 name: identity
 
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: identity-postgres
+    container_name: identity-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -13,28 +13,28 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data
       - ./infrastructure/local/initdb.d:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d identity_db"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d identity_db" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  redis:
+  cache:
     image: redis:7-alpine
-    container_name: identity-redis
+    container_name: identity-cache
     restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis_data:/data
+      - cache_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
 volumes:
-  postgres_data:
-  redis_data:
+  db_data:
+  cache_data:
