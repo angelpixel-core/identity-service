@@ -35,6 +35,31 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    build:
+      context: .
+      target: development
+    container_name: identity-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      PORT: 4000
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-identity_db}
+      REDIS_URL: redis://cache:6379
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-tenant-key-minimum-32-characters}
+      JWT_EXPIRATION_SECONDS: ${JWT_EXPIRATION_SECONDS:-3600}
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+
 volumes:
   db_data:
   cache_data:
