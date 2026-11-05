@@ -12,3 +12,4 @@ for db_name in "$DB_NAME" "$TEST_DB_NAME"; do
     CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 EOSQL
 done
+

@@ -31,3 +31,4 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_tenant ON users (email, tenant_id);
 CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users (tenant_id);
+

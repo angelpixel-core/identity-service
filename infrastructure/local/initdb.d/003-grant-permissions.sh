@@ -11,3 +11,4 @@ for db_name in "$DB_NAME" "$TEST_DB_NAME"; do
     GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${POSTGRES_USER};
 EOSQL
 done
+

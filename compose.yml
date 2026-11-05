@@ -1,7 +1,9 @@
+name: identity
+
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: identity_postgres
+    container_name: identity-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -21,7 +23,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: identity_redis
+    container_name: identity-redis
     restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
@@ -35,6 +37,4 @@ services:
 
 volumes:
   postgres_data:
-    name: identity_postgres_data
   redis_data:
-    name: identity_redis_data

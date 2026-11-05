@@ -12,3 +12,4 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\gexec
 SELECT 'CREATE DATABASE ${TEST_DB_NAME}'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${TEST_DB_NAME}')\gexec
 EOSQL
+
