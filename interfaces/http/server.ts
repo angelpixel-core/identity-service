@@ -6,16 +6,20 @@ if (process.env.NODE_ENV !== 'test') {
 import express, { Express, Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
+import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
 import { UserRepositoryPort } from '../../src/contexts/identity/application/ports/user/repository';
 import { HashProviderPort } from '../../src/contexts/identity/application/ports/security/hash_provider';
 import { TokenProviderPort } from '../../src/contexts/identity/application/ports/security/token_provider';
+import { CacheProviderPort } from '../../src/contexts/identity/application/ports/cache/cache_provider';
 import { BcryptAdapter } from '../../src/contexts/identity/infrastructure/security/bcrypt_adapter';
 import { JwtTokenAdapter } from '../../src/contexts/identity/infrastructure/security/jwt_adapter';
+import { MemoryCacheAdapter } from '../../src/contexts/identity/infrastructure/cache/memory_cache_adapter';
 import { PostgresUserRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/user/repository';
 import { User } from '../../src/contexts/identity/domain/entities/user/aggregate';
 import { Email } from '../../src/contexts/identity/domain/value_objects/email/value';
 import { TenantId } from '../../src/contexts/identity/domain/value_objects/tenant_id/value';
 import { tenantContextMiddleware } from './middlewares/tenant_context_middleware';
+import { createAuthMiddleware } from './middlewares/auth_middleware';
 import { AuthController } from './rest/v1/identity/controllers';
 
 /**
@@ -51,6 +55,7 @@ export interface AppDependencies {
   userRepository?: UserRepositoryPort;
   hashProvider?: HashProviderPort;
   tokenProvider?: TokenProviderPort;
+  cacheProvider?: CacheProviderPort;
 }
 
 /**
@@ -75,6 +80,8 @@ export function createApp(deps?: AppDependencies): Express {
   const hashProvider = deps?.hashProvider ?? new BcryptAdapter(6); // Rondas optimizadas para HTTP
   const jwtSecret = process.env.JWT_SECRET || 'default-jwt-secret-key-12345';
   const tokenProvider = deps?.tokenProvider ?? new JwtTokenAdapter(jwtSecret, '1h');
+  const cacheProvider = deps?.cacheProvider ?? new MemoryCacheAdapter();
+  const cacheTtlSeconds = Number(process.env.CACHE_TTL_SECONDS) || 300;
 
   const registerUserHandler = new RegisterUserCommandHandler(
     userRepository,
@@ -82,10 +89,18 @@ export function createApp(deps?: AppDependencies): Express {
     tokenProvider
   );
 
-  const authController = new AuthController(registerUserHandler);
+  const getProfileHandler = new GetUserProfileQueryHandler(
+    userRepository,
+    cacheProvider,
+    cacheTtlSeconds
+  );
+
+  const authController = new AuthController(registerUserHandler, getProfileHandler);
+  const authMiddleware = createAuthMiddleware(tokenProvider);
 
   // Rutas de Identidad y Autenticación v1
   app.post('/api/v1/auth/register', tenantContextMiddleware, authController.register);
+  app.get('/api/v1/auth/me', tenantContextMiddleware, authMiddleware, authController.getProfile);
 
   // Manejador global de errores no capturados
   app.use((_err: Error, _req: Request, res: Response, _next: NextFunction) => {

@@ -15,8 +15,12 @@ export interface AuthSession {
 }
 
 export interface UserProfile {
-  readonly userId: string;
+  readonly id?: string;
+  readonly userId?: string;
   readonly email: string;
   readonly tenantId: string;
+  readonly createdAt?: Date | string;
+  readonly updatedAt?: Date | string;
 }
+
 

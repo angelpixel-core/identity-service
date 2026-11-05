@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { RegisterUserCommandHandler } from '../../../../../src/contexts/identity/application/commands/register_user/handler';
+import { GetUserProfileQueryHandler } from '../../../../../src/contexts/identity/application/queries/get_user_profile/handler';
 import { RegisterUserSchema } from './schemas';
 import {
   DomainValidationError,
@@ -11,7 +12,10 @@ import {
  * Maneja peticiones HTTP entrantes para casos de uso de autenticación e identidad.
  */
 export class AuthController {
-  constructor(private readonly registerHandler: RegisterUserCommandHandler) {}
+  constructor(
+    private readonly registerHandler: RegisterUserCommandHandler,
+    private readonly getProfileHandler?: GetUserProfileQueryHandler
+  ) {}
 
   public register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -49,6 +53,32 @@ export class AuthController {
       }
       if (error instanceof DomainValidationError) {
         res.status(400).json({ error: error.message });
+        return;
+      }
+      next(error);
+    }
+  };
+
+  public getProfile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = req.userId;
+      const tenantId = req.tenantId;
+
+      if (!userId || !tenantId) {
+        res.status(401).json({ error: 'Unauthorized: Missing user identity or tenant context' });
+        return;
+      }
+
+      if (!this.getProfileHandler) {
+        res.status(501).json({ error: 'Profile handler not configured' });
+        return;
+      }
+
+      const profile = await this.getProfileHandler.execute({ userId, tenantId });
+      res.status(200).json(profile);
+    } catch (error: any) {
+      if (error?.message?.includes('not found')) {
+        res.status(404).json({ error: error.message });
         return;
       }
       next(error);
