@@ -6,13 +6,13 @@
   "scripts": {
     "dev:api": "tsx watch interfaces/http/server.ts",
     "build": "tsc",
-    "docker:up": "docker compose up -d",
+    "docker:up": "docker compose up",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
-    "test:unit": "jest --config jest.config.js tests/unit",
-    "test:integration": "jest --config jest.config.js tests/integration",
-    "test:acceptance": "jest --config jest.config.js tests/acceptance",
-    "test:e2e": "jest --config jest.config.js tests/e2e",
+    "test:unit": "NODE_ENV=test jest --config jest.config.js tests/unit",
+    "test:integration": "NODE_ENV=test jest --config jest.config.js tests/integration",
+    "test:acceptance": "NODE_ENV=test jest --config jest.config.js tests/acceptance",
+    "test:e2e": "NODE_ENV=test jest --config jest.config.js tests/e2e",
     "test": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {
