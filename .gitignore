@@ -9,6 +9,7 @@ node_modules/
 # Production build output
 dist/
 build/
+storybook-static/
 
 # Environment variables & secrets
 .env

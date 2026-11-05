@@ -33,7 +33,10 @@
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "storybook-static",
+    ".storybook",
+    "**/*.stories.tsx"
   ]
 }
 

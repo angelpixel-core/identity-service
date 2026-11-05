@@ -5,6 +5,10 @@
   "main": "dist/interfaces/http/server.js",
   "scripts": {
     "dev:api": "tsx watch interfaces/http/server.ts",
+    "dev:web": "vite",
+    "build:web": "vite build",
+    "storybook": "storybook dev -p 6006 --ci",
+    "build-storybook": "storybook build",
     "build": "tsc",
     "docker:up": "docker compose up",
     "docker:down": "docker compose down",
@@ -26,6 +30,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@storybook/react": "^10.6.6",
+    "@storybook/react-vite": "^10.6.6",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/bcrypt": "^6.0.0",
@@ -37,12 +43,19 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/supertest": "^7.2.1",
+    "@vitejs/plugin-react-swc": "^4.3.3",
     "esbuild": "^0.28.2",
     "jest": "^30.5.2",
     "jest-environment-jsdom": "^30.5.2",
+    "storybook": "^10.6.6",
     "supertest": "^7.3.1",
     "ts-jest": "^29.4.15",
     "tsx": "^4.23.15",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "vite": "^8.3.6"
+  },
+  "optionalDependencies": {
+    "@emnapi/core": "1.11.3",
+    "@emnapi/runtime": "1.11.3"
   }
 }

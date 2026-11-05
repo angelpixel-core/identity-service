@@ -14,7 +14,7 @@ RUN apk add --no-cache dumb-init
 FROM base AS dependencies
 RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci || npm install
 
 # -----------------------------------------------------------------------------
 # Stage 3: Development target (Local hot-reload with tsx watch)
@@ -41,7 +41,7 @@ RUN npm run build
 FROM base AS production-dependencies
 RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev || npm install --omit=dev
 
 # -----------------------------------------------------------------------------
 # Stage 6: Production target (Minimal runtime)

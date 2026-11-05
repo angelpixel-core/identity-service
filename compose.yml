@@ -60,6 +60,43 @@ services:
       cache:
         condition: service_healthy
 
+  web:
+    build:
+      context: .
+      target: development
+    container_name: identity-web
+    restart: unless-stopped
+    command: ["npm", "run", "dev:web"]
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      VITE_API_URL: http://api:4000
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - api
+
+  design-system:
+    build:
+      context: .
+      target: development
+    container_name: identity-design-system
+    restart: unless-stopped
+    profiles:
+      - ui
+      - dev
+    command: ["npm", "run", "storybook", "--", "--host", "0.0.0.0"]
+    ports:
+      - "${STORYBOOK_PORT:-6006}:6006"
+    environment:
+      NODE_ENV: development
+    volumes:
+      - .:/app
+      - /app/node_modules
+
 volumes:
   db_data:
   cache_data:
