@@ -6,6 +6,9 @@
   "scripts": {
     "dev:api": "tsx watch interfaces/http/server.ts",
     "build": "tsc",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
     "test:unit": "jest --config jest.config.js tests/unit",
     "test:integration": "jest --config jest.config.js tests/integration",
     "test:acceptance": "jest --config jest.config.js tests/acceptance",
