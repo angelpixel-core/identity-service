@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci:
+    name: Build, Test & Containerize
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: identity_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/identity_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: identity_db
+      POSTGRES_TEST_DB: identity_test_db
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: super-secret-tenant-key-minimum-32-characters
+      JWT_EXPIRATION_SECONDS: 3600
+      CACHE_TTL_SECONDS: 300
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize PostgreSQL database & schema
+        run: |
+          docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d postgres -c "SELECT 'CREATE DATABASE identity_test_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'identity_test_db')\gexec"
+          docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d identity_db -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS "pgcrypto";'
+          docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d identity_test_db -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS "pgcrypto";'
+          docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d postgres < infrastructure/local/initdb.d/005-create-identity-schema.sql
+
+      - name: Set up Node.js & dependencies
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '25.x'
+
+      - name: Quality Gate 1 - TypeScript Typecheck & Build
+        run: npm run build
+
+      - name: Quality Gate 2 - Unit Tests
+        run: npm run test:unit
+
+      - name: Quality Gate 3 - Integration Tests
+        run: npm run test:integration
+
+      - name: Quality Gate 4 - Acceptance Tests (BDD)
+        run: npm run test:acceptance
+
+      - name: Quality Gate 5 - E2E Tests (Component UI)
+        run: npm run test:e2e
+
+      - name: Quality Gate 6 - Docker Build (Development Target)
+        run: docker build --target development -t identity-service:dev .
+
+      - name: Quality Gate 7 - Docker Build (Production Target)
+        run: docker build --target production -t identity-service:prod .
