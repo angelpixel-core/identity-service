@@ -6,10 +6,13 @@
   "scripts": {
     "dev:api": "tsx watch interfaces/http/server.ts",
     "build": "tsc",
-    "test:unit": "jest --config jest.config.js tests/unit",
-    "test:integration": "jest --config jest.config.js tests/integration",
-    "test:acceptance": "jest --config jest.config.js tests/acceptance",
-    "test:e2e": "jest --config jest.config.js tests/e2e",
+    "docker:up": "docker compose up",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "test:unit": "NODE_ENV=test jest --config jest.config.js tests/unit",
+    "test:integration": "NODE_ENV=test jest --config jest.config.js tests/integration",
+    "test:acceptance": "NODE_ENV=test jest --config jest.config.js tests/acceptance",
+    "test:e2e": "NODE_ENV=test jest --config jest.config.js tests/e2e",
     "test": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {
@@ -17,6 +20,7 @@
     "dotenv": "^18.0.9",
     "express": "^5.3.0",
     "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zod": "^4.6.7"
@@ -29,6 +33,7 @@
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/supertest": "^7.2.1",

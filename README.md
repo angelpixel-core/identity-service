@@ -73,21 +73,20 @@ Copy `.env.example` and configure your database connection and JWT secret:
 cp .env.example .env
 ```
 
-```env
-PORT=4000
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/identity_db
-JWT_SECRET=super-secret-tenant-key-32-chars
-CACHE_TTL_SECONDS=300
+### 3. Local Infrastructure (Docker Compose)
+
+Start the Alpine PostgreSQL 16 and Redis 7 containers with automated schema initialization:
+
+```bash
+npm run docker:up
+# or: docker compose up -d
 ```
 
-### 3. Running the Application
+### 4. Running the Application
 
 ```bash
 # Start backend API server
 npm run dev:api
-
-# Start web client application
-npm run dev:web
 ```
 
 ---
