@@ -87,3 +87,4 @@ jobs:
 
       - name: Quality Gate 7 - Docker Build (Production Target)
         run: docker build --target production -t identity-service:prod .
+
