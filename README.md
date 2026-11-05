@@ -26,7 +26,7 @@ identity-service/
 ├── docs/                                     # Public technical documentation
 │   ├── ARCHITECTURE.md                       # Formal architecture design document
 │   ├── PRD.md                                # Product Requirement Document
-│   └── adr/                                  # Architectural Decision Records (0001, 0002, 0003)
+│   └── adr/                                  # Architectural Decision Records (0001 a 0006)
 ├── src/
 │   └── contexts/
 │       └── identity/                         # Bounded Context: Identity

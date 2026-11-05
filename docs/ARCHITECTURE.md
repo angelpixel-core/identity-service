@@ -67,7 +67,7 @@ identity-service/
 ├── docs/                                     # Documentación pública y ADRs
 │   ├── PRD.md                                # PRD de negocio
 │   ├── ARCHITECTURE.md                       # Este documento
-│   └── adr/                                  # Architectural Decision Records (0001, 0002, 0003)
+│   └── adr/                                  # Architectural Decision Records (0001 a 0006)
 │
 ├── src/
 │   └── contexts/
