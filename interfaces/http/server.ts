@@ -7,6 +7,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
+import { ValidateClientOriginQueryHandler } from '../../src/contexts/identity/application/queries/validate_client_origin/handler';
 import { UserRepositoryPort } from '../../src/contexts/identity/application/ports/user/repository';
 import { HashProviderPort } from '../../src/contexts/identity/application/ports/security/hash_provider';
 import { TokenProviderPort } from '../../src/contexts/identity/application/ports/security/token_provider';
@@ -24,8 +25,8 @@ import { clientAuthorizationMiddleware } from './middlewares/client_authorizatio
 import { ClientApplicationRepositoryPort } from '../../src/contexts/identity/domain/ports/client_application_repository_port';
 import { PostgresClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/postgres_client_repository';
 import { InMemoryClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/in_memory_client_repository';
-import { ClientApplication } from '../../src/contexts/identity/domain/entities/client_application/aggregate';
 import { AuthController } from './rest/v1/identity/controllers';
+import { OAuth2ClientController } from './rest/v1/oauth2/client_controller';
 
 /**
  * Implementación en memoria del repositorio para testing e inicialización desacoplada.
@@ -111,7 +112,14 @@ export function createApp(deps?: AppDependencies): Express {
     cacheTtlSeconds
   );
 
+  const validateClientOriginHandler = new ValidateClientOriginQueryHandler(
+    clientRepository,
+    cacheProvider,
+    cacheTtlSeconds
+  );
+
   const authController = new AuthController(registerUserHandler, getProfileHandler);
+  const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
   const authMiddleware = createAuthMiddleware(tokenProvider);
 
   // Rutas de Identidad y Autenticación v1
@@ -121,15 +129,8 @@ export function createApp(deps?: AppDependencies): Express {
   // Rutas OAuth2 / Client Registry v1
   app.post(
     '/api/v1/oauth2/clients/validate',
-    clientAuthorizationMiddleware(clientRepository),
-    (req: Request, res: Response) => {
-      const client = (req as any).clientApp as ClientApplication;
-      res.status(200).json({
-        authorized: true,
-        clientId: client.getClientId().getValue(),
-        clientType: client.getClientType(),
-      });
-    }
+    clientAuthorizationMiddleware(validateClientOriginHandler),
+    oauth2ClientController.validateClientOrigin
   );
 
   // Manejador global de errores no capturados
