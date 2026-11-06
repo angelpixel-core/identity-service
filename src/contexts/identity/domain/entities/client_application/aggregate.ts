@@ -1,5 +1,7 @@
 import { ClientId } from '../../value_objects/client_id/value';
 import { OriginDomain } from '../../value_objects/origin_domain/value';
+import { GrantType } from '../../value_objects/grant_type/value';
+import { Scope } from '../../value_objects/scope/value';
 import { DomainValidationError } from '../../exceptions/user/error';
 
 export type ClientType = 'confidential' | 'public';
@@ -12,8 +14,8 @@ export interface CreateClientApplicationProps {
   clientType: ClientType;
   allowedOrigins: OriginDomain[];
   redirectUris: string[];
-  allowedGrantTypes: string[];
-  scopes: string[];
+  allowedGrantTypes: (GrantType | string)[];
+  scopes: (Scope | string)[];
   isActive?: boolean;
 }
 
@@ -22,9 +24,24 @@ export interface ReconstituteClientApplicationProps extends CreateClientApplicat
   updatedAt: Date;
 }
 
+interface InternalClientApplicationProps {
+  id: string;
+  clientId: ClientId;
+  clientSecretHash: string | null;
+  clientName: string;
+  clientType: ClientType;
+  allowedOrigins: OriginDomain[];
+  redirectUris: string[];
+  allowedGrantTypes: GrantType[];
+  scopes: Scope[];
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 /**
  * Aggregate Root: ClientApplication
- * Representa una aplicación cliente registrada (confidencial o pública) con sus permisos y orígenes homologados.
+ * Representa una aplicación cliente registrada (confidencial o pública) con sus permisos, concesiones y orígenes homologados.
  */
 export class ClientApplication {
   private readonly id: string;
@@ -34,46 +51,51 @@ export class ClientApplication {
   private readonly clientType: ClientType;
   private allowedOrigins: OriginDomain[];
   private redirectUris: string[];
-  private allowedGrantTypes: string[];
-  private scopes: string[];
+  private allowedGrantTypes: GrantType[];
+  private scopes: Scope[];
   private active: boolean;
   private readonly createdAt: Date;
   private updatedAt: Date;
 
-  private constructor(props: ReconstituteClientApplicationProps) {
+  private constructor(props: InternalClientApplicationProps) {
     this.id = props.id;
     this.clientId = props.clientId;
-    this.clientSecretHash = props.clientSecretHash ?? null;
+    this.clientSecretHash = props.clientSecretHash;
     this.clientName = props.clientName;
     this.clientType = props.clientType;
     this.allowedOrigins = [...props.allowedOrigins];
     this.redirectUris = [...props.redirectUris];
     this.allowedGrantTypes = [...props.allowedGrantTypes];
     this.scopes = [...props.scopes];
-    this.active = props.isActive ?? true;
+    this.active = props.isActive;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }
 
   public static create(props: CreateClientApplicationProps): ClientApplication {
-    ClientApplication.validateInvariants(props);
-
+    const normalized = ClientApplication.normalizeAndValidateInvariants(props);
     const now = new Date();
+
     return new ClientApplication({
-      ...props,
-      clientSecretHash: props.clientSecretHash ?? null,
-      isActive: props.isActive ?? true,
+      ...normalized,
       createdAt: now,
       updatedAt: now,
     });
   }
 
   public static reconstitute(props: ReconstituteClientApplicationProps): ClientApplication {
-    ClientApplication.validateInvariants(props);
-    return new ClientApplication(props);
+    const normalized = ClientApplication.normalizeAndValidateInvariants(props);
+
+    return new ClientApplication({
+      ...normalized,
+      createdAt: props.createdAt,
+      updatedAt: props.updatedAt,
+    });
   }
 
-  private static validateInvariants(props: CreateClientApplicationProps): void {
+  private static normalizeAndValidateInvariants(
+    props: CreateClientApplicationProps
+  ): Omit<InternalClientApplicationProps, 'createdAt' | 'updatedAt'> {
     if (!props.id || props.id.trim().length === 0) {
       throw new DomainValidationError('ClientApplication id cannot be empty');
     }
@@ -86,17 +108,50 @@ export class ClientApplication {
       throw new DomainValidationError('Client applications must specify at least one allowed origin');
     }
 
+    const grantTypeVOs = (props.allowedGrantTypes || []).map((g) =>
+      g instanceof GrantType ? g : GrantType.create(g)
+    );
+
+    const scopeVOs = (props.scopes || []).map((s) =>
+      s instanceof Scope ? s : Scope.create(s)
+    );
+
     if (props.clientType === 'public') {
-      if (props.clientSecretHash !== undefined && props.clientSecretHash !== null && props.clientSecretHash.trim().length > 0) {
+      if (
+        props.clientSecretHash !== undefined &&
+        props.clientSecretHash !== null &&
+        props.clientSecretHash.trim().length > 0
+      ) {
         throw new DomainValidationError('Public client applications cannot possess a client_secret');
+      }
+
+      if (grantTypeVOs.some((g) => g.getValue() === 'client_credentials')) {
+        throw new DomainValidationError(
+          'Public client applications cannot be granted client_credentials flow'
+        );
       }
     } else if (props.clientType === 'confidential') {
       if (!props.clientSecretHash || props.clientSecretHash.trim().length === 0) {
         throw new DomainValidationError('Confidential client applications must provide a client_secret_hash');
       }
     } else {
-      throw new DomainValidationError(`Invalid client_type: "${props.clientType}". Must be "confidential" or "public".`);
+      throw new DomainValidationError(
+        `Invalid client_type: "${props.clientType}". Must be "confidential" or "public".`
+      );
     }
+
+    return {
+      id: props.id,
+      clientId: props.clientId,
+      clientSecretHash: props.clientSecretHash ?? null,
+      clientName: props.clientName,
+      clientType: props.clientType,
+      allowedOrigins: [...props.allowedOrigins],
+      redirectUris: [...(props.redirectUris || [])],
+      allowedGrantTypes: grantTypeVOs,
+      scopes: scopeVOs,
+      isActive: props.isActive ?? true,
+    };
   }
 
   public getId(): string {
@@ -120,19 +175,27 @@ export class ClientApplication {
   }
 
   public getAllowedOrigins(): OriginDomain[] {
-    return this.allowedOrigins;
+    return [...this.allowedOrigins];
   }
 
   public getRedirectUris(): string[] {
-    return this.redirectUris;
+    return [...this.redirectUris];
   }
 
   public getAllowedGrantTypes(): string[] {
-    return this.allowedGrantTypes;
+    return this.allowedGrantTypes.map((g) => g.getValue());
+  }
+
+  public getAllowedGrantTypeVOs(): GrantType[] {
+    return [...this.allowedGrantTypes];
   }
 
   public getScopes(): string[] {
-    return this.scopes;
+    return this.scopes.map((s) => s.getValue());
+  }
+
+  public getScopeVOs(): Scope[] {
+    return [...this.scopes];
   }
 
   public isActive(): boolean {
@@ -156,6 +219,28 @@ export class ClientApplication {
     }
 
     return this.allowedOrigins.some((allowed) => allowed.equals(targetOrigin));
+  }
+
+  public hasGrantType(rawGrant: GrantType | string): boolean {
+    let targetGrant: GrantType;
+    try {
+      targetGrant = typeof rawGrant === 'string' ? GrantType.create(rawGrant) : rawGrant;
+    } catch {
+      return false;
+    }
+
+    return this.allowedGrantTypes.some((g) => g.equals(targetGrant));
+  }
+
+  public hasScope(rawScope: Scope | string): boolean {
+    let targetScope: Scope;
+    try {
+      targetScope = typeof rawScope === 'string' ? Scope.create(rawScope) : rawScope;
+    } catch {
+      return false;
+    }
+
+    return this.scopes.some((s) => s.equals(targetScope));
   }
 
   public activate(): void {
