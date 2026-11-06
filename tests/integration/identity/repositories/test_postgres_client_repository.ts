@@ -93,7 +93,7 @@ describe('Infrastructure Persistence: PostgresClientApplicationRepository', () =
       expect(client).not.toBeNull();
       expect(client?.getClientId().getValue()).toBe('portal-web');
       expect(client?.getClientType()).toBe('public');
-      expect(client?.getAllowedOrigins()[0].getValue()).toBe('https://portal.angelsolutions.io');
+      expect(client?.getAllowedOrigins()[0]?.getValue()).toBe('https://portal.angelsolutions.io');
     });
 
     it('should return null when client_id does not exist', async () => {
