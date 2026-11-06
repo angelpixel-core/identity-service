@@ -20,6 +20,11 @@ import { Email } from '../../src/contexts/identity/domain/value_objects/email/va
 import { TenantId } from '../../src/contexts/identity/domain/value_objects/tenant_id/value';
 import { tenantContextMiddleware } from './middlewares/tenant_context_middleware';
 import { createAuthMiddleware } from './middlewares/auth_middleware';
+import { clientAuthorizationMiddleware } from './middlewares/client_authorization_middleware';
+import { ClientApplicationRepositoryPort } from '../../src/contexts/identity/domain/ports/client_application_repository_port';
+import { PostgresClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/postgres_client_repository';
+import { InMemoryClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/in_memory_client_repository';
+import { ClientApplication } from '../../src/contexts/identity/domain/entities/client_application/aggregate';
 import { AuthController } from './rest/v1/identity/controllers';
 
 /**
@@ -53,6 +58,7 @@ class InMemoryUserRepository implements UserRepositoryPort {
 
 export interface AppDependencies {
   userRepository?: UserRepositoryPort;
+  clientRepository?: ClientApplicationRepositoryPort;
   hashProvider?: HashProviderPort;
   tokenProvider?: TokenProviderPort;
   cacheProvider?: CacheProviderPort;
@@ -74,6 +80,16 @@ export function createApp(deps?: AppDependencies): Express {
       userRepository = new PostgresUserRepository(pool);
     } else {
       userRepository = new InMemoryUserRepository();
+    }
+  }
+
+  let clientRepository = deps?.clientRepository;
+  if (!clientRepository) {
+    if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      clientRepository = new PostgresClientApplicationRepository(pool);
+    } else {
+      clientRepository = new InMemoryClientApplicationRepository(true);
     }
   }
 
@@ -101,6 +117,20 @@ export function createApp(deps?: AppDependencies): Express {
   // Rutas de Identidad y Autenticación v1
   app.post('/api/v1/auth/register', tenantContextMiddleware, authController.register);
   app.get('/api/v1/auth/me', tenantContextMiddleware, authMiddleware, authController.getProfile);
+
+  // Rutas OAuth2 / Client Registry v1
+  app.post(
+    '/api/v1/oauth2/clients/validate',
+    clientAuthorizationMiddleware(clientRepository),
+    (req: Request, res: Response) => {
+      const client = (req as any).clientApp as ClientApplication;
+      res.status(200).json({
+        authorized: true,
+        clientId: client.getClientId().getValue(),
+        clientType: client.getClientType(),
+      });
+    }
+  );
 
   // Manejador global de errores no capturados
   app.use((_err: Error, _req: Request, res: Response, _next: NextFunction) => {
