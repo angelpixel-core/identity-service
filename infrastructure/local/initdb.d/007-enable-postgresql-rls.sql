@@ -6,26 +6,36 @@
 
 \c identity_db;
 
--- 1. Habilitar y forzar Row-Level Security en users
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users FORCE ROW LEVEL SECURITY;
+-- Función helper reutilizable para aplicar RLS forzado y política simétrica a cualquier tabla multitenant
+CREATE OR REPLACE FUNCTION apply_tenant_rls(target_table text) RETURNS void AS $$
+BEGIN
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target_table);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', target_table);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_policy ON %I', target_table);
+    EXECUTE format(
+        'CREATE POLICY tenant_isolation_policy ON %I FOR ALL USING (tenant_id = current_setting(''app.current_tenant_id'', true)::text) WITH CHECK (tenant_id = current_setting(''app.current_tenant_id'', true)::text)',
+        target_table
+    );
+END;
+$$ LANGUAGE plpgsql;
 
--- 2. Política simétrica de aislamiento multitenant (USING + WITH CHECK)
-DROP POLICY IF EXISTS tenant_isolation_policy ON users;
-CREATE POLICY tenant_isolation_policy ON users
-    FOR ALL
-    USING (tenant_id = current_setting('app.current_tenant_id', true)::text)
-    WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::text);
+-- 1. Aplicar RLS a tabla users
+SELECT apply_tenant_rls('users');
 
 \c identity_test_db;
 
--- 1. Habilitar y forzar Row-Level Security en users
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users FORCE ROW LEVEL SECURITY;
+-- Función helper reutilizable para aplicar RLS forzado y política simétrica a cualquier tabla multitenant
+CREATE OR REPLACE FUNCTION apply_tenant_rls(target_table text) RETURNS void AS $$
+BEGIN
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target_table);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', target_table);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_policy ON %I', target_table);
+    EXECUTE format(
+        'CREATE POLICY tenant_isolation_policy ON %I FOR ALL USING (tenant_id = current_setting(''app.current_tenant_id'', true)::text) WITH CHECK (tenant_id = current_setting(''app.current_tenant_id'', true)::text)',
+        target_table
+    );
+END;
+$$ LANGUAGE plpgsql;
 
--- 2. Política simétrica de aislamiento multitenant (USING + WITH CHECK)
-DROP POLICY IF EXISTS tenant_isolation_policy ON users;
-CREATE POLICY tenant_isolation_policy ON users
-    FOR ALL
-    USING (tenant_id = current_setting('app.current_tenant_id', true)::text)
-    WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::text);
+-- 1. Aplicar RLS a tabla users
+SELECT apply_tenant_rls('users');

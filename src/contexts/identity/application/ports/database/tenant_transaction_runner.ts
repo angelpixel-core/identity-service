@@ -12,13 +12,17 @@ import { DatabaseClient } from '../../../infrastructure/persistence/repositories
 export interface TenantTransactionRunnerPort {
   /**
    * Ejecuta una operación atómica dentro del contexto transaccional del tenant indicado.
+   * Si se especifica un existingClient (o un runner vinculado), utiliza Savepoints para soportar
+   * transacciones anidadas verificando la invariante de no cruzar boundaries de tenant.
    *
    * @param tenant Identificador del tenant (TenantSessionContext, TenantId o string no vacío).
    * @param operation Callback transaccional que recibe la conexión de base de datos activa y el contexto de sesión.
+   * @param existingClient Conexión de base de datos opcional para anidar la operación bajo un Savepoint.
    * @returns Resultado tipado devuelto por el callback de la operación.
    */
   runInTenantContext<T>(
     tenant: TenantSessionContext | TenantId | string,
-    operation: (client: DatabaseClient, session: TenantSessionContext) => Promise<T>
+    operation: (client: DatabaseClient, session: TenantSessionContext) => Promise<T>,
+    existingClient?: DatabaseClient
   ): Promise<T>;
 }

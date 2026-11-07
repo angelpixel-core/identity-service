@@ -39,26 +39,48 @@ export interface TransactionLogger {
  * 4. Aplica Fail-Closed: las consultas sin este contexto devuelven 0 filas en tablas con RLS.
  * 5. Prevención de intoxicación de pool: si ocurre un fallo en rollback o transacción, `release(true)` descarta la conexión.
  * 6. Observabilidad y encadenamiento: los fallos en rollback se registran en el logger y se anexan a la excepción raíz.
+ * 7. Soporte para Savepoints y Anidamiento: soporta llamadas anidadas verificando la invariante anti-cross-tenant con `TenantSessionContext`.
  */
 export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort {
+  private static readonly activeSessions = new WeakMap<DatabaseClient, TenantSessionContext>();
+
   constructor(
     private readonly pool: ConnectionPool,
-    private readonly logger: TransactionLogger = console
+    private readonly logger: TransactionLogger = console,
+    private readonly boundClient?: DatabaseClient,
+    private readonly boundSession?: TenantSessionContext
   ) {}
 
   /**
+   * Crea una instancia del runner vinculada a un cliente transaccional y contexto de sesión específicos.
+   */
+  public withClient(client: DatabaseClient, session: TenantSessionContext): TenantAwareTransactionRunner {
+    return new TenantAwareTransactionRunner(this.pool, this.logger, client, session);
+  }
+
+  /**
    * Ejecuta una función dentro de un bloque transaccional asociado al contexto del tenant.
+   * Si se especifica un existingClient (o el runner fue creado con withClient), utiliza Savepoints.
    *
    * @param tenant Identificador del tenant (TenantSessionContext, TenantId o string no vacío).
    * @param operation Callback que recibe el cliente transaccional y el contexto de sesión activo.
+   * @param existingClient Conexión opcional para anidamiento transaccional.
    * @returns Resultado del callback.
    */
   public async runInTenantContext<T>(
     tenant: TenantSessionContext | TenantId | string,
-    operation: (client: DatabaseClient, session: TenantSessionContext) => Promise<T>
+    operation: (client: DatabaseClient, session: TenantSessionContext) => Promise<T>,
+    existingClient?: DatabaseClient
   ): Promise<T> {
-    const session = this.resolveSessionContext(tenant);
-    const resolvedTenantId = session.getTenantIdValue();
+    const targetSession = this.resolveSessionContext(tenant);
+    const clientToUse = existingClient || this.boundClient;
+
+    // Si ya existe una conexión transaccional activa, operamos bajo Savepoint
+    if (clientToUse) {
+      return this.executeInNestedSavepoint(clientToUse, targetSession, operation);
+    }
+
+    // Flujo raíz: adquisición de conexión desde el pool y apertura de transacción BEGIN
     const client = await this.pool.connect();
     let hasError = false;
 
@@ -72,9 +94,10 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
 
       try {
         await client.query("SELECT set_config('app.current_tenant_id', $1, true)", [
-          resolvedTenantId,
+          targetSession.getTenantIdValue(),
           true,
         ]);
+        TenantAwareTransactionRunner.activeSessions.set(client, targetSession);
       } catch (err) {
         hasError = true;
         await this.handleRollback(client, err, 'set_config');
@@ -83,7 +106,7 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
 
       let result: T;
       try {
-        result = await operation(client, session);
+        result = await operation(client, targetSession);
       } catch (err) {
         hasError = true;
         await this.handleRollback(client, err, 'operation');
@@ -103,9 +126,46 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
       hasError = true;
       throw rootError;
     } finally {
+      TenantAwareTransactionRunner.activeSessions.delete(client);
       if (typeof client.release === 'function') {
         client.release(hasError);
       }
+    }
+  }
+
+  /**
+   * Ejecuta la operación bajo un Savepoint garantizando que no exista violación cross-tenant.
+   */
+  private async executeInNestedSavepoint<T>(
+    client: DatabaseClient,
+    targetSession: TenantSessionContext,
+    operation: (client: DatabaseClient, session: TenantSessionContext) => Promise<T>
+  ): Promise<T> {
+    const activeSession = this.boundSession || TenantAwareTransactionRunner.activeSessions.get(client);
+
+    // Invariante de seguridad: si hay una sesión activa en la conexión, debe coincidir estrictamente
+    if (activeSession) {
+      activeSession.assertMatchingTenant(targetSession.getTenantId());
+    }
+
+    const savepointName = `sp_${Math.random().toString(36).substring(2, 9)}`;
+
+    await client.query(`SAVEPOINT ${savepointName}`);
+
+    try {
+      const result = await operation(client, targetSession);
+      await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+      return result;
+    } catch (err) {
+      try {
+        await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+      } catch (rollbackErr) {
+        this.logger.error(
+          `[TenantAwareTransactionRunner] Failure executing ROLLBACK TO SAVEPOINT '${savepointName}'.`,
+          { err, rollbackErr }
+        );
+      }
+      throw err;
     }
   }
 
