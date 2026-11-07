@@ -1,6 +1,7 @@
 import { TenantAwareTransactionRunner } from '../../../../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 import { TenantId } from '../../../../../src/contexts/identity/domain/value_objects/tenant_id/value';
 import { TenantSessionContext } from '../../../../../src/contexts/identity/domain/value_objects/tenant_session_context/value';
+import { CrossTenantContextViolationError } from '../../../../../src/contexts/identity/domain/exceptions/security/error';
 import { DatabaseClient } from '../../../../../src/contexts/identity/infrastructure/persistence/repositories/user/repository';
 
 interface MockPoolClient extends DatabaseClient {
@@ -292,6 +293,136 @@ describe('Unit: TenantAwareTransactionRunner', () => {
       await runner.runInTenantContext('alpha-corp', async () => 'success');
 
       expect(mockClient.release).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('Nested Transactions and Savepoints (ADR-0005 & US-05 Refactoring)', () => {
+    it('should create SAVEPOINT and RELEASE SAVEPOINT when nesting within the same tenant context', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+      const executionSteps: string[] = [];
+
+      (mockClient.query as jest.Mock).mockImplementation(async (sql: string) => {
+        const trimmed = sql.trim().toUpperCase();
+        if (trimmed.startsWith('BEGIN')) {
+          executionSteps.push('BEGIN');
+        } else if (trimmed.includes('SET_CONFIG')) {
+          executionSteps.push('SET_CONFIG');
+        } else if (trimmed.startsWith('SAVEPOINT')) {
+          executionSteps.push('SAVEPOINT');
+        } else if (trimmed.startsWith('RELEASE SAVEPOINT')) {
+          executionSteps.push('RELEASE_SAVEPOINT');
+        } else if (trimmed.startsWith('COMMIT')) {
+          executionSteps.push('COMMIT');
+        }
+        return { rows: [] };
+      });
+
+      const result = await runner.runInTenantContext('alpha-corp', async (outerClient) => {
+        executionSteps.push('OUTER_START');
+
+        // Nested call with same tenant passing the active outerClient
+        const innerResult = await runner.runInTenantContext('alpha-corp', async () => {
+          executionSteps.push('INNER_OPERATION');
+          return 'inner-done';
+        }, outerClient);
+
+        executionSteps.push('OUTER_END');
+        return innerResult;
+      });
+
+      expect(result).toBe('inner-done');
+      expect(executionSteps).toEqual([
+        'BEGIN',
+        'SET_CONFIG',
+        'OUTER_START',
+        'SAVEPOINT',
+        'INNER_OPERATION',
+        'RELEASE_SAVEPOINT',
+        'OUTER_END',
+        'COMMIT',
+      ]);
+      expect(mockClient.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('should ROLLBACK TO SAVEPOINT and rethrow when nested operation fails without aborting outer transaction', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+      const executionSteps: string[] = [];
+
+      (mockClient.query as jest.Mock).mockImplementation(async (sql: string) => {
+        const trimmed = sql.trim().toUpperCase();
+        if (trimmed.startsWith('BEGIN')) {
+          executionSteps.push('BEGIN');
+        } else if (trimmed.includes('SET_CONFIG')) {
+          executionSteps.push('SET_CONFIG');
+        } else if (trimmed.startsWith('SAVEPOINT')) {
+          executionSteps.push('SAVEPOINT');
+        } else if (trimmed.startsWith('ROLLBACK TO SAVEPOINT')) {
+          executionSteps.push('ROLLBACK_TO_SAVEPOINT');
+        } else if (trimmed.startsWith('COMMIT')) {
+          executionSteps.push('COMMIT');
+        }
+        return { rows: [] };
+      });
+
+      await runner.runInTenantContext('alpha-corp', async (outerClient) => {
+        try {
+          await runner.runInTenantContext('alpha-corp', async () => {
+            throw new Error('Nested partial failure');
+          }, outerClient);
+        } catch (err: any) {
+          executionSteps.push(`CAUGHT:${err.message}`);
+        }
+        return 'recovered-outer';
+      });
+
+      expect(executionSteps).toEqual([
+        'BEGIN',
+        'SET_CONFIG',
+        'SAVEPOINT',
+        'ROLLBACK_TO_SAVEPOINT',
+        'CAUGHT:Nested partial failure',
+        'COMMIT',
+      ]);
+      expect(mockClient.release).toHaveBeenCalledWith(false);
+    });
+
+    it('should throw CrossTenantContextViolationError when attempting to nest a different tenant within an active transaction', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+
+      await runner.runInTenantContext('alpha-corp', async (outerClient) => {
+        await expect(
+          runner.runInTenantContext('beta-corp', async () => {
+            return 'should-not-run';
+          }, outerClient)
+        ).rejects.toThrow(CrossTenantContextViolationError);
+      });
+    });
+
+    it('should support withClient to create a bound runner that automatically operates under Savepoints', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+      const session = TenantSessionContext.create('alpha-corp');
+
+      (mockClient.query as jest.Mock).mockImplementation(async (sql: string) => {
+        const trimmed = sql.trim().toUpperCase();
+        if (trimmed.startsWith('SAVEPOINT')) {
+          return { rows: [] };
+        }
+        if (trimmed.startsWith('RELEASE SAVEPOINT')) {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      });
+
+      const boundRunner = runner.withClient(mockClient, session);
+
+      const result = await boundRunner.runInTenantContext('alpha-corp', async () => 'bound-success');
+
+      expect(result).toBe('bound-success');
+      expect(mockClient.query).toHaveBeenCalledWith(expect.stringContaining('SAVEPOINT'));
+      expect(mockClient.query).toHaveBeenCalledWith(expect.stringContaining('RELEASE SAVEPOINT'));
+      // No pool connect or client release in bound runner
+      expect(mockPool.connect).not.toHaveBeenCalled();
+      expect(mockClient.release).not.toHaveBeenCalled();
     });
   });
 });
