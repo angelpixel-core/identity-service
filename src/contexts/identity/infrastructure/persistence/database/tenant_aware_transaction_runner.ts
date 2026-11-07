@@ -1,5 +1,6 @@
 import { TenantTransactionRunnerPort } from '../../../application/ports/database/tenant_transaction_runner';
 import { TenantId } from '../../../domain/value_objects/tenant_id/value';
+import { TenantSessionContext } from '../../../domain/value_objects/tenant_session_context/value';
 import { DatabaseClient } from '../repositories/user/repository';
 
 /**
@@ -48,15 +49,16 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
   /**
    * Ejecuta una función dentro de un bloque transaccional asociado al contexto del tenant.
    *
-   * @param tenantId Identificador del tenant (Value Object o string no vacío).
-   * @param operation Callback que recibe el cliente transaccional.
+   * @param tenant Identificador del tenant (TenantSessionContext, TenantId o string no vacío).
+   * @param operation Callback que recibe el cliente transaccional y el contexto de sesión activo.
    * @returns Resultado del callback.
    */
   public async runInTenantContext<T>(
-    tenantId: TenantId | string,
-    operation: (client: DatabaseClient) => Promise<T>
+    tenant: TenantSessionContext | TenantId | string,
+    operation: (client: DatabaseClient, session: TenantSessionContext) => Promise<T>
   ): Promise<T> {
-    const resolvedTenantId = this.resolveTenantId(tenantId);
+    const session = this.resolveSessionContext(tenant);
+    const resolvedTenantId = session.getTenantIdValue();
     const client = await this.pool.connect();
     let hasError = false;
 
@@ -81,7 +83,7 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
 
       let result: T;
       try {
-        result = await operation(client);
+        result = await operation(client, session);
       } catch (err) {
         hasError = true;
         await this.handleRollback(client, err, 'operation');
@@ -108,21 +110,25 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
   }
 
   /**
-   * Normaliza y valida el identificador del tenant.
+   * Normaliza y valida el identificador o contexto del tenant devolviendo un TenantSessionContext.
    */
-  private resolveTenantId(tenantId: TenantId | string): string {
-    if (!tenantId) {
+  private resolveSessionContext(tenant: TenantSessionContext | TenantId | string): TenantSessionContext {
+    if (!tenant) {
       throw new Error('tenantId cannot be empty');
     }
 
-    const raw = typeof tenantId === 'string' ? tenantId : tenantId.getValue();
+    if (tenant instanceof TenantSessionContext) {
+      return tenant;
+    }
+
+    const raw = typeof tenant === 'string' ? tenant : tenant.getValue();
     const trimmed = raw.trim();
 
     if (trimmed.length === 0) {
       throw new Error('tenantId cannot be empty');
     }
 
-    return trimmed;
+    return TenantSessionContext.create(trimmed);
   }
 
   /**

@@ -29,6 +29,13 @@ interface RegisteredClientRow {
 export class PostgresClientApplicationRepository implements ClientApplicationRepositoryPort {
   constructor(private readonly db: DatabaseClient) {}
 
+  /**
+   * Crea una copia del repositorio vinculada a un DatabaseClient específico (e.g. una conexión transaccional con RLS).
+   */
+  public withClient(client: DatabaseClient): PostgresClientApplicationRepository {
+    return new PostgresClientApplicationRepository(client);
+  }
+
   public async save(client: ClientApplication): Promise<void> {
     const sql = `
       INSERT INTO registered_clients (
