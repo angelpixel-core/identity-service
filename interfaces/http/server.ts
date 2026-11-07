@@ -7,6 +7,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
+import { ValidateClientOriginQueryHandler } from '../../src/contexts/identity/application/queries/validate_client_origin/handler';
 import { UserRepositoryPort } from '../../src/contexts/identity/application/ports/user/repository';
 import { HashProviderPort } from '../../src/contexts/identity/application/ports/security/hash_provider';
 import { TokenProviderPort } from '../../src/contexts/identity/application/ports/security/token_provider';
@@ -20,7 +21,12 @@ import { Email } from '../../src/contexts/identity/domain/value_objects/email/va
 import { TenantId } from '../../src/contexts/identity/domain/value_objects/tenant_id/value';
 import { tenantContextMiddleware } from './middlewares/tenant_context_middleware';
 import { createAuthMiddleware } from './middlewares/auth_middleware';
+import { clientAuthorizationMiddleware } from './middlewares/client_authorization_middleware';
+import { ClientApplicationRepositoryPort } from '../../src/contexts/identity/domain/ports/client_application_repository_port';
+import { PostgresClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/postgres_client_repository';
+import { InMemoryClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/in_memory_client_repository';
 import { AuthController } from './rest/v1/identity/controllers';
+import { OAuth2ClientController } from './rest/v1/oauth2/client_controller';
 
 /**
  * Implementación en memoria del repositorio para testing e inicialización desacoplada.
@@ -53,6 +59,7 @@ class InMemoryUserRepository implements UserRepositoryPort {
 
 export interface AppDependencies {
   userRepository?: UserRepositoryPort;
+  clientRepository?: ClientApplicationRepositoryPort;
   hashProvider?: HashProviderPort;
   tokenProvider?: TokenProviderPort;
   cacheProvider?: CacheProviderPort;
@@ -77,6 +84,16 @@ export function createApp(deps?: AppDependencies): Express {
     }
   }
 
+  let clientRepository = deps?.clientRepository;
+  if (!clientRepository) {
+    if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      clientRepository = new PostgresClientApplicationRepository(pool);
+    } else {
+      clientRepository = new InMemoryClientApplicationRepository(true);
+    }
+  }
+
   const hashProvider = deps?.hashProvider ?? new BcryptAdapter(6); // Rondas optimizadas para HTTP
   const jwtSecret = process.env.JWT_SECRET || 'default-jwt-secret-key-12345';
   const tokenProvider = deps?.tokenProvider ?? new JwtTokenAdapter(jwtSecret, '1h');
@@ -95,12 +112,26 @@ export function createApp(deps?: AppDependencies): Express {
     cacheTtlSeconds
   );
 
+  const validateClientOriginHandler = new ValidateClientOriginQueryHandler(
+    clientRepository,
+    cacheProvider,
+    cacheTtlSeconds
+  );
+
   const authController = new AuthController(registerUserHandler, getProfileHandler);
+  const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
   const authMiddleware = createAuthMiddleware(tokenProvider);
 
   // Rutas de Identidad y Autenticación v1
   app.post('/api/v1/auth/register', tenantContextMiddleware, authController.register);
   app.get('/api/v1/auth/me', tenantContextMiddleware, authMiddleware, authController.getProfile);
+
+  // Rutas OAuth2 / Client Registry v1
+  app.post(
+    '/api/v1/oauth2/clients/validate',
+    clientAuthorizationMiddleware(validateClientOriginHandler),
+    oauth2ClientController.validateClientOrigin
+  );
 
   // Manejador global de errores no capturados
   app.use((_err: Error, _req: Request, res: Response, _next: NextFunction) => {
