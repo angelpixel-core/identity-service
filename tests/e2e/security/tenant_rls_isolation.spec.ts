@@ -6,7 +6,7 @@ import { DatabaseClient } from '../../../src/contexts/identity/infrastructure/pe
  */
 interface MockPoolClient extends DatabaseClient {
   query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }>;
-  release(): void;
+  release(err?: any): void;
 }
 
 interface MockConnectionPool {
@@ -20,10 +20,28 @@ describe('E2E Security Spec: Multi-Tenant PostgreSQL RLS & Connection Pool Isola
   let simulatedPool: MockConnectionPool;
   let sharedConnections: MockPoolClient[];
   let activeSessionStates: Map<MockPoolClient, { inTransaction: boolean; tenantId: string | null }>;
+  let availableClients: MockPoolClient[];
+  let waitingQueue: Array<(client: MockPoolClient) => void>;
 
   beforeEach(() => {
     activeSessionStates = new Map();
     sharedConnections = [];
+    availableClients = [];
+    waitingQueue = [];
+
+    const returnClientToPool = (client: MockPoolClient) => {
+      const state = activeSessionStates.get(client);
+      if (state?.inTransaction) {
+        state.inTransaction = false;
+        state.tenantId = null;
+      }
+      if (waitingQueue.length > 0) {
+        const nextCaller = waitingQueue.shift()!;
+        nextCaller(client);
+      } else {
+        availableClients.push(client);
+      }
+    };
 
     // Create a simulated connection pool of 5 reusable physical connections
     for (let i = 0; i < 5; i++) {
@@ -91,26 +109,24 @@ describe('E2E Security Spec: Multi-Tenant PostgreSQL RLS & Connection Pool Isola
           return { rows: [] as T[] };
         }),
         release: jest.fn(() => {
-          // Verify that when released back to pool, transaction is not left open
-          const state = activeSessionStates.get(client);
-          if (state?.inTransaction) {
-            state.inTransaction = false;
-            state.tenantId = null;
-          }
+          returnClientToPool(client);
         }),
       };
 
       activeSessionStates.set(client, { inTransaction: false, tenantId: null });
       sharedConnections.push(client);
+      availableClients.push(client);
     }
 
-    let connectionIndex = 0;
     simulatedPool = {
-      connect: jest.fn(async (): Promise<MockPoolClient> => {
-        // Round-robin reuse of connections to simulate pool recycling
-        const client = sharedConnections[connectionIndex % sharedConnections.length]!;
-        connectionIndex++;
-        return client;
+      connect: jest.fn((): Promise<MockPoolClient> => {
+        if (availableClients.length > 0) {
+          const client = availableClients.shift()!;
+          return Promise.resolve(client);
+        }
+        return new Promise<MockPoolClient>((resolve) => {
+          waitingQueue.push(resolve);
+        });
       }),
       query: jest.fn(async <T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }> => {
         const client = await simulatedPool.connect();
