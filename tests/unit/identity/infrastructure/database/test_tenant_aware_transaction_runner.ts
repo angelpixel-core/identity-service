@@ -1,5 +1,6 @@
 import { TenantAwareTransactionRunner } from '../../../../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 import { TenantId } from '../../../../../src/contexts/identity/domain/value_objects/tenant_id/value';
+import { TenantSessionContext } from '../../../../../src/contexts/identity/domain/value_objects/tenant_session_context/value';
 import { DatabaseClient } from '../../../../../src/contexts/identity/infrastructure/persistence/repositories/user/repository';
 
 interface MockPoolClient extends DatabaseClient {
@@ -59,6 +60,32 @@ describe('Unit: TenantAwareTransactionRunner', () => {
         expect.stringContaining('set_config'),
         ['tenant-vo-org', true]
       );
+    });
+
+    it('should support TenantSessionContext Value Object as tenant parameter', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+      const sessionContext = TenantSessionContext.create('tenant-session-org');
+
+      const result = await runner.runInTenantContext(sessionContext, async () => 'success-context');
+
+      expect(result).toBe('success-context');
+      expect(mockClient.query).toHaveBeenCalledWith(
+        expect.stringContaining('set_config'),
+        ['tenant-session-org', true]
+      );
+    });
+
+    it('should pass active TenantSessionContext as second argument to the operation callback', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+      let receivedSession: TenantSessionContext | undefined;
+
+      await runner.runInTenantContext('tenant-callback-org', async (_client, session) => {
+        receivedSession = session;
+        return 'done';
+      });
+
+      expect(receivedSession).toBeInstanceOf(TenantSessionContext);
+      expect(receivedSession?.getTenantIdValue()).toBe('tenant-callback-org');
     });
 
     it('should trim string tenant identifiers before setting configuration', async () => {
