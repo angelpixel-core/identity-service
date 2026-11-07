@@ -212,7 +212,59 @@ describe('Unit: TenantAwareTransactionRunner', () => {
       ).rejects.toThrow('Serialization failure during commit');
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
-      expect(mockClient.release).toHaveBeenCalledTimes(1);
+      expect(mockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('should log critical error and attach rollbackError when ROLLBACK fails', async () => {
+      const mockLogger = {
+        error: jest.fn(),
+        warn: jest.fn(),
+        info: jest.fn(),
+      };
+      const runner = new TenantAwareTransactionRunner(mockPool as any, mockLogger);
+
+      (mockClient.query as jest.Mock).mockImplementation(async (sql: string) => {
+        const trimmed = sql.trim().toUpperCase();
+        if (trimmed.startsWith('BEGIN') || trimmed.includes('SET_CONFIG')) {
+          return { rows: [] };
+        }
+        if (trimmed.startsWith('ROLLBACK')) {
+          throw new Error('Database connection lost during rollback');
+        }
+        return { rows: [] };
+      });
+
+      const rootError = new Error('Original business domain error');
+
+      let thrownError: any;
+      try {
+        await runner.runInTenantContext('alpha-corp', async () => {
+          throw rootError;
+        });
+      } catch (err) {
+        thrownError = err;
+      }
+
+      expect(thrownError).toBe(rootError);
+      expect(thrownError.rollbackError).toBeDefined();
+      expect(thrownError.rollbackError.message).toBe('Database connection lost during rollback');
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Critical failure executing ROLLBACK'),
+        expect.objectContaining({
+          primaryError: rootError,
+          rollbackError: expect.any(Error),
+        })
+      );
+      // Connection MUST be discarded from pool with truthy error flag
+      expect(mockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('should release connection with false flag on success to allow clean recycling', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+
+      await runner.runInTenantContext('alpha-corp', async () => 'success');
+
+      expect(mockClient.release).toHaveBeenCalledWith(false);
     });
   });
 });
