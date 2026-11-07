@@ -1,8 +1,10 @@
 import { ClientId } from '../../value_objects/client_id/value';
+import { ClientSecret } from '../../value_objects/client_secret/value';
 import { OriginDomain } from '../../value_objects/origin_domain/value';
 import { GrantType } from '../../value_objects/grant_type/value';
 import { Scope } from '../../value_objects/scope/value';
 import { DomainValidationError } from '../../exceptions/user/error';
+import { OAuth2AuthenticationError } from '../../exceptions/oauth2/error';
 
 export type ClientType = 'confidential' | 'public';
 
@@ -251,5 +253,95 @@ export class ClientApplication {
   public deactivate(): void {
     this.active = false;
     this.updatedAt = new Date();
+  }
+
+  /**
+   * Valida la concesión de Client Credentials (RFC 6749 Sección 4.4) verificando que el cliente
+   * esté activo, sea de tipo confidencial, tenga habilitado el flujo y sus credenciales coincidan.
+   */
+  public async validateClientCredentialsGrant(
+    secret: ClientSecret | undefined,
+    secretVerifier: { compare(plainSecret: string, hashedSecret: string): Promise<boolean> }
+  ): Promise<void> {
+    if (!this.active) {
+      throw new OAuth2AuthenticationError(
+        'invalid_client',
+        `Client application "${this.clientId.getValue()}" is currently deactivated`,
+        401
+      );
+    }
+
+    if (this.clientType === 'public') {
+      throw new OAuth2AuthenticationError(
+        'unauthorized_client',
+        'Public clients are not authorized to use client_credentials grant type',
+        400
+      );
+    }
+
+    if (!this.hasGrantType('client_credentials')) {
+      throw new OAuth2AuthenticationError(
+        'unauthorized_client',
+        `Client application "${this.clientId.getValue()}" is not authorized for client_credentials flow`,
+        400
+      );
+    }
+
+    if (!secret) {
+      throw new OAuth2AuthenticationError(
+        'invalid_client',
+        'Client authentication failed: missing client_secret',
+        401
+      );
+    }
+
+    if (!this.clientSecretHash) {
+      throw new OAuth2AuthenticationError(
+        'invalid_client',
+        'Client authentication failed: secret hash is missing from client registration',
+        401
+      );
+    }
+
+    const isMatch = await secretVerifier.compare(secret.getValue(), this.clientSecretHash);
+    if (!isMatch) {
+      throw new OAuth2AuthenticationError(
+        'invalid_client',
+        'Client authentication failed: invalid client credentials',
+        401
+      );
+    }
+  }
+
+  /**
+   * Filtra y autoriza scopes solicitados contra la lista de scopes homologados para este cliente.
+   * Si no se especifican scopes, se autorizan todos los scopes registrados por defecto.
+   */
+  public filterAuthorizedScopes(requestedScopes?: string[]): {
+    authorized: boolean;
+    grantedScopes: string[];
+    unauthorizedScope?: string;
+  } {
+    if (!requestedScopes || requestedScopes.length === 0) {
+      return {
+        authorized: true,
+        grantedScopes: this.getScopes(),
+      };
+    }
+
+    for (const scope of requestedScopes) {
+      if (!this.hasScope(scope)) {
+        return {
+          authorized: false,
+          grantedScopes: [],
+          unauthorizedScope: scope,
+        };
+      }
+    }
+
+    return {
+      authorized: true,
+      grantedScopes: [...requestedScopes],
+    };
   }
 }

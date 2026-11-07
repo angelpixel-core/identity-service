@@ -32,8 +32,9 @@ export class JwtTokenAdapter implements TokenProviderPort {
       jwt.sign(
         {
           userId: claims.userId,
-          email: claims.email,
-          tenantId: claims.tenantId,
+          ...(claims.email ? { email: claims.email } : {}),
+          ...(claims.tenantId ? { tenantId: claims.tenantId } : {}),
+          ...(claims.claims || {}),
         },
         this.secretKey,
         options,

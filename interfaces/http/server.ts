@@ -8,12 +8,14 @@ import { Pool } from 'pg';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
 import { ValidateClientOriginQueryHandler } from '../../src/contexts/identity/application/queries/validate_client_origin/handler';
+import { AuthenticateClientM2MCommandHandler } from '../../src/contexts/identity/application/commands/authenticate_client_m2m/handler';
 import { UserRepositoryPort } from '../../src/contexts/identity/application/ports/user/repository';
 import { HashProviderPort } from '../../src/contexts/identity/application/ports/security/hash_provider';
 import { TokenProviderPort } from '../../src/contexts/identity/application/ports/security/token_provider';
 import { CacheProviderPort } from '../../src/contexts/identity/application/ports/cache/cache_provider';
 import { BcryptAdapter } from '../../src/contexts/identity/infrastructure/security/bcrypt_adapter';
 import { JwtTokenAdapter } from '../../src/contexts/identity/infrastructure/security/jwt_adapter';
+import { InMemorySecurityAuditLogger } from '../../src/contexts/identity/infrastructure/logging/memory_security_audit_logger';
 import { MemoryCacheAdapter } from '../../src/contexts/identity/infrastructure/cache/memory_cache_adapter';
 import { PostgresUserRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/user/repository';
 import { User } from '../../src/contexts/identity/domain/entities/user/aggregate';
@@ -27,6 +29,7 @@ import { PostgresClientApplicationRepository } from '../../src/contexts/identity
 import { InMemoryClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/in_memory_client_repository';
 import { AuthController } from './rest/v1/identity/controllers';
 import { OAuth2ClientController } from './rest/v1/oauth2/client_controller';
+import { OAuth2TokenController } from './rest/v1/oauth2/token_controller';
 
 /**
  * Implementación en memoria del repositorio para testing e inicialización desacoplada.
@@ -73,6 +76,7 @@ export function createApp(deps?: AppDependencies): Express {
   const app = express();
 
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   let userRepository = deps?.userRepository;
   if (!userRepository) {
@@ -118,8 +122,19 @@ export function createApp(deps?: AppDependencies): Express {
     cacheTtlSeconds
   );
 
+  const auditLogger = new InMemorySecurityAuditLogger();
+
+  const authenticateClientM2MHandler = new AuthenticateClientM2MCommandHandler(
+    clientRepository,
+    hashProvider,
+    tokenProvider,
+    auditLogger,
+    3600
+  );
+
   const authController = new AuthController(registerUserHandler, getProfileHandler);
   const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
+  const oauth2TokenController = new OAuth2TokenController(authenticateClientM2MHandler);
   const authMiddleware = createAuthMiddleware(tokenProvider);
 
   // Rutas de Identidad y Autenticación v1
@@ -132,6 +147,10 @@ export function createApp(deps?: AppDependencies): Express {
     clientAuthorizationMiddleware(validateClientOriginHandler),
     oauth2ClientController.validateClientOrigin
   );
+
+  // Rutas OAuth2 Token (RFC 6749)
+  app.post('/api/v1/oauth2/token', oauth2TokenController.issueToken);
+  app.post('/oauth2/token', oauth2TokenController.issueToken);
 
   // Manejador global de errores no capturados
   app.use((_err: Error, _req: Request, res: Response, _next: NextFunction) => {

@@ -3,8 +3,9 @@
  */
 export interface AuthTokenClaims {
   readonly userId: string;
-  readonly email: string;
-  readonly tenantId: string;
+  readonly email?: string;
+  readonly tenantId?: string;
+  readonly claims?: Record<string, unknown>;
 }
 
 /**
