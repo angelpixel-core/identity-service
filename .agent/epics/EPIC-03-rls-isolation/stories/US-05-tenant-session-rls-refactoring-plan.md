@@ -92,5 +92,5 @@ flowchart TD
 - [x] **Paso 2:** `PostgresUserRepository.withClient()` implementado y testeado permitiendo vincular repositorios a conexiones transaccionales RLS.
 - [x] **Paso 3:** `TenantAwareTransactionRunner` soporta Savepoints y previene violaciones cruzadas con `CrossTenantContextViolationError`; migración DDL 007 enriquecida con helper PL/pgSQL.
 - [x] **Paso 4:** Servidor Express y contenedor de dependencias integran el runner transaccional con soporte completo en TypeScript.
-- [ ] **Paso 5:** Artículo `ARTICLE-05-B` redactado, matriz actualizada y certificación total de la pirámide de pruebas (100% verde).
+- [x] **Paso 5:** Artículo `ARTICLE-05-B` redactado, matriz actualizada y certificación total de la pirámide de pruebas (100% verde).
 
