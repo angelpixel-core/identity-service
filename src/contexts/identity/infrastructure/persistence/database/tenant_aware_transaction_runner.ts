@@ -4,9 +4,10 @@ import { DatabaseClient } from '../repositories/user/repository';
 
 /**
  * Contrato de cliente de conexión obtenido del pool que incluye método de liberación.
+ * En pg, pasar un valor truthy a release(err) descarta y destruye la conexión física del pool.
  */
 export interface PoolClientWithRelease extends DatabaseClient {
-  release(): void;
+  release(err?: any): void;
 }
 
 /**
@@ -18,6 +19,15 @@ export interface ConnectionPool {
 }
 
 /**
+ * Contrato genérico de logging para observabilidad de infraestructura.
+ */
+export interface TransactionLogger {
+  error(message: string, ...meta: any[]): void;
+  warn?(message: string, ...meta: any[]): void;
+  info?(message: string, ...meta: any[]): void;
+}
+
+/**
  * Secondary Adapter: TenantAwareTransactionRunner
  * Implementa TenantTransactionRunnerPort gestionando transacciones acotadas a un tenant.
  *
@@ -26,9 +36,14 @@ export interface ConnectionPool {
  * 2. El parámetro transaccional expira de forma nativa en PostgreSQL al terminar la transacción (`COMMIT`/`ROLLBACK`).
  * 3. Garantiza que la conexión física regresa al pool totalmente higienizada sin estado residual.
  * 4. Aplica Fail-Closed: las consultas sin este contexto devuelven 0 filas en tablas con RLS.
+ * 5. Prevención de intoxicación de pool: si ocurre un fallo en rollback o transacción, `release(true)` descarta la conexión.
+ * 6. Observabilidad y encadenamiento: los fallos en rollback se registran en el logger y se anexan a la excepción raíz.
  */
 export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort {
-  constructor(private readonly pool: ConnectionPool) { }
+  constructor(
+    private readonly pool: ConnectionPool,
+    private readonly logger: TransactionLogger = console
+  ) {}
 
   /**
    * Ejecuta una función dentro de un bloque transaccional asociado al contexto del tenant.
@@ -42,11 +57,16 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
     operation: (client: DatabaseClient) => Promise<T>
   ): Promise<T> {
     const resolvedTenantId = this.resolveTenantId(tenantId);
-
     const client = await this.pool.connect();
+    let hasError = false;
 
     try {
-      await client.query('BEGIN');
+      try {
+        await client.query('BEGIN');
+      } catch (err) {
+        hasError = true;
+        throw err;
+      }
 
       try {
         await client.query("SELECT set_config('app.current_tenant_id', $1, true)", [
@@ -54,7 +74,8 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
           true,
         ]);
       } catch (err) {
-        await this.safeRollback(client);
+        hasError = true;
+        await this.handleRollback(client, err, 'set_config');
         throw err;
       }
 
@@ -62,20 +83,27 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
       try {
         result = await operation(client);
       } catch (err) {
-        await this.safeRollback(client);
+        hasError = true;
+        await this.handleRollback(client, err, 'operation');
         throw err;
       }
 
       try {
         await client.query('COMMIT');
       } catch (err) {
-        await this.safeRollback(client);
+        hasError = true;
+        await this.handleRollback(client, err, 'commit');
         throw err;
       }
 
       return result;
+    } catch (rootError) {
+      hasError = true;
+      throw rootError;
     } finally {
-      client.release();
+      if (typeof client.release === 'function') {
+        client.release(hasError);
+      }
     }
   }
 
@@ -98,13 +126,24 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
   }
 
   /**
-   * Ejecuta ROLLBACK de forma segura ignorando errores secundarios para no ocultar la excepción raíz.
+   * Ejecuta ROLLBACK registrando fallos en observabilidad y encadenando el error a la excepción primaria.
    */
-  private async safeRollback(client: DatabaseClient): Promise<void> {
+  private async handleRollback(
+    client: DatabaseClient,
+    primaryError: unknown,
+    stage: 'set_config' | 'operation' | 'commit'
+  ): Promise<void> {
     try {
       await client.query('ROLLBACK');
-    } catch {
-      // Ignorar fallo de rollback para propagar el error original de negocio
+    } catch (rollbackError) {
+      this.logger.error(
+        `[TenantAwareTransactionRunner] Critical failure executing ROLLBACK during stage '${stage}'. Discarding connection from pool.`,
+        { primaryError, rollbackError }
+      );
+
+      if (primaryError instanceof Error && rollbackError instanceof Error) {
+        (primaryError as any).rollbackError = rollbackError;
+      }
     }
   }
 }
