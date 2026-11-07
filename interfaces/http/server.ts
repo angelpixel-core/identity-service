@@ -27,6 +27,8 @@ import { clientAuthorizationMiddleware } from './middlewares/client_authorizatio
 import { ClientApplicationRepositoryPort } from '../../src/contexts/identity/domain/ports/client_application_repository_port';
 import { PostgresClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/postgres_client_repository';
 import { InMemoryClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/in_memory_client_repository';
+import { TenantTransactionRunnerPort } from '../../src/contexts/identity/application/ports/database/tenant_transaction_runner';
+import { TenantAwareTransactionRunner } from '../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 import { AuthController } from './rest/v1/identity/controllers';
 import { OAuth2ClientController } from './rest/v1/oauth2/client_controller';
 import { OAuth2TokenController } from './rest/v1/oauth2/token_controller';
@@ -66,6 +68,7 @@ export interface AppDependencies {
   hashProvider?: HashProviderPort;
   tokenProvider?: TokenProviderPort;
   cacheProvider?: CacheProviderPort;
+  transactionRunner?: TenantTransactionRunnerPort;
 }
 
 /**
@@ -78,11 +81,18 @@ export function createApp(deps?: AppDependencies): Express {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  let pool: Pool | null = null;
+  const getPool = (): Pool => {
+    if (!pool) {
+      pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    }
+    return pool;
+  };
+
   let userRepository = deps?.userRepository;
   if (!userRepository) {
     if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-      userRepository = new PostgresUserRepository(pool);
+      userRepository = new PostgresUserRepository(getPool());
     } else {
       userRepository = new InMemoryUserRepository();
     }
@@ -91,11 +101,24 @@ export function createApp(deps?: AppDependencies): Express {
   let clientRepository = deps?.clientRepository;
   if (!clientRepository) {
     if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-      clientRepository = new PostgresClientApplicationRepository(pool);
+      clientRepository = new PostgresClientApplicationRepository(getPool());
     } else {
       clientRepository = new InMemoryClientApplicationRepository(true);
     }
+  }
+
+  let transactionRunner = deps?.transactionRunner;
+  if (!transactionRunner) {
+    if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
+      transactionRunner = new TenantAwareTransactionRunner(getPool());
+    }
+  }
+
+  // Registrar dependencias e infraestructura en locals para extensibilidad del contenedor
+  app.locals.userRepository = userRepository;
+  app.locals.clientRepository = clientRepository;
+  if (transactionRunner) {
+    app.locals.transactionRunner = transactionRunner;
   }
 
   const hashProvider = deps?.hashProvider ?? new BcryptAdapter(6); // Rondas optimizadas para HTTP

@@ -20,6 +20,13 @@ export class PostgresUserRepository implements UserRepositoryPort {
   constructor(private readonly db: DatabaseClient) {}
 
   /**
+   * Crea una copia del repositorio vinculada a un DatabaseClient específico (e.g. una conexión transaccional con RLS).
+   */
+  public withClient(client: DatabaseClient): PostgresUserRepository {
+    return new PostgresUserRepository(client);
+  }
+
+  /**
    * Persiste o actualiza un agregado User en la base de datos PostgreSQL.
    */
   public async save(user: User): Promise<void> {

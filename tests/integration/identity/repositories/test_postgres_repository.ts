@@ -129,4 +129,23 @@ describe('Infrastructure Persistence: PostgresUserRepository', () => {
       expect(foundUser).toBeNull();
     });
   });
+
+  describe('withClient (Transactional Connection Binding)', () => {
+    it('should return a new PostgresUserRepository instance bound to the provided transactional client', async () => {
+      const transactionalMockClient = {
+        query: jest.fn().mockResolvedValue({ rows: [rawUserRow] }),
+      };
+
+      const contextualRepo = (repository as PostgresUserRepository).withClient(transactionalMockClient);
+
+      expect(contextualRepo).toBeInstanceOf(PostgresUserRepository);
+      expect(contextualRepo).not.toBe(repository);
+
+      const found = await contextualRepo.findById(validUser.getId(), tenantAcme);
+
+      expect(found).not.toBeNull();
+      expect(transactionalMockClient.query).toHaveBeenCalledTimes(1);
+      expect(mockDbClient.query).not.toHaveBeenCalled();
+    });
+  });
 });
