@@ -310,31 +310,27 @@ Para microservicios y workers satélites desarrollados en TypeScript / Node.js, 
 
 ### Script Demostrativo de Caché y Auto-Renovación
 
-Puedes ejecutar una prueba rápida con el siguiente comando en la terminal:
+Ejecuta el script dedicado de demostración empaquetado en el proyecto:
 
 ```bash
-npx tsx -e "
-import { OAuth2M2MClient } from './interfaces/http/client/oauth2_m2m_client';
+npm run demo:m2m
+```
 
-async function main() {
-  const client = new OAuth2M2MClient({ baseUrl: 'http://localhost:4000' });
-  const credentials = {
-    clientId: 'm2m-service-app',
-    clientSecret: 'ValidSecret123!_SuperSecureSecretForTesting_2026',
-    scope: 'identity:read'
-  };
+> [!NOTE]
+> Este script se encuentra implementado en [`scripts/demo_m2m_client.ts`](../../scripts/demo_m2m_client.ts). Permite configurar opcionalmente una URL base alternativa mediante la variable de entorno `IDP_BASE_URL` (por defecto `http://localhost:4000`).
 
-  console.log('1. Primera solicitud (Petición HTTP real hacia /oauth2/token)...');
-  const token1 = await client.getValidToken(credentials);
-  console.log('Token obtenido (expires_in:', token1.expires_in, 's)');
+**Salida Esperada:**
+```text
+Conectando con Identity Provider en http://localhost:4000...
 
-  console.log('\n2. Segunda solicitud consecutiva (Smart Cache Hit en memoria)...');
-  const token2 = await client.getValidToken(credentials);
-  console.log('¿Mismo token en caché?', token1.access_token === token2.access_token ? 'SÍ (Cache Hit)' : 'NO');
-}
+1. Primera solicitud (Petición HTTP real hacia /api/v1/oauth2/token)...
+✓ Token obtenido exitosamente (expira en: 3600s)
+  Token: eyJhbGciOiJIUzI1NiIsInR5cCI6Ik...
 
-main().catch(console.error);
-"
+2. Segunda solicitud consecutiva inmediata (Smart Cache Hit en memoria)...
+✓ ¿Mismo token reutilizado desde caché?: SÍ (Cache Hit)
+
+¡Demostración de OAuth2M2MClient completada con éxito!
 ```
 
 ---
@@ -353,3 +349,4 @@ npm run test:e2e -- tests/e2e/m2m/client_credentials_flow.spec.ts
 # Capa 2: Integración de Endpoints HTTP
 npm run test:integration -- tests/integration/identity/interfaces/test_oauth2_token_m2m.ts
 ```
+
