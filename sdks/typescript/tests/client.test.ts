@@ -116,6 +116,36 @@ describe('SDK Client: IdentityServiceClient & Domain Resources', () => {
         })
       ).rejects.toThrow('El transporte HTTP actual no implementa el método GET');
     });
+
+    it('should call GET /api/v1/users/:userId with Bearer token and x-tenant-id header', async () => {
+      getMock.mockResolvedValueOnce({
+        status: 200,
+        data: {
+          id: 'user-999',
+          email: 'exec@alpha.com',
+          tenantId: 'alpha-corp',
+          roles: ['user'],
+        },
+      });
+
+      const client = new IdentityServiceClient({ transport: mockTransport });
+      const profile = await client.users.getUserById({
+        userId: 'user-999',
+        token: 'valid-jwt-token',
+        tenantId: 'alpha-corp',
+      });
+
+      expect(profile.id).toBe('user-999');
+      expect(getMock).toHaveBeenCalledWith(
+        '/api/v1/users/user-999',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer valid-jwt-token',
+            'x-tenant-id': 'alpha-corp',
+          }),
+        })
+      );
+    });
   });
 
   describe('OAuth2 Resource: oauth2.validateOrigin', () => {
