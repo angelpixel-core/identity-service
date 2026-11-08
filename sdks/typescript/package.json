@@ -1,0 +1,22 @@
+{
+  "name": "@angelpixel/identity-sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for AngelPixel Identity Service",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "keywords": [
+    "identity",
+    "auth",
+    "oauth2",
+    "sdk",
+    "typescript",
+    "angelpixel"
+  ],
+  "author": "AngelPixel Engineering",
+  "license": "Apache-2.0"
+}
+
