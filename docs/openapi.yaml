@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
-  title: AngelSolutions Identity Service API
+  title: AngelPixel Identity Service API
   description: |
     Enterprise Multi-Tenant Identity & Access Management (IdP) Service.
     Implements RFC 6749 (OAuth 2.0 Authorization Framework), RFC 7519 (JSON Web Tokens),
     Dynamic Client Registry and Multi-Tenant Isolation.
   version: 0.1.0
   contact:
-    name: AngelSolutions Platform Engineering
-    url: https://angelsolutions.io
-    email: contact@angelsolutions.io
+    name: AngelPixel Platform Engineering
+    url: https://angelpixel.io
+    email: contact@angelpixel.io
 
 servers:
   - url: http://localhost:4000
@@ -361,7 +361,7 @@ components:
           example: portal-web
         clientName:
           type: string
-          example: AngelSolutions Web Portal
+          example: AngelPixel Web Portal
         clientType:
           type: string
           enum: [public, confidential]
@@ -370,7 +370,7 @@ components:
           type: array
           items:
             type: string
-          example: ["https://portal.angelsolutions.io"]
+          example: ["https://portal.angelpixel.io"]
         scopes:
           type: array
           items:
