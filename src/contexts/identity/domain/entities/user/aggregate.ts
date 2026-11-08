@@ -25,7 +25,7 @@ export interface UserReconstituteProps {
  */
 export class User {
   private readonly id: string;
-  private readonly email: Email;
+  private email: Email;
   private readonly tenantId: TenantId;
   private passwordHash: string;
   private readonly createdAt: Date;
@@ -89,6 +89,15 @@ export class User {
     }
 
     this.passwordHash = newPasswordHash.trim();
+    this.updatedAt = new Date();
+  }
+
+  public updateEmail(newEmail: Email): void {
+    if (!newEmail) {
+      throw new DomainValidationError('New email must be provided');
+    }
+
+    this.email = newEmail;
     this.updatedAt = new Date();
   }
 

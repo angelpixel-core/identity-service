@@ -1,10 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { GetUserProfileQueryHandler } from '../../../../../src/contexts/identity/application/queries/get_user_profile/handler';
-import { UserRepositoryPort } from '../../../../../src/contexts/identity/application/ports/user/repository';
-import { CacheProviderPort } from '../../../../../src/contexts/identity/application/ports/cache/cache_provider';
-import { TenantId } from '../../../../../src/contexts/identity/domain/value_objects/tenant_id/value';
-import { Email } from '../../../../../src/contexts/identity/domain/value_objects/email/value';
-import { User } from '../../../../../src/contexts/identity/domain/entities/user/aggregate';
+import { UpdateUserProfileCommandHandler } from '../../../../../src/contexts/identity/application/commands/update_user_profile/handler';
 import { DomainValidationError } from '../../../../../src/contexts/identity/domain/exceptions/user/error';
 
 /**
@@ -15,8 +11,7 @@ import { DomainValidationError } from '../../../../../src/contexts/identity/doma
 export class UserController {
   constructor(
     private readonly getProfileHandler: GetUserProfileQueryHandler,
-    private readonly userRepository: UserRepositoryPort,
-    private readonly cacheProvider?: CacheProviderPort
+    private readonly updateProfileHandler: UpdateUserProfileCommandHandler
   ) {}
 
   public getUserById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -54,44 +49,20 @@ export class UserController {
         return;
       }
 
-      const tenantId = TenantId.create(tenantIdStr);
-      const existingUser = await this.userRepository.findById(targetUserId, tenantId);
-
-      if (!existingUser) {
-        res.status(404).json({ error: 'User not found' });
-        return;
-      }
-
-      const newEmail = req.body?.email
-        ? Email.create(String(req.body.email))
-        : existingUser.getEmail();
-
-      const updatedUser = User.reconstitute({
-        id: existingUser.getId(),
-        email: newEmail,
-        passwordHash: existingUser.getPasswordHash(),
-        tenantId: existingUser.getTenantId(),
-        createdAt: existingUser.getCreatedAt(),
-        updatedAt: new Date(),
+      const updatedProfile = await this.updateProfileHandler.execute({
+        userId: targetUserId,
+        tenantId: tenantIdStr,
+        email: req.body?.email,
       });
 
-      await this.userRepository.save(updatedUser);
-
-      if (this.cacheProvider) {
-        const cacheKey = `user_profile:${tenantIdStr}:${targetUserId}`;
-        await this.cacheProvider.delete(cacheKey);
-      }
-
-      res.status(200).json({
-        id: updatedUser.getId(),
-        email: updatedUser.getEmail().getValue(),
-        tenantId: updatedUser.getTenantId().getValue(),
-        createdAt: updatedUser.getCreatedAt(),
-        updatedAt: updatedUser.getUpdatedAt(),
-      });
-    } catch (error) {
+      res.status(200).json(updatedProfile);
+    } catch (error: any) {
       if (error instanceof DomainValidationError) {
         res.status(400).json({ error: error.message });
+        return;
+      }
+      if (error?.message?.includes('not found')) {
+        res.status(404).json({ error: 'User not found' });
         return;
       }
       next(error);

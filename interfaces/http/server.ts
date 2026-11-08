@@ -10,6 +10,7 @@ import swaggerUi from 'swagger-ui-express';
 import yaml from 'yaml';
 import { Pool } from 'pg';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
+import { UpdateUserProfileCommandHandler } from '../../src/contexts/identity/application/commands/update_user_profile/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
 import { ValidateClientOriginQueryHandler } from '../../src/contexts/identity/application/queries/validate_client_origin/handler';
 import { AuthenticateClientM2MCommandHandler } from '../../src/contexts/identity/application/commands/authenticate_client_m2m/handler';
@@ -164,8 +165,9 @@ export function createApp(deps?: AppDependencies): Express {
     3600
   );
 
+  const updateUserProfileHandler = new UpdateUserProfileCommandHandler(userRepository, cacheProvider);
   const authController = new AuthController(registerUserHandler, getProfileHandler);
-  const userController = new UserController(getProfileHandler, userRepository, cacheProvider);
+  const userController = new UserController(getProfileHandler, updateUserProfileHandler);
   const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
   const oauth2TokenController = new OAuth2TokenController(authenticateClientM2MHandler);
   const authMiddleware = createAuthMiddleware(tokenProvider, auditLogger);
