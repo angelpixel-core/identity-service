@@ -58,13 +58,27 @@ INSERT INTO registered_clients (
     '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
     'Machine to Machine Service Worker',
     'confidential',
-    ARRAY[]::TEXT[],
+    ARRAY['https://m2m.angelsolutions.io'],
     ARRAY[]::TEXT[],
     ARRAY['client_credentials'],
     ARRAY['identity:read', 'identity:write', 'audit:log'],
     true
+),
+(
+    'client-seed-4',
+    'deactivated-worker',
+    '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
+    'Deactivated Background Worker',
+    'confidential',
+    ARRAY['https://worker.angelsolutions.io'],
+    ARRAY[]::TEXT[],
+    ARRAY['client_credentials'],
+    ARRAY['identity:read'],
+    false
 )
-ON CONFLICT (client_id) DO NOTHING;
+ON CONFLICT (client_id) DO UPDATE SET
+    allowed_origins = EXCLUDED.allowed_origins,
+    client_secret_hash = EXCLUDED.client_secret_hash;
 
 \c identity_test_db;
 
@@ -120,11 +134,25 @@ INSERT INTO registered_clients (
     '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
     'Machine to Machine Service Worker',
     'confidential',
-    ARRAY[]::TEXT[],
+    ARRAY['https://m2m.angelsolutions.io'],
     ARRAY[]::TEXT[],
     ARRAY['client_credentials'],
     ARRAY['identity:read', 'identity:write', 'audit:log'],
     true
+),
+(
+    'client-seed-4',
+    'deactivated-worker',
+    '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
+    'Deactivated Background Worker',
+    'confidential',
+    ARRAY['https://worker.angelsolutions.io'],
+    ARRAY[]::TEXT[],
+    ARRAY['client_credentials'],
+    ARRAY['identity:read'],
+    false
 )
-ON CONFLICT (client_id) DO NOTHING;
+ON CONFLICT (client_id) DO UPDATE SET
+    allowed_origins = EXCLUDED.allowed_origins,
+    client_secret_hash = EXCLUDED.client_secret_hash;
 
