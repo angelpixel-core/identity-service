@@ -1,6 +1,7 @@
 export type SecurityAuditEventType =
   | 'client_authenticated'
-  | 'client_authentication_failed';
+  | 'client_authentication_failed'
+  | 'cross_tenant_violation';
 
 /**
  * Evento estructurado de auditoría de seguridad para operaciones OAuth2 y autenticación.
