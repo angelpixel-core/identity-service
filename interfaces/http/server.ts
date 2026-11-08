@@ -3,7 +3,11 @@ if (process.env.NODE_ENV !== 'test') {
   dotenv.config();
 }
 
+import fs from 'fs';
+import path from 'path';
 import express, { Express, Request, Response, NextFunction } from 'express';
+import swaggerUi from 'swagger-ui-express';
+import yaml from 'yaml';
 import { Pool } from 'pg';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
@@ -174,6 +178,30 @@ export function createApp(deps?: AppDependencies): Express {
   // Rutas OAuth2 Token (RFC 6749)
   app.post('/api/v1/oauth2/token', oauth2TokenController.issueToken);
   app.post('/oauth2/token', oauth2TokenController.issueToken);
+
+  // Cargar especificación OpenAPI declarativa y montar Swagger UI
+  const openApiYamlPath = path.resolve(__dirname, '../../docs/openapi.yaml');
+  let openApiSpec: any = null;
+  if (fs.existsSync(openApiYamlPath)) {
+    try {
+      const openApiContent = fs.readFileSync(openApiYamlPath, 'utf8');
+      openApiSpec = yaml.parse(openApiContent);
+    } catch (e) {
+      console.error('Failed to parse openapi.yaml:', e);
+    }
+  }
+
+  if (openApiSpec) {
+    app.get('/api/docs/openapi.json', (_req: Request, res: Response) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.json(openApiSpec);
+    });
+    app.get('/api/docs/openapi.yaml', (_req: Request, res: Response) => {
+      res.setHeader('Content-Type', 'text/yaml');
+      res.sendFile(openApiYamlPath);
+    });
+    app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec));
+  }
 
   // Manejador global de errores no capturados
   app.use((_err: Error, _req: Request, res: Response, _next: NextFunction) => {
