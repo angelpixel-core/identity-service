@@ -7,17 +7,17 @@ import { OAuth2AuthenticationError } from '../../../../../src/contexts/identity/
 
 describe('Aggregate Root: ClientApplication', () => {
   const validClientId = ClientId.create('portal-web');
-  const validOrigin = OriginDomain.create('https://portal.angelsolutions.io');
+  const validOrigin = OriginDomain.create('https://portal.angelpixel.io');
 
   describe('Creation of Public Client Application', () => {
     it('should successfully create a public client without clientSecretHash', () => {
       const client = ClientApplication.create({
         id: 'client-1',
         clientId: validClientId,
-        clientName: 'AngelSolutions Web Portal',
+        clientName: 'AngelPixel Web Portal',
         clientType: 'public',
         allowedOrigins: [validOrigin],
-        redirectUris: ['https://portal.angelsolutions.io/callback'],
+        redirectUris: ['https://portal.angelpixel.io/callback'],
         allowedGrantTypes: ['authorization_code'],
         scopes: ['openid', 'profile'],
         isActive: true,
@@ -40,7 +40,7 @@ describe('Aggregate Root: ClientApplication', () => {
           clientType: 'public',
           clientSecretHash: 'forbidden-secret-hash',
           allowedOrigins: [validOrigin],
-          redirectUris: ['https://portal.angelsolutions.io/callback'],
+          redirectUris: ['https://portal.angelpixel.io/callback'],
           allowedGrantTypes: ['authorization_code'],
           scopes: ['openid'],
           isActive: true,
@@ -57,8 +57,8 @@ describe('Aggregate Root: ClientApplication', () => {
         clientName: 'Order Processing Service',
         clientType: 'confidential',
         clientSecretHash: '$2b$10$hashedsecretvalue12345678901234567890',
-        allowedOrigins: [OriginDomain.create('https://api.angelsolutions.io')],
-        redirectUris: ['https://api.angelsolutions.io/oauth2/callback'],
+        allowedOrigins: [OriginDomain.create('https://api.angelpixel.io')],
+        redirectUris: ['https://api.angelpixel.io/oauth2/callback'],
         allowedGrantTypes: ['client_credentials'],
         scopes: ['orders:read', 'orders:write'],
         isActive: true,
@@ -76,7 +76,7 @@ describe('Aggregate Root: ClientApplication', () => {
           clientName: 'Order Processing Service',
           clientType: 'confidential',
           allowedOrigins: [validOrigin],
-          redirectUris: ['https://api.angelsolutions.io/callback'],
+          redirectUris: ['https://api.angelpixel.io/callback'],
           allowedGrantTypes: ['client_credentials'],
           scopes: ['orders:read'],
           isActive: true,
@@ -94,7 +94,7 @@ describe('Aggregate Root: ClientApplication', () => {
           clientName: 'Web Portal with no origins',
           clientType: 'public',
           allowedOrigins: [],
-          redirectUris: ['https://portal.angelsolutions.io/callback'],
+          redirectUris: ['https://portal.angelpixel.io/callback'],
           allowedGrantTypes: ['authorization_code'],
           scopes: ['openid'],
           isActive: true,
@@ -106,20 +106,20 @@ describe('Aggregate Root: ClientApplication', () => {
       const client = ClientApplication.create({
         id: 'client-1',
         clientId: validClientId,
-        clientName: 'AngelSolutions Web Portal',
+        clientName: 'AngelPixel Web Portal',
         clientType: 'public',
         allowedOrigins: [
           validOrigin,
-          OriginDomain.create('https://beta.angelsolutions.io'),
+          OriginDomain.create('https://beta.angelpixel.io'),
         ],
-        redirectUris: ['https://portal.angelsolutions.io/callback'],
+        redirectUris: ['https://portal.angelpixel.io/callback'],
         allowedGrantTypes: ['authorization_code'],
         scopes: ['openid'],
         isActive: true,
       });
 
-      expect(client.isOriginAllowed('https://portal.angelsolutions.io')).toBe(true);
-      expect(client.isOriginAllowed('https://beta.angelsolutions.io/')).toBe(true);
+      expect(client.isOriginAllowed('https://portal.angelpixel.io')).toBe(true);
+      expect(client.isOriginAllowed('https://beta.angelpixel.io/')).toBe(true);
       expect(client.isOriginAllowed('https://malicious-site.com')).toBe(false);
     });
 
@@ -127,10 +127,10 @@ describe('Aggregate Root: ClientApplication', () => {
       const client = ClientApplication.create({
         id: 'client-1',
         clientId: validClientId,
-        clientName: 'AngelSolutions Web Portal',
+        clientName: 'AngelPixel Web Portal',
         clientType: 'public',
         allowedOrigins: [validOrigin],
-        redirectUris: ['https://portal.angelsolutions.io/callback'],
+        redirectUris: ['https://portal.angelpixel.io/callback'],
         allowedGrantTypes: ['authorization_code'],
         scopes: ['openid'],
         isActive: true,
@@ -200,7 +200,7 @@ describe('Aggregate Root: ClientApplication', () => {
         clientName: 'Public Web App',
         clientType: 'public',
         allowedOrigins: [validOrigin],
-        redirectUris: ['https://portal.angelsolutions.io/callback'],
+        redirectUris: ['https://portal.angelpixel.io/callback'],
         allowedGrantTypes: ['authorization_code'],
         scopes: ['openid'],
         isActive: true,

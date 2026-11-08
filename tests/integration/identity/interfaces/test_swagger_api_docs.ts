@@ -18,7 +18,7 @@ describe('Integration API: OpenAPI Specification & Swagger UI (/api/docs)', () =
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.body).toHaveProperty('openapi', '3.1.0');
-    expect(response.body.info).toHaveProperty('title', 'AngelSolutions Identity Service API');
+    expect(response.body.info).toHaveProperty('title', 'AngelPixel Identity Service API');
     expect(response.body.paths).toHaveProperty('/api/v1/auth/register');
     expect(response.body.paths).toHaveProperty('/api/v1/auth/me');
     expect(response.body.paths).toHaveProperty('/api/v1/oauth2/clients/validate');
@@ -32,6 +32,7 @@ describe('Integration API: OpenAPI Specification & Swagger UI (/api/docs)', () =
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toMatch(/text\/yaml/);
     expect(response.text).toContain('openapi: 3.1.0');
-    expect(response.text).toContain('AngelSolutions Identity Service API');
+    expect(response.text).toContain('AngelPixel Identity Service API');
   });
 });
+

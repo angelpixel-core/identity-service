@@ -24,7 +24,7 @@ describe('Feature: Dynamic Client Registry and Origin Validation', () => {
     it('should accept the request when origin matches allowed_origins and client is active', async () => {
       const response = await request(server)
         .post('/api/v1/oauth2/clients/validate')
-        .set('Origin', 'https://portal.angelsolutions.io')
+        .set('Origin', 'https://portal.angelpixel.io')
         .send({
           clientId: 'portal-web',
         });
@@ -55,7 +55,7 @@ describe('Feature: Dynamic Client Registry and Origin Validation', () => {
     it('should reject request with HTTP 401 Unauthorized when client is deactivated', async () => {
       const response = await request(server)
         .post('/api/v1/oauth2/clients/validate')
-        .set('Origin', 'https://legacy.angelsolutions.io')
+        .set('Origin', 'https://legacy.angelpixel.io')
         .send({
           clientId: 'legacy-app',
         });

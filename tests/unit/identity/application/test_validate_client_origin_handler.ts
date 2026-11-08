@@ -20,8 +20,8 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
     clientSecretHash: '$2b$10$supersecrethashvalue123456',
     clientName: 'Harvis Core Backend',
     clientType: 'confidential',
-    allowedOrigins: [OriginDomain.create('https://harvis.angelsolutions.io')],
-    redirectUris: ['https://harvis.angelsolutions.io/api/auth/callback'],
+    allowedOrigins: [OriginDomain.create('https://harvis.angelpixel.io')],
+    redirectUris: ['https://harvis.angelpixel.io/api/auth/callback'],
     allowedGrantTypes: ['authorization_code', 'refresh_token', 'client_credentials'],
     scopes: ['openid', 'profile', 'email', 'identity:read'],
     isActive: true,
@@ -33,10 +33,10 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
     clientName: 'Portfolio Web SPA',
     clientType: 'public',
     allowedOrigins: [
-      OriginDomain.create('https://portfolio.angelsolutions.io'),
+      OriginDomain.create('https://portfolio.angelpixel.io'),
       OriginDomain.create('http://localhost:5173'),
     ],
-    redirectUris: ['https://portfolio.angelsolutions.io/callback'],
+    redirectUris: ['https://portfolio.angelpixel.io/callback'],
     allowedGrantTypes: ['authorization_code', 'refresh_token'],
     scopes: ['openid', 'profile', 'email'],
     isActive: true,
@@ -64,7 +64,7 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
 
       const result = await handler.execute({
         clientId: 'harvis-core-backend',
-        origin: 'https://harvis.angelsolutions.io',
+        origin: 'https://harvis.angelpixel.io',
       });
 
       expect(cacheProvider.get).toHaveBeenCalledWith('registered_client:harvis-core-backend');
@@ -75,7 +75,7 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
           id: 'client-uuid-9001',
           clientId: 'harvis-core-backend',
           clientType: 'confidential',
-          allowedOrigins: ['https://harvis.angelsolutions.io'],
+          allowedOrigins: ['https://harvis.angelpixel.io'],
         }),
         300
       );
@@ -89,8 +89,8 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
         clientId: 'harvis-core-backend',
         clientName: 'Harvis Core Backend',
         clientType: 'confidential',
-        allowedOrigins: ['https://harvis.angelsolutions.io'],
-        redirectUris: ['https://harvis.angelsolutions.io/api/auth/callback'],
+        allowedOrigins: ['https://harvis.angelpixel.io'],
+        redirectUris: ['https://harvis.angelpixel.io/api/auth/callback'],
         allowedGrantTypes: ['authorization_code', 'refresh_token', 'client_credentials'],
         scopes: ['openid', 'profile', 'email', 'identity:read'],
       });
@@ -104,8 +104,8 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
         clientId: 'portfolio-web-spa',
         clientName: 'Portfolio Web SPA',
         clientType: 'public',
-        allowedOrigins: ['https://portfolio.angelsolutions.io', 'http://localhost:5173'],
-        redirectUris: ['https://portfolio.angelsolutions.io/callback'],
+        allowedOrigins: ['https://portfolio.angelpixel.io', 'http://localhost:5173'],
+        redirectUris: ['https://portfolio.angelpixel.io/callback'],
         allowedGrantTypes: ['authorization_code', 'refresh_token'],
         scopes: ['openid', 'profile', 'email'],
         isActive: true,
@@ -115,7 +115,7 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
 
       const result = await handler.execute({
         clientId: 'portfolio-web-spa',
-        origin: 'https://portfolio.angelsolutions.io/',
+        origin: 'https://portfolio.angelpixel.io/',
       });
 
       expect(cacheProvider.get).toHaveBeenCalledWith(expectedCacheKey);
@@ -152,7 +152,7 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
         clientId: ClientId.create('legacy-portal-app'),
         clientName: 'Legacy Portal App',
         clientType: 'public',
-        allowedOrigins: [OriginDomain.create('https://legacy.angelsolutions.io')],
+        allowedOrigins: [OriginDomain.create('https://legacy.angelpixel.io')],
         redirectUris: [],
         allowedGrantTypes: ['authorization_code'],
         scopes: ['openid'],
@@ -164,7 +164,7 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
 
       const result = await handler.execute({
         clientId: 'legacy-portal-app',
-        origin: 'https://legacy.angelsolutions.io',
+        origin: 'https://legacy.angelpixel.io',
       });
 
       expect(result).toEqual({
@@ -182,7 +182,7 @@ describe('Application Query Handler: ValidateClientOriginQueryHandler', () => {
 
       const result = await handler.execute({
         clientId: 'unknown-client-id',
-        origin: 'https://portfolio.angelsolutions.io',
+        origin: 'https://portfolio.angelpixel.io',
       });
 
       expect(cacheProvider.set).not.toHaveBeenCalled();
