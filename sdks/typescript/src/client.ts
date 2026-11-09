@@ -4,16 +4,18 @@ import { TokenManager } from './auth';
 import { AuthResource } from './resources/auth_resource';
 import { UsersResource } from './resources/users_resource';
 import { OAuth2Resource } from './resources/oauth2_resource';
+import { DiscoveryResource } from './resources/discovery_resource';
 import { RequestTokenParams, OAuth2TokenResponse } from './types/oauth2';
 
 /**
  * Cliente principal del SDK de AngelPixel Identity Service.
- * Expone recursos organizados por dominio: `auth`, `users`, `oauth2`.
+ * Expone recursos organizados por dominio: `auth`, `users`, `oauth2`, `discovery`.
  */
 export class IdentityServiceClient {
   public readonly auth: AuthResource;
   public readonly users: UsersResource;
   public readonly oauth2: OAuth2Resource;
+  public readonly discovery: DiscoveryResource;
   public readonly transport: HttpTransport;
   public readonly tokenManager: TokenManager;
 
@@ -30,6 +32,7 @@ export class IdentityServiceClient {
     this.auth = new AuthResource(this.transport);
     this.users = new UsersResource(this.transport);
     this.oauth2 = new OAuth2Resource(this.transport, this.tokenManager);
+    this.discovery = new DiscoveryResource(this.transport);
   }
 
   // ---------------------------------------------------------------------------

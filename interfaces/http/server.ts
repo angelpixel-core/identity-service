@@ -40,6 +40,11 @@ import { AuthController } from './rest/v1/identity/controllers';
 import { UserController } from './rest/v1/identity/user_controller';
 import { OAuth2ClientController } from './rest/v1/oauth2/client_controller';
 import { OAuth2TokenController } from './rest/v1/oauth2/token_controller';
+import { AsymmetricKeyProviderPort } from '../../src/contexts/identity/domain/ports/crypto/asymmetric_key_provider_port';
+import { RsaKeyAdapter } from '../../src/contexts/identity/infrastructure/security/rsa_key_adapter';
+import { GetOpenIdConfigurationQueryHandler } from '../../src/contexts/identity/application/queries/get_openid_configuration/handler';
+import { GetJwksQueryHandler } from '../../src/contexts/identity/application/queries/get_jwks/handler';
+import { DiscoveryController } from './rest/v1/oidc/discovery_controller';
 
 /**
  * Implementación en memoria del repositorio para testing e inicialización desacoplada.
@@ -75,6 +80,7 @@ export interface AppDependencies {
   clientRepository?: ClientApplicationRepositoryPort;
   hashProvider?: HashProviderPort;
   tokenProvider?: TokenProviderPort;
+  asymmetricKeyProvider?: AsymmetricKeyProviderPort;
   cacheProvider?: CacheProviderPort;
   transactionRunner?: TenantTransactionRunnerPort;
   auditLogger?: SecurityAuditLoggerPort;
@@ -133,6 +139,14 @@ export function createApp(deps?: AppDependencies): Express {
   const hashProvider = deps?.hashProvider ?? new BcryptAdapter(6); // Rondas optimizadas para HTTP
   const jwtSecret = process.env.JWT_SECRET || 'default-jwt-secret-key-12345';
   const tokenProvider = deps?.tokenProvider ?? new JwtTokenAdapter(jwtSecret, '1h');
+  const asymmetricKeyProvider =
+    deps?.asymmetricKeyProvider ??
+    new RsaKeyAdapter({
+      privateKeyPem: process.env.RSA_PRIVATE_KEY_PEM,
+      publicKeyPem: process.env.RSA_PUBLIC_KEY_PEM,
+      keyId: process.env.RSA_KEY_ID,
+    });
+  app.locals.asymmetricKeyProvider = asymmetricKeyProvider;
   const cacheProvider = deps?.cacheProvider ?? new MemoryCacheAdapter();
   const cacheTtlSeconds = Number(process.env.CACHE_TTL_SECONDS) || 300;
 
@@ -166,12 +180,22 @@ export function createApp(deps?: AppDependencies): Express {
   );
 
   const updateUserProfileHandler = new UpdateUserProfileCommandHandler(userRepository, cacheProvider);
+  const getOpenIdConfigHandler = new GetOpenIdConfigurationQueryHandler(
+    process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000'
+  );
+  const getJwksHandler = new GetJwksQueryHandler(asymmetricKeyProvider);
+  const discoveryController = new DiscoveryController(getOpenIdConfigHandler, getJwksHandler);
+
   const authController = new AuthController(registerUserHandler, getProfileHandler);
   const userController = new UserController(getProfileHandler, updateUserProfileHandler);
   const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
   const oauth2TokenController = new OAuth2TokenController(authenticateClientM2MHandler);
   const authMiddleware = createAuthMiddleware(tokenProvider, auditLogger);
   const crossTenantGuard = createCrossTenantGuard(auditLogger);
+
+  // Rutas de Descubrimiento OIDC y JWKS (RFC 8414 & RFC 7517)
+  app.get('/.well-known/openid-configuration', discoveryController.getOpenIdConfiguration);
+  app.get('/.well-known/jwks.json', discoveryController.getJwks);
 
   // Rutas de Identidad y Autenticación v1
   app.post('/api/v1/auth/register', tenantContextMiddleware, authController.register);
