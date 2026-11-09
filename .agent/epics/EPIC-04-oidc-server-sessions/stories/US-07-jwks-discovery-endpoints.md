@@ -4,22 +4,32 @@ title: "Cryptographic Keypair Management, JWKS and OpenID Discovery Endpoints"
 epic:
   id: EPIC-04
   name: "OIDC / OAuth2 Authorization Server & Session Lifecycle"
-status: planned
+status: completed
 priority: P1
 bounded_context: identity
 subdomain: oidc-crypto
 slice_type: infrastructure
 timestamps:
   created_at: "2026-11-04T00:00:00-03:00"
-  started_at: null
-  completed_at: null
-  updated_at: "2026-11-09T15:00:00-03:00"
+  started_at: "2026-11-09T15:30:00-03:00"
+  completed_at: "2026-11-09T17:10:00-03:00"
+  updated_at: "2026-11-09T17:10:00-03:00"
 traceability:
   adrs:
-    - docs/adr/0006-oidc-session-flow.md
-  guidelines: []
-  publications: []
-  commits: []
+    - docs/adr/0004-client-authentication-strategy.md
+    - docs/adr/0005-postgresql-rls-strategy.md
+  guidelines:
+    - .agent/guidelines/GUIDELINE-08-oidc-discovery-and-jwks.md
+  publications:
+    - .agent/publications/ARTICLE-07-jwks-discovery-endpoints.md
+    - .agent/publications/ARTICLE-07-B-refactoring-jwks-discovery.md
+  commits:
+    - "3a6e3e6"
+    - "f56808f"
+    - "b18de12"
+    - "a9d91bc"
+    - "ef5c0fb"
+    - "f515b6a"
 tags:
   - oidc
   - jwks
@@ -31,7 +41,7 @@ tags:
 # US-07: Cryptographic Keypair Management, JWKS and OpenID Discovery Endpoints
 
 **Epic:** [EPIC-04: OIDC / OAuth2 Authorization Server & Session Lifecycle](../README.md)  
-**Status:** Planned  
+**Status:** Completed  
 **Domain / Bounded Context:** `identity` / `oidc-crypto`  
 **Slice Type:** Query & Infrastructure (OIDC Discovery Slice)  
 **Referencia Estructural:** [`.agent/TREE.txt`](../../../TREE.txt)  
