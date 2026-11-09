@@ -29,7 +29,8 @@
   "include": [
     "src/**/*",
     "interfaces/**/*",
-    "tests/**/*"
+    "tests/**/*",
+    "sdks/**/*"
   ],
   "exclude": [
     "node_modules",
