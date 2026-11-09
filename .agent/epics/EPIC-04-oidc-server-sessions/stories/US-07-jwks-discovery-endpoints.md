@@ -95,21 +95,36 @@ Feature: Cryptographic Keypair Management, JWKS and OpenID Discovery Endpoints
 
 ## 4. Cobertura de Pruebas Requerida (Pirámide de Testing)
 
-- [ ] **Unit Test 1 (Cryptographic Key Adapter):** `tests/unit/identity/infrastructure/security/test_rsa_key_adapter.ts`
-  - Validar generación/carga de claves RSA, exportación de clave pública en formato JWK y firma/verificación de payload.
-- [ ] **Integration Test 1 (Discovery & JWKS Endpoints):** `tests/integration/identity/interfaces/test_oidc_discovery_api.ts`
-  - Comprobar respuestas HTTP y estructura JSON de ambos endpoints conforme a especificación OIDC.
-- [ ] **Acceptance Test (BDD):** `tests/acceptance/features/oidc_discovery.feature`
-  - Escenario ejecutable con Cucumber.
+- [x] **Unit Test 1 (Cryptographic Key Adapter & RS256 Provider):** `tests/unit/identity/infrastructure/security/test_rsa_key_adapter.ts`
+  - Validar generación/carga de claves RSA 2048-bit, exportación de clave pública en formato JWK, firma/verificación de payload y redacción segura de clave privada (`[REDACTED]`).
+- [x] **Unit Test 2 (Domain Value Objects):** `tests/unit/identity/domain/crypto/test_key_id.ts` & `test_json_web_key.ts`
+  - Validar invariantes estrictas de `KeyId` y protección de `JsonWebKeyVO` contra fuga de parámetros privados (`d`, `p`, `q`, etc.).
+- [x] **Unit Test 3 (Application Query Handlers):** `tests/unit/identity/application/oidc/test_get_jwks_handler.ts` & `test_get_openid_configuration_handler.ts`
+  - Validar saneamiento de URL de emisor y tolerancia a fallos.
+- [x] **Integration Test 1 (Discovery & JWKS Endpoints):** `tests/integration/identity/interfaces/test_oidc_discovery_api.ts`
+  - Comprobar respuestas HTTP 200, CORS (`*`), `Cache-Control` y estructura JSON de ambos endpoints conforme a RFC 8414 y RFC 7517.
+- [x] **Acceptance Test (BDD):** `tests/acceptance/features/oidc_discovery.feature` & `tests/acceptance/step_defs/test_oidc_discovery_steps.ts`
+  - Escenarios BDD ejecutables con Cucumber/Jest.
+- [x] **SDK Tests:** `sdks/typescript/tests/discovery.test.ts`
+  - Validar consumo mediante `client.discovery.getOpenIdConfiguration()` y `client.discovery.getJwks()`.
 
 ---
 
 ## 5. Trazabilidad de Implementación
 
 - **Dominio y Puertos:**
-  - `src/contexts/identity/domain/ports/asymmetric_key_provider_port.ts`
+  - `src/contexts/identity/domain/ports/crypto/asymmetric_key_provider_port.ts`
+  - `src/contexts/identity/domain/value_objects/crypto/key_id.ts`
+  - `src/contexts/identity/domain/value_objects/crypto/json_web_key.ts`
+- **Aplicación (Read Slices):**
+  - `src/contexts/identity/application/queries/get_jwks/`
+  - `src/contexts/identity/application/queries/get_openid_configuration/`
 - **Infraestructura:**
   - `src/contexts/identity/infrastructure/security/rsa_key_adapter.ts`
-- **Controladores HTTP:**
+- **Controladores e Interfaces HTTP:**
   - `interfaces/http/rest/v1/oidc/discovery_controller.ts`
+  - `interfaces/http/server.ts`
+- **TypeScript SDK:**
+  - `sdks/typescript/src/resources/discovery_resource.ts`
+  - `sdks/typescript/src/types/discovery.ts`
 
