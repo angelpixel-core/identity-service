@@ -1,11 +1,13 @@
 import crypto from 'crypto';
+import util from 'util';
 import jwt, { SignOptions, VerifyOptions } from 'jsonwebtoken';
 import {
   AsymmetricKeyProviderPort,
   AsymmetricSignOptions,
   JwksResponseDto,
-  JsonWebKeyDto,
 } from '../../domain/ports/crypto/asymmetric_key_provider_port';
+import { KeyId } from '../../domain/value_objects/crypto/key_id';
+import { JsonWebKeyVO } from '../../domain/value_objects/crypto/json_web_key';
 
 export interface RsaKeyAdapterOptions {
   readonly privateKeyPem?: string;
@@ -18,11 +20,12 @@ export interface RsaKeyAdapterOptions {
  * Secondary Adapter: RsaKeyAdapter
  * Implementación de AsymmetricKeyProviderPort basada en la API estándar de criptografía
  * de Node.js (node:crypto) y firmado asimétrico RS256 con jsonwebtoken.
+ * Endurecida con redacción de claves privadas en logs e inspección, y validación defensiva de PEM.
  */
 export class RsaKeyAdapter implements AsymmetricKeyProviderPort {
   private readonly privateKeyPem: string;
   private readonly publicKeyPem: string;
-  private readonly keyId: string;
+  private readonly keyId: KeyId;
   private readonly defaultExpiresIn: string | number;
   private readonly cachedJwks: JwksResponseDto;
 
@@ -30,11 +33,18 @@ export class RsaKeyAdapter implements AsymmetricKeyProviderPort {
     this.defaultExpiresIn = options?.defaultExpiresIn ?? '1h';
 
     if (options?.privateKeyPem && options?.publicKeyPem) {
+      try {
+        crypto.createPrivateKey(options.privateKeyPem);
+        crypto.createPublicKey(options.publicKeyPem);
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Invalid RSA PEM keypair: ${errorMsg}`);
+      }
+
       this.privateKeyPem = options.privateKeyPem;
       this.publicKeyPem = options.publicKeyPem;
-      this.keyId =
-        options.keyId ??
-        this.computeThumbprint(this.publicKeyPem);
+      const rawKid = options.keyId ?? this.computeThumbprint(this.publicKeyPem);
+      this.keyId = KeyId.create(rawKid);
     } else {
       // Auto-generación en memoria de par de claves RSA 2048-bit (seguro para desarrollo y tests)
       const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
@@ -51,10 +61,11 @@ export class RsaKeyAdapter implements AsymmetricKeyProviderPort {
 
       this.privateKeyPem = privateKey;
       this.publicKeyPem = publicKey;
-      this.keyId = options?.keyId ?? this.computeThumbprint(this.publicKeyPem);
+      const rawKid = options?.keyId ?? this.computeThumbprint(this.publicKeyPem);
+      this.keyId = KeyId.create(rawKid);
     }
 
-    // Calcular y cachear la representación JWK pública
+    // Calcular y validar la representación JWK pública mediante el Value Object de dominio
     const keyObject = crypto.createPublicKey(this.publicKeyPem);
     const jwkData = keyObject.export({ format: 'jwk' });
 
@@ -62,22 +73,22 @@ export class RsaKeyAdapter implements AsymmetricKeyProviderPort {
       throw new Error('Failed to extract modulus (n) and exponent (e) from public key');
     }
 
-    const jwkKey: JsonWebKeyDto = {
+    const jwkVo = JsonWebKeyVO.create({
       kty: 'RSA',
       use: 'sig',
       alg: 'RS256',
       kid: this.keyId,
       n: jwkData.n,
       e: jwkData.e,
-    };
+    });
 
     this.cachedJwks = Object.freeze({
-      keys: Object.freeze([Object.freeze(jwkKey)]),
+      keys: Object.freeze([jwkVo.toDto()]),
     });
   }
 
   public getActiveKeyId(): string {
-    return this.keyId;
+    return this.keyId.getValue();
   }
 
   public getPublicKeyJwks(): JwksResponseDto {
@@ -99,7 +110,7 @@ export class RsaKeyAdapter implements AsymmetricKeyProviderPort {
     return new Promise((resolve, reject) => {
       const signOpts: SignOptions = {
         algorithm: 'RS256',
-        keyid: options?.keyId ?? this.keyId,
+        keyid: options?.keyId ?? this.keyId.getValue(),
         expiresIn: (options?.expiresIn ?? this.defaultExpiresIn) as any,
       };
 
@@ -129,6 +140,19 @@ export class RsaKeyAdapter implements AsymmetricKeyProviderPort {
         resolve(decoded as T);
       });
     });
+  }
+
+  public toString(): string {
+    return `RsaKeyAdapter(kid=${this.keyId.getValue()}, privateKey=[REDACTED])`;
+  }
+
+  public [util.inspect.custom](): Record<string, unknown> {
+    return {
+      keyId: this.keyId.getValue(),
+      privateKey: '[REDACTED]',
+      publicKey: this.publicKeyPem,
+      defaultExpiresIn: this.defaultExpiresIn,
+    };
   }
 
   private computeThumbprint(publicKeyPem: string): string {
