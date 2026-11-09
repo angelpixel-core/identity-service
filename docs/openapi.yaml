@@ -1,0 +1,447 @@
+openapi: 3.1.0
+info:
+  title: AngelSolutions Identity Service API
+  description: |
+    Enterprise Multi-Tenant Identity & Access Management (IdP) Service.
+    Implements RFC 6749 (OAuth 2.0 Authorization Framework), RFC 7519 (JSON Web Tokens),
+    Dynamic Client Registry and Multi-Tenant Isolation.
+  version: 0.1.0
+  contact:
+    name: AngelSolutions Platform Engineering
+    url: https://angelsolutions.io
+    email: contact@angelsolutions.io
+
+servers:
+  - url: http://localhost:4000
+    description: Local Docker Compose Environment (API Container)
+  - url: http://localhost:3000
+    description: Local Development Server (Standalone Node.js)
+
+tags:
+  - name: Identity & Authentication
+    description: User registration and authenticated profile management (US-01, US-02)
+  - name: OAuth2 Client Registry
+    description: Dynamic client application registry and origin validation (US-03)
+  - name: OAuth2 Token
+    description: RFC 6749 Client Credentials Grant token issuance for M2M services (US-04)
+
+paths:
+  /api/v1/auth/register:
+    post:
+      tags:
+        - Identity & Authentication
+      summary: Register a new user under a tenant (US-01)
+      description: |
+        Creates a new user aggregate scoped strictly to the specified tenant.
+        Issues an initial authentication JWT upon successful registration.
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterUserRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterUserResponse'
+        '400':
+          description: Validation error in request payload or missing tenant header
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict — Email already registered within this tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/me:
+    get:
+      tags:
+        - Identity & Authentication
+      summary: Get authenticated user profile (US-02)
+      description: |
+        Returns sanitized user profile details. Employs a Cache-Aside strategy (Redis / In-Memory)
+        and enforces tenant boundary validation (claims matching `x-tenant-id`).
+      security:
+        - BearerAuth: []
+          TenantHeader: []
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          description: Unauthorized — Missing, malformed, or expired Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden — Token tenant claim does not match x-tenant-id header
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/oauth2/clients/validate:
+    post:
+      tags:
+        - OAuth2 Client Registry
+      summary: Validate client origin authorization (US-03)
+      description: |
+        Validates whether a client application is active and authorized to initiate
+        authentication flows from the request Origin or Referer header.
+      parameters:
+        - name: x-client-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Client application identifier (alternative to body clientId)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateClientOriginRequest'
+      responses:
+        '200':
+          description: Client and origin are valid and authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateClientOriginResponse'
+        '400':
+          description: Missing or invalid clientId parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Client application is deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Origin is not registered in client allowed_origins
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Client application does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/oauth2/token:
+    post:
+      tags:
+        - OAuth2 Token
+      summary: Issue OAuth2 M2M Access Token (RFC 6749 Client Credentials Grant) (US-04)
+      description: |
+        Issues a signed JWT access token for confidential client applications.
+        Supports both HTTP Basic Authorization header (`Authorization: Basic <base64>`)
+        and JSON / application/x-www-form-urlencoded body.
+      security:
+        - BasicAuth: []
+        - {}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuth2TokenRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuth2TokenRequest'
+      responses:
+        '200':
+          description: Access token issued successfully
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+            Pragma:
+              schema:
+                type: string
+                example: no-cache
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2TokenResponse'
+        '400':
+          description: Invalid request, unsupported grant_type, invalid_scope, or unauthorized_client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+        '401':
+          description: Invalid client credentials or client is deactivated
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                example: Basic realm="OAuth2"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+
+  /oauth2/token:
+    post:
+      tags:
+        - OAuth2 Token
+      summary: RFC 6749 Standard Token Endpoint Alias
+      description: Alias to `/api/v1/oauth2/token` matching standard OAuth 2.0 discovery path.
+      security:
+        - BasicAuth: []
+        - {}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuth2TokenRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuth2TokenRequest'
+      responses:
+        '200':
+          description: Access token issued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2TokenResponse'
+        '400':
+          description: OAuth2 protocol or validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+
+components:
+  parameters:
+    TenantIdHeader:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema:
+        type: string
+        example: alpha-corp
+      description: Multi-tenant organization identifier
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: User or Service Bearer JWT signed token.
+    BasicAuth:
+      type: http
+      scheme: basic
+      description: Client ID and Client Secret encoded in base64.
+    TenantHeader:
+      type: apiKey
+      in: header
+      name: x-tenant-id
+      description: Tenant context isolation header.
+
+  schemas:
+    RegisterUserRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: ValidPassword123!
+
+    RegisterUserResponse:
+      type: object
+      required:
+        - userId
+        - email
+        - tenantId
+        - token
+        - accessToken
+        - createdAt
+      properties:
+        userId:
+          type: string
+          format: uuid
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        tenantId:
+          type: string
+          example: alpha-corp
+        token:
+          type: string
+          description: Bearer JWT token
+        accessToken:
+          type: string
+          description: Alias to token
+        createdAt:
+          type: string
+          format: date-time
+
+    UserProfileResponse:
+      type: object
+      required:
+        - id
+        - email
+        - tenantId
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        tenantId:
+          type: string
+          example: alpha-corp
+        createdAt:
+          type: string
+          format: date-time
+
+    ValidateClientOriginRequest:
+      type: object
+      properties:
+        clientId:
+          type: string
+          example: portal-web
+
+    ValidateClientOriginResponse:
+      type: object
+      required:
+        - authorized
+        - clientId
+        - clientType
+      properties:
+        authorized:
+          type: boolean
+          example: true
+        clientId:
+          type: string
+          example: portal-web
+        clientName:
+          type: string
+          example: AngelSolutions Web Portal
+        clientType:
+          type: string
+          enum: [public, confidential]
+          example: public
+        allowedOrigins:
+          type: array
+          items:
+            type: string
+          example: ["https://portal.angelsolutions.io"]
+        scopes:
+          type: array
+          items:
+            type: string
+          example: ["openid", "profile", "email"]
+
+    OAuth2TokenRequest:
+      type: object
+      required:
+        - grant_type
+      properties:
+        grant_type:
+          type: string
+          enum: [client_credentials]
+          example: client_credentials
+        client_id:
+          type: string
+          example: m2m-service-app
+        client_secret:
+          type: string
+          example: ValidSecret123!_SuperSecureSecretForTesting_2026
+        scope:
+          type: string
+          example: identity:read
+
+    OAuth2TokenResponse:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_in
+      properties:
+        access_token:
+          type: string
+          description: Signed JWT access token conforming to RFC 7519
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 3600
+        scope:
+          type: string
+          example: identity:read identity:write audit:log
+
+    OAuth2ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_client
+            - invalid_scope
+            - unauthorized_client
+            - unsupported_grant_type
+          example: invalid_client
+        error_description:
+          type: string
+          example: "Client authentication failed: invalid client credentials"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: unauthorized_client_origin
+        message:
+          type: string
+          example: "Origin https://malicious-site.com is not authorized for client portal-web."
