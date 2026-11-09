@@ -34,6 +34,8 @@ describe('Integration API: OIDC Discovery & JWKS Endpoints (US-07 & RFC 8414 / R
       expect(response.headers['content-type']).toMatch(/application\/json/);
       // OIDC Discovery must allow cross-origin retrieval from SPAs
       expect(response.headers['access-control-allow-origin']).toBe('*');
+      expect(response.headers['cache-control']).toMatch(/max-age=3600/);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
 
       const body = response.body;
       expect(body.issuer).toBeDefined();
@@ -63,6 +65,8 @@ describe('Integration API: OIDC Discovery & JWKS Endpoints (US-07 & RFC 8414 / R
       expect(response.status).toBe(200);
       expect(response.headers['content-type']).toMatch(/application\/json/);
       expect(response.headers['access-control-allow-origin']).toBe('*');
+      expect(response.headers['cache-control']).toMatch(/max-age=3600/);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
 
       const body = response.body as JwksResponseDto;
       expect(body).toHaveProperty('keys');

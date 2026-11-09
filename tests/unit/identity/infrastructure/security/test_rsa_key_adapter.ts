@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import util from 'util';
 import jwt from 'jsonwebtoken';
 import { RsaKeyAdapter } from '../../../../../src/contexts/identity/infrastructure/security/rsa_key_adapter';
 
@@ -45,6 +46,28 @@ describe('Unit: RsaKeyAdapter (Cryptographic Keypair & RS256 Signing)', () => {
     expect(jwks.keys[0]!.kid).toBe(customKid);
     expect(adapter.getPublicKeyPem()).toBe(publicKey);
     expect(adapter.getPrivateKeyPem()).toBe(privateKey);
+  });
+
+  it('should throw error when invalid PEM string is provided in options', () => {
+    expect(
+      () =>
+        new RsaKeyAdapter({
+          privateKeyPem: 'invalid-not-a-pem',
+          publicKeyPem: 'invalid-not-a-pem',
+        })
+    ).toThrow(/Invalid RSA PEM keypair/);
+  });
+
+  it('should redact privateKey in toString() and util.inspect() to prevent leaking secrets in logs', () => {
+    const adapter = new RsaKeyAdapter();
+
+    const str = adapter.toString();
+    expect(str).toContain('[REDACTED]');
+    expect(str).not.toContain('-----BEGIN PRIVATE KEY-----');
+
+    const inspected = util.inspect(adapter);
+    expect(inspected).toContain('[REDACTED]');
+    expect(inspected).not.toContain('-----BEGIN PRIVATE KEY-----');
   });
 
   it('should sign a payload using RS256 and include the key ID in JWT header', async () => {
