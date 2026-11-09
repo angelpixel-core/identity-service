@@ -35,6 +35,7 @@ export class PostgresUserRepository implements UserRepositoryPort {
       INSERT INTO users (id, email, password_hash, tenant_id, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
         password_hash = EXCLUDED.password_hash,
         updated_at = EXCLUDED.updated_at;
     `;

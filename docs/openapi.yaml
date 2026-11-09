@@ -95,6 +95,100 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/users/{userId}:
+    get:
+      tags:
+        - Identity & Authentication
+      summary: Get user profile by ID with Anti-Enumeration Guard (US-06)
+      description: |
+        Retrieves a user profile within the caller's tenant context. If the target user ID belongs
+        to another tenant, returns 404 Not Found to prevent cross-tenant enumeration.
+      security:
+        - BearerAuth: []
+          TenantHeader: []
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Target user identifier
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          description: "Unauthorized — Missing or invalid Bearer token"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: "Forbidden — Cross-tenant access violation detected"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: "Not Found — User does not exist in active tenant"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      tags:
+        - Identity & Authentication
+      summary: Update user profile with Cross-Tenant Zero-Trust Guard (US-06)
+      description: |
+        Updates a user profile within the authenticated tenant context. Aborts with 403 Forbidden
+        and logs a CROSS_TENANT_VIOLATION security event if payload or header targets another tenant.
+      security:
+        - BearerAuth: []
+          TenantHeader: []
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Target user identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: updated@alpha-corp.com
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '403':
+          description: "Forbidden — Cross-tenant violation blocked and logged"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: "Not Found — User does not exist in active tenant"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/oauth2/clients/validate:
     post:
       tags:

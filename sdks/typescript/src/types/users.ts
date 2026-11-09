@@ -3,6 +3,12 @@ export interface GetUserProfileParams {
   tenantId: string;
 }
 
+export interface GetUserByIdParams {
+  userId: string;
+  token: string;
+  tenantId: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string;

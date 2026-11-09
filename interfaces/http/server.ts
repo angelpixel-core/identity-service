@@ -10,12 +10,14 @@ import swaggerUi from 'swagger-ui-express';
 import yaml from 'yaml';
 import { Pool } from 'pg';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
+import { UpdateUserProfileCommandHandler } from '../../src/contexts/identity/application/commands/update_user_profile/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
 import { ValidateClientOriginQueryHandler } from '../../src/contexts/identity/application/queries/validate_client_origin/handler';
 import { AuthenticateClientM2MCommandHandler } from '../../src/contexts/identity/application/commands/authenticate_client_m2m/handler';
 import { UserRepositoryPort } from '../../src/contexts/identity/application/ports/user/repository';
 import { HashProviderPort } from '../../src/contexts/identity/application/ports/security/hash_provider';
 import { TokenProviderPort } from '../../src/contexts/identity/application/ports/security/token_provider';
+import { SecurityAuditLoggerPort } from '../../src/contexts/identity/application/ports/security/audit_logger';
 import { CacheProviderPort } from '../../src/contexts/identity/application/ports/cache/cache_provider';
 import { BcryptAdapter } from '../../src/contexts/identity/infrastructure/security/bcrypt_adapter';
 import { JwtTokenAdapter } from '../../src/contexts/identity/infrastructure/security/jwt_adapter';
@@ -27,6 +29,7 @@ import { Email } from '../../src/contexts/identity/domain/value_objects/email/va
 import { TenantId } from '../../src/contexts/identity/domain/value_objects/tenant_id/value';
 import { tenantContextMiddleware } from './middlewares/tenant_context_middleware';
 import { createAuthMiddleware } from './middlewares/auth_middleware';
+import { createCrossTenantGuard } from './middlewares/security_audit_logger';
 import { clientAuthorizationMiddleware } from './middlewares/client_authorization_middleware';
 import { ClientApplicationRepositoryPort } from '../../src/contexts/identity/domain/ports/client_application_repository_port';
 import { PostgresClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/postgres_client_repository';
@@ -34,6 +37,7 @@ import { InMemoryClientApplicationRepository } from '../../src/contexts/identity
 import { TenantTransactionRunnerPort } from '../../src/contexts/identity/application/ports/database/tenant_transaction_runner';
 import { TenantAwareTransactionRunner } from '../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 import { AuthController } from './rest/v1/identity/controllers';
+import { UserController } from './rest/v1/identity/user_controller';
 import { OAuth2ClientController } from './rest/v1/oauth2/client_controller';
 import { OAuth2TokenController } from './rest/v1/oauth2/token_controller';
 
@@ -73,6 +77,7 @@ export interface AppDependencies {
   tokenProvider?: TokenProviderPort;
   cacheProvider?: CacheProviderPort;
   transactionRunner?: TenantTransactionRunnerPort;
+  auditLogger?: SecurityAuditLoggerPort;
 }
 
 /**
@@ -149,7 +154,8 @@ export function createApp(deps?: AppDependencies): Express {
     cacheTtlSeconds
   );
 
-  const auditLogger = new InMemorySecurityAuditLogger();
+  const auditLogger = deps?.auditLogger ?? new InMemorySecurityAuditLogger();
+  app.locals.auditLogger = auditLogger;
 
   const authenticateClientM2MHandler = new AuthenticateClientM2MCommandHandler(
     clientRepository,
@@ -159,14 +165,33 @@ export function createApp(deps?: AppDependencies): Express {
     3600
   );
 
+  const updateUserProfileHandler = new UpdateUserProfileCommandHandler(userRepository, cacheProvider);
   const authController = new AuthController(registerUserHandler, getProfileHandler);
+  const userController = new UserController(getProfileHandler, updateUserProfileHandler);
   const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
   const oauth2TokenController = new OAuth2TokenController(authenticateClientM2MHandler);
-  const authMiddleware = createAuthMiddleware(tokenProvider);
+  const authMiddleware = createAuthMiddleware(tokenProvider, auditLogger);
+  const crossTenantGuard = createCrossTenantGuard(auditLogger);
 
   // Rutas de Identidad y Autenticación v1
   app.post('/api/v1/auth/register', tenantContextMiddleware, authController.register);
   app.get('/api/v1/auth/me', tenantContextMiddleware, authMiddleware, authController.getProfile);
+
+  // Rutas de Usuarios con Zero-Trust Guard & Anti-Enumeration (US-06)
+  app.get(
+    '/api/v1/users/:userId',
+    tenantContextMiddleware,
+    authMiddleware,
+    crossTenantGuard,
+    userController.getUserById
+  );
+  app.patch(
+    '/api/v1/users/:userId',
+    tenantContextMiddleware,
+    authMiddleware,
+    crossTenantGuard,
+    userController.updateUser
+  );
 
   // Rutas OAuth2 / Client Registry v1
   app.post(
