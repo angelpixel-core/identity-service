@@ -56,8 +56,8 @@ describe('Value Objects: GrantType & Scope', () => {
           clientId: ClientId.create('spa-frontend'),
           clientName: 'Invalid Public Client',
           clientType: 'public',
-          allowedOrigins: [OriginDomain.create('https://app.angelsolutions.io')],
-          redirectUris: ['https://app.angelsolutions.io/callback'],
+          allowedOrigins: [OriginDomain.create('https://app.angelpixel.io')],
+          redirectUris: ['https://app.angelpixel.io/callback'],
           allowedGrantTypes: ['authorization_code', 'client_credentials'],
           scopes: ['openid'],
         })
@@ -70,8 +70,8 @@ describe('Value Objects: GrantType & Scope', () => {
         clientId: ClientId.create('portal-web'),
         clientName: 'Portal Web App',
         clientType: 'public',
-        allowedOrigins: [OriginDomain.create('https://portal.angelsolutions.io')],
-        redirectUris: ['https://portal.angelsolutions.io/callback'],
+        allowedOrigins: [OriginDomain.create('https://portal.angelpixel.io')],
+        redirectUris: ['https://portal.angelpixel.io/callback'],
         allowedGrantTypes: [GrantType.create('authorization_code'), 'refresh_token'],
         scopes: [Scope.create('openid'), 'profile', 'identity:read'],
       });

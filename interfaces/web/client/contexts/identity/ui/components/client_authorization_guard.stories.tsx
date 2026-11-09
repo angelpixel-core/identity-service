@@ -31,7 +31,7 @@ const ProtectedPortalPreview = () => (
     <h3 style={{ margin: '0 0 0.5rem 0' }}>Origin & Client Verified</h3>
     <p style={{ margin: 0, fontSize: '0.9rem' }}>
       Client <strong>portal-web</strong> is active and authorized for origin{' '}
-      <code>https://portal.angelsolutions.io</code>.
+      <code>https://portal.angelpixel.io</code>.
     </p>
   </div>
 );
@@ -39,7 +39,7 @@ const ProtectedPortalPreview = () => (
 export const AuthorizedPublicClient: Story = {
   args: {
     clientId: 'portal-web',
-    currentOrigin: 'https://portal.angelsolutions.io',
+    currentOrigin: 'https://portal.angelpixel.io',
     apiClient: {
       validateOrigin: async () => ({
         authorized: true,
@@ -72,7 +72,7 @@ export const UnauthorizedOriginError: Story = {
 export const DeactivatedClientError: Story = {
   args: {
     clientId: 'legacy-app',
-    currentOrigin: 'https://legacy.angelsolutions.io',
+    currentOrigin: 'https://legacy.angelpixel.io',
     apiClient: {
       validateOrigin: async () => {
         throw {
@@ -89,7 +89,7 @@ export const DeactivatedClientError: Story = {
 export const VerifyingLoadingState: Story = {
   args: {
     clientId: 'portal-web',
-    currentOrigin: 'https://portal.angelsolutions.io',
+    currentOrigin: 'https://portal.angelpixel.io',
     apiClient: {
       validateOrigin: () => new Promise<ClientValidationResponse>(() => {}),
     },
@@ -100,7 +100,7 @@ export const VerifyingLoadingState: Story = {
 export const NetworkErrorWithRetry: Story = {
   args: {
     clientId: 'portal-web',
-    currentOrigin: 'https://portal.angelsolutions.io',
+    currentOrigin: 'https://portal.angelpixel.io',
     apiClient: {
       validateOrigin: async () => {
         throw {

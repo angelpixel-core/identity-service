@@ -11,15 +11,15 @@ describe('Infrastructure Persistence: PostgresClientApplicationRepository', () =
   let repository: ClientApplicationRepositoryPort;
 
   const validClientId = ClientId.create('portal-web');
-  const validOrigin = OriginDomain.create('https://portal.angelsolutions.io');
+  const validOrigin = OriginDomain.create('https://portal.angelpixel.io');
 
   const validClient = ClientApplication.create({
     id: 'client-uuid-2001',
     clientId: validClientId,
-    clientName: 'AngelSolutions Web Portal',
+    clientName: 'AngelPixel Web Portal',
     clientType: 'public',
     allowedOrigins: [validOrigin],
-    redirectUris: ['https://portal.angelsolutions.io/callback'],
+    redirectUris: ['https://portal.angelpixel.io/callback'],
     allowedGrantTypes: ['authorization_code', 'refresh_token'],
     scopes: ['openid', 'profile', 'email'],
     isActive: true,
@@ -29,10 +29,10 @@ describe('Infrastructure Persistence: PostgresClientApplicationRepository', () =
     id: 'client-uuid-2001',
     client_id: 'portal-web',
     client_secret_hash: null,
-    client_name: 'AngelSolutions Web Portal',
+    client_name: 'AngelPixel Web Portal',
     client_type: 'public',
-    allowed_origins: ['https://portal.angelsolutions.io'],
-    redirect_uris: ['https://portal.angelsolutions.io/callback'],
+    allowed_origins: ['https://portal.angelpixel.io'],
+    redirect_uris: ['https://portal.angelpixel.io/callback'],
     allowed_grant_types: ['authorization_code', 'refresh_token'],
     scopes: ['openid', 'profile', 'email'],
     is_active: true,
@@ -65,7 +65,7 @@ describe('Infrastructure Persistence: PostgresClientApplicationRepository', () =
         null,
         validClient.getClientName(),
         validClient.getClientType(),
-        ['https://portal.angelsolutions.io'],
+        ['https://portal.angelpixel.io'],
         validClient.getRedirectUris(),
         validClient.getAllowedGrantTypes(),
         validClient.getScopes(),
@@ -93,7 +93,7 @@ describe('Infrastructure Persistence: PostgresClientApplicationRepository', () =
       expect(client).not.toBeNull();
       expect(client?.getClientId().getValue()).toBe('portal-web');
       expect(client?.getClientType()).toBe('public');
-      expect(client?.getAllowedOrigins()[0]?.getValue()).toBe('https://portal.angelsolutions.io');
+      expect(client?.getAllowedOrigins()[0]?.getValue()).toBe('https://portal.angelpixel.io');
     });
 
     it('should return null when client_id does not exist', async () => {

@@ -32,10 +32,10 @@ INSERT INTO registered_clients (
     'client-seed-1',
     'portal-web',
     NULL,
-    'AngelSolutions Web Portal',
+    'AngelPixel Web Portal',
     'public',
-    ARRAY['https://portal.angelsolutions.io'],
-    ARRAY['https://portal.angelsolutions.io/callback'],
+    ARRAY['https://portal.angelpixel.io'],
+    ARRAY['https://portal.angelpixel.io/callback'],
     ARRAY['authorization_code', 'refresh_token'],
     ARRAY['openid', 'profile', 'email'],
     true
@@ -46,8 +46,8 @@ INSERT INTO registered_clients (
     NULL,
     'Legacy Portal App',
     'public',
-    ARRAY['https://legacy.angelsolutions.io'],
-    ARRAY['https://legacy.angelsolutions.io/callback'],
+    ARRAY['https://legacy.angelpixel.io'],
+    ARRAY['https://legacy.angelpixel.io/callback'],
     ARRAY['authorization_code'],
     ARRAY['openid'],
     false
@@ -58,7 +58,7 @@ INSERT INTO registered_clients (
     '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
     'Machine to Machine Service Worker',
     'confidential',
-    ARRAY['https://m2m.angelsolutions.io'],
+    ARRAY['https://m2m.angelpixel.io'],
     ARRAY[]::TEXT[],
     ARRAY['client_credentials'],
     ARRAY['identity:read', 'identity:write', 'audit:log'],
@@ -70,14 +70,16 @@ INSERT INTO registered_clients (
     '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
     'Deactivated Background Worker',
     'confidential',
-    ARRAY['https://worker.angelsolutions.io'],
+    ARRAY['https://worker.angelpixel.io'],
     ARRAY[]::TEXT[],
     ARRAY['client_credentials'],
     ARRAY['identity:read'],
     false
 )
 ON CONFLICT (client_id) DO UPDATE SET
+    client_name = EXCLUDED.client_name,
     allowed_origins = EXCLUDED.allowed_origins,
+    redirect_uris = EXCLUDED.redirect_uris,
     client_secret_hash = EXCLUDED.client_secret_hash;
 
 \c identity_test_db;
@@ -108,10 +110,10 @@ INSERT INTO registered_clients (
     'client-seed-1',
     'portal-web',
     NULL,
-    'AngelSolutions Web Portal',
+    'AngelPixel Web Portal',
     'public',
-    ARRAY['https://portal.angelsolutions.io'],
-    ARRAY['https://portal.angelsolutions.io/callback'],
+    ARRAY['https://portal.angelpixel.io'],
+    ARRAY['https://portal.angelpixel.io/callback'],
     ARRAY['authorization_code', 'refresh_token'],
     ARRAY['openid', 'profile', 'email'],
     true
@@ -122,8 +124,8 @@ INSERT INTO registered_clients (
     NULL,
     'Legacy Portal App',
     'public',
-    ARRAY['https://legacy.angelsolutions.io'],
-    ARRAY['https://legacy.angelsolutions.io/callback'],
+    ARRAY['https://legacy.angelpixel.io'],
+    ARRAY['https://legacy.angelpixel.io/callback'],
     ARRAY['authorization_code'],
     ARRAY['openid'],
     false
@@ -134,7 +136,7 @@ INSERT INTO registered_clients (
     '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
     'Machine to Machine Service Worker',
     'confidential',
-    ARRAY['https://m2m.angelsolutions.io'],
+    ARRAY['https://m2m.angelpixel.io'],
     ARRAY[]::TEXT[],
     ARRAY['client_credentials'],
     ARRAY['identity:read', 'identity:write', 'audit:log'],
@@ -146,13 +148,15 @@ INSERT INTO registered_clients (
     '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
     'Deactivated Background Worker',
     'confidential',
-    ARRAY['https://worker.angelsolutions.io'],
+    ARRAY['https://worker.angelpixel.io'],
     ARRAY[]::TEXT[],
     ARRAY['client_credentials'],
     ARRAY['identity:read'],
     false
 )
 ON CONFLICT (client_id) DO UPDATE SET
+    client_name = EXCLUDED.client_name,
     allowed_origins = EXCLUDED.allowed_origins,
+    redirect_uris = EXCLUDED.redirect_uris,
     client_secret_hash = EXCLUDED.client_secret_hash;
 

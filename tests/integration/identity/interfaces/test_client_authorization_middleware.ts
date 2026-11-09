@@ -13,10 +13,10 @@ describe('Integration Middleware: clientAuthorizationMiddleware', () => {
   const activePublicClient = ClientApplication.create({
     id: 'client-1',
     clientId: ClientId.create('portal-web'),
-    clientName: 'AngelSolutions Web Portal',
+    clientName: 'AngelPixel Web Portal',
     clientType: 'public',
-    allowedOrigins: [OriginDomain.create('https://portal.angelsolutions.io')],
-    redirectUris: ['https://portal.angelsolutions.io/callback'],
+    allowedOrigins: [OriginDomain.create('https://portal.angelpixel.io')],
+    redirectUris: ['https://portal.angelpixel.io/callback'],
     allowedGrantTypes: ['authorization_code'],
     scopes: ['openid', 'profile'],
     isActive: true,
@@ -27,8 +27,8 @@ describe('Integration Middleware: clientAuthorizationMiddleware', () => {
     clientId: ClientId.create('legacy-app'),
     clientName: 'Legacy Portal App',
     clientType: 'public',
-    allowedOrigins: [OriginDomain.create('https://legacy.angelsolutions.io')],
-    redirectUris: ['https://legacy.angelsolutions.io/callback'],
+    allowedOrigins: [OriginDomain.create('https://legacy.angelpixel.io')],
+    redirectUris: ['https://legacy.angelpixel.io/callback'],
     allowedGrantTypes: ['authorization_code'],
     scopes: ['openid'],
     isActive: false,
@@ -55,7 +55,7 @@ describe('Integration Middleware: clientAuthorizationMiddleware', () => {
     const response = await request(app)
       .post('/api/test/client-protected')
       .set('x-client-id', 'portal-web')
-      .set('Origin', 'https://portal.angelsolutions.io')
+      .set('Origin', 'https://portal.angelpixel.io')
       .send();
 
     expect(response.status).toBe(200);
@@ -81,7 +81,7 @@ describe('Integration Middleware: clientAuthorizationMiddleware', () => {
     const response = await request(app)
       .post('/api/test/client-protected')
       .set('x-client-id', 'legacy-app')
-      .set('Origin', 'https://legacy.angelsolutions.io')
+      .set('Origin', 'https://legacy.angelpixel.io')
       .send();
 
     expect(response.status).toBe(401);
@@ -94,7 +94,7 @@ describe('Integration Middleware: clientAuthorizationMiddleware', () => {
     const response = await request(app)
       .post('/api/test/client-protected')
       .set('x-client-id', 'unknown-client')
-      .set('Origin', 'https://portal.angelsolutions.io')
+      .set('Origin', 'https://portal.angelpixel.io')
       .send();
 
     expect(response.status).toBe(404);
@@ -104,7 +104,7 @@ describe('Integration Middleware: clientAuthorizationMiddleware', () => {
   it('should reject with 400 Bad Request when client_id is not provided', async () => {
     const response = await request(app)
       .post('/api/test/client-protected')
-      .set('Origin', 'https://portal.angelsolutions.io')
+      .set('Origin', 'https://portal.angelpixel.io')
       .send();
 
     expect(response.status).toBe(400);

@@ -60,8 +60,8 @@ En modo desacoplado / desarrollo en memoria o base de datos PostgreSQL, el siste
 
 | `client_id` | Tipo | Orígenes Permitidos | Estado |
 | :--- | :--- | :--- | :--- |
-| `portal-web` | `public` | `https://portal.angelsolutions.io` | `active: true` |
-| `legacy-app` | `public` | `https://legacy.angelsolutions.io` | `active: false` |
+| `portal-web` | `public` | `https://portal.angelpixel.io` | `active: true` |
+| `legacy-app` | `public` | `https://legacy.angelpixel.io` | `active: false` |
 | `m2m-service-app` | `confidential` | N/A (M2M Backend) | `active: true` |
 
 ---
@@ -70,12 +70,12 @@ En modo desacoplado / desarrollo en memoria o base de datos PostgreSQL, el siste
 
 ### Caso 1: Origen y Cliente Válidos (200 OK)
 
-Ejecuta una petición simulando una SPA autorizada en `https://portal.angelsolutions.io`:
+Ejecuta una petición simulando una SPA autorizada en `https://portal.angelpixel.io`:
 
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "Content-Type: application/json" \
-  -H "Origin: https://portal.angelsolutions.io" \
+  -H "Origin: https://portal.angelpixel.io" \
   -d '{"clientId": "portal-web"}'
 ```
 
@@ -87,10 +87,10 @@ Content-Type: application/json; charset=utf-8
 {
   "authorized": true,
   "clientId": "portal-web",
-  "clientName": "AngelSolutions Web Portal",
+  "clientName": "AngelPixel Web Portal",
   "clientType": "public",
   "allowedOrigins": [
-    "https://portal.angelsolutions.io"
+    "https://portal.angelpixel.io"
   ],
   "scopes": [
     "openid",
@@ -133,7 +133,7 @@ Ejecuta una petición utilizando el cliente `legacy-app`:
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "Content-Type: application/json" \
-  -H "Origin: https://legacy.angelsolutions.io" \
+  -H "Origin: https://legacy.angelpixel.io" \
   -d '{"clientId": "legacy-app"}'
 ```
 
@@ -157,7 +157,7 @@ Ejecuta una petición omitiendo el identificador de cliente:
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "Content-Type: application/json" \
-  -H "Origin: https://portal.angelsolutions.io" \
+  -H "Origin: https://portal.angelpixel.io" \
   -d '{}'
 ```
 

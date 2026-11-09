@@ -34,12 +34,12 @@ export class AuthenticateClientM2MCommandHandler {
   ) {
     if (typeof optionsOrExpiresIn === 'number') {
       this.defaultExpiresInSeconds = optionsOrExpiresIn;
-      this.issuer = 'https://auth.angelsolutions.io';
-      this.audience = 'https://api.angelsolutions.io';
+      this.issuer = 'https://auth.angelpixel.io';
+      this.audience = 'https://api.angelpixel.io';
     } else {
       this.defaultExpiresInSeconds = optionsOrExpiresIn.defaultExpiresInSeconds ?? 3600;
-      this.issuer = optionsOrExpiresIn.issuer ?? 'https://auth.angelsolutions.io';
-      this.audience = optionsOrExpiresIn.audience ?? 'https://api.angelsolutions.io';
+      this.issuer = optionsOrExpiresIn.issuer ?? 'https://auth.angelpixel.io';
+      this.audience = optionsOrExpiresIn.audience ?? 'https://api.angelpixel.io';
     }
   }
 

@@ -20,7 +20,7 @@ describe('Web UI E2E Spec: Client Registry & Origin Validation Guard', () => {
     render(
       <ClientAuthorizationGuard
         clientId="portal-web"
-        currentOrigin="https://portal.angelsolutions.io"
+        currentOrigin="https://portal.angelpixel.io"
         apiClient={mockApiClient}
       >
         <div data-testid="protected-app">Portal Content Active</div>
@@ -71,7 +71,7 @@ describe('Web UI E2E Spec: Client Registry & Origin Validation Guard', () => {
     render(
       <ClientAuthorizationGuard
         clientId="legacy-app"
-        currentOrigin="https://legacy.angelsolutions.io"
+        currentOrigin="https://legacy.angelpixel.io"
         apiClient={mockApiClient}
       >
         <div data-testid="protected-app">Portal Content Active</div>
