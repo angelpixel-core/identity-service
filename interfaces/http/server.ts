@@ -61,6 +61,10 @@ import { GoogleOidcAdapter } from '../../src/contexts/identity/infrastructure/fe
 import { MicrosoftEntraAdapter } from '../../src/contexts/identity/infrastructure/federation/microsoft_entra_adapter';
 import { GenerateFederatedLoginUrlQueryHandler } from '../../src/contexts/identity/application/queries/generate_federated_login_url/handler';
 import { ProcessFederatedCallbackCommandHandler } from '../../src/contexts/identity/application/commands/process_federated_callback/handler';
+import { LinkOrProvisionFederatedUserCommandHandler } from '../../src/contexts/identity/application/commands/link_or_provision_federated_user/handler';
+import { FederatedIdentityRepositoryPort } from '../../src/contexts/identity/domain/ports/repositories/federated_identity_repository_port';
+import { PostgresFederatedIdentityRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/federated_identity/postgres_federated_identity_repository';
+import { InMemoryFederatedIdentityRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/federated_identity/in_memory_federated_identity_repository';
 import { FederationController } from './rest/v1/federation/federation_controller';
 
 /**
@@ -103,6 +107,7 @@ export interface AppDependencies {
   cacheProvider?: CacheProviderPort;
   transactionRunner?: TenantTransactionRunnerPort;
   auditLogger?: SecurityAuditLoggerPort;
+  federatedIdentityRepository?: FederatedIdentityRepositoryPort;
   googleOidcAdapter?: ExternalIdentityProviderPort;
   microsoftEntraAdapter?: ExternalIdentityProviderPort;
   federationStateManager?: FederationStateManager;
@@ -172,6 +177,15 @@ export function createApp(deps?: AppDependencies): Express {
     refreshSessionRepository = new InMemoryRefreshSessionRepository();
   }
 
+  let federatedIdentityRepository = deps?.federatedIdentityRepository;
+  if (!federatedIdentityRepository) {
+    if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
+      federatedIdentityRepository = new PostgresFederatedIdentityRepository(getPool());
+    } else {
+      federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
+    }
+  }
+
   let transactionRunner = deps?.transactionRunner;
   if (!transactionRunner) {
     if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
@@ -184,6 +198,7 @@ export function createApp(deps?: AppDependencies): Express {
   app.locals.clientRepository = clientRepository;
   app.locals.authCodeRepository = authCodeRepository;
   app.locals.refreshSessionRepository = refreshSessionRepository;
+  app.locals.federatedIdentityRepository = federatedIdentityRepository;
   if (transactionRunner) {
     app.locals.transactionRunner = transactionRunner;
   }
@@ -281,14 +296,23 @@ export function createApp(deps?: AppDependencies): Express {
     federationStateManager,
     auditLogger
   );
+  const linkOrProvisionFederatedUserHandler = new LinkOrProvisionFederatedUserCommandHandler(
+    userRepository,
+    federatedIdentityRepository,
+    tokenProvider,
+    refreshSessionRepository,
+    auditLogger
+  );
   const federationController = new FederationController(
     generateFederatedLoginUrlHandler,
-    processFederatedCallbackHandler
+    processFederatedCallbackHandler,
+    linkOrProvisionFederatedUserHandler
   );
 
   app.locals.federationStateManager = federationStateManager;
   app.locals.googleAdapter = googleAdapter;
   app.locals.microsoftAdapter = microsoftAdapter;
+  app.locals.linkOrProvisionFederatedUserHandler = linkOrProvisionFederatedUserHandler;
 
   const authorizeController = new OAuth2AuthorizeController(issueAuthCodeHandler);
   const sessionController = new OAuth2SessionController(rotateRefreshTokenHandler, revokeSessionHandler);

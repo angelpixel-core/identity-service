@@ -21,6 +21,19 @@ export interface FederatedCallbackParams {
 
 export interface FederatedCallbackResponse {
   status: string;
+  tokens?: {
+    access_token: string;
+    token_type: string;
+    expires_in: number;
+    refresh_token?: string;
+  };
+  user?: {
+    id: string;
+    email: string;
+    tenantId: string;
+  };
+  isNewUser?: boolean;
+  linked?: boolean;
   userProfile: {
     provider: 'google' | 'microsoft';
     externalSubjectId: string;

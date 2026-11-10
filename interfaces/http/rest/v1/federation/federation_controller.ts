@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { GenerateFederatedLoginUrlQueryHandler } from '../../../../../src/contexts/identity/application/queries/generate_federated_login_url/handler';
 import { ProcessFederatedCallbackCommandHandler } from '../../../../../src/contexts/identity/application/commands/process_federated_callback/handler';
+import { LinkOrProvisionFederatedUserCommandHandler } from '../../../../../src/contexts/identity/application/commands/link_or_provision_federated_user/handler';
 import {
   FederatedLoginQuerySchema,
   FederatedCallbackQuerySchema,
@@ -11,7 +12,8 @@ import { FederatedProviderId } from '../../../../../src/contexts/identity/domain
 export class FederationController {
   constructor(
     private readonly generateLoginUrlHandler: GenerateFederatedLoginUrlQueryHandler,
-    private readonly processCallbackHandler: ProcessFederatedCallbackCommandHandler
+    private readonly processCallbackHandler: ProcessFederatedCallbackCommandHandler,
+    private readonly linkOrProvisionHandler?: LinkOrProvisionFederatedUserCommandHandler
   ) { }
 
   public login = async (req: Request, res: Response): Promise<void> => {
@@ -101,8 +103,45 @@ export class FederationController {
         provider,
       });
 
+      let sessionData: any = undefined;
+      if (this.linkOrProvisionHandler) {
+        const sessionResult = await this.linkOrProvisionHandler.execute({
+          userProfile: result.userProfile,
+          tenantId: result.statePayload.tenantId,
+          clientId: result.statePayload.clientId,
+          ip: req.ip || (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress,
+        });
+
+        const isProduction = process.env.NODE_ENV === 'production';
+        const isV1 = req.originalUrl?.includes('/api/v1') || req.baseUrl?.includes('/api/v1');
+        const cookiePath = isV1 ? '/api/v1/oauth2' : '/oauth2';
+
+        res.cookie('refresh_token', sessionResult.refreshToken, {
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: 'strict',
+          path: cookiePath,
+          maxAge: 30 * 24 * 60 * 60 * 1000,
+        });
+
+        sessionData = sessionResult;
+      }
+
       res.status(200).json({
         status: 'success',
+        ...(sessionData
+          ? {
+              tokens: {
+                access_token: sessionData.accessToken,
+                token_type: sessionData.tokenType,
+                expires_in: sessionData.expiresIn,
+                refresh_token: sessionData.refreshToken,
+              },
+              user: sessionData.user,
+              isNewUser: sessionData.isNewUser,
+              linked: sessionData.linked,
+            }
+          : {}),
         userProfile: result.userProfile,
         statePayload: {
           tenantId: result.statePayload.tenantId,

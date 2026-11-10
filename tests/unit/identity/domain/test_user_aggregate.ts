@@ -22,6 +22,7 @@ describe('Aggregate Root: User', () => {
       expect(user.getEmail().equals(validEmail)).toBe(true);
       expect(user.getTenantId().equals(validTenantId)).toBe(true);
       expect(user.getPasswordHash()).toBe(validPasswordHash);
+      expect(user.hasLocalPassword()).toBe(true);
       expect(user.getCreatedAt()).toBeInstanceOf(Date);
       expect(user.getUpdatedAt()).toBeInstanceOf(Date);
     });
@@ -40,6 +41,32 @@ describe('Aggregate Root: User', () => {
       expect(user.getId()).toBe(validId);
       expect(user.getCreatedAt()).toEqual(pastDate);
       expect(user.getUpdatedAt()).toEqual(pastDate);
+    });
+
+    it('should create a federated User with unmatchable password hash and auto-generated ID', () => {
+      const federatedUser = User.createFederatedUser({
+        email: validEmail,
+        tenantId: validTenantId,
+      });
+
+      expect(federatedUser.getId()).toBeDefined();
+      expect(federatedUser.getId().length).toBeGreaterThan(10);
+      expect(federatedUser.getEmail().equals(validEmail)).toBe(true);
+      expect(federatedUser.getTenantId().equals(validTenantId)).toBe(true);
+      expect(federatedUser.getPasswordHash()).toContain('$2b$12$FEDERATED_NO_LOCAL_PASSWORD_');
+      expect(federatedUser.hasLocalPassword()).toBe(false);
+    });
+
+    it('should create a federated User with custom ID if provided', () => {
+      const customId = 'usr-custom-federated-999';
+      const federatedUser = User.createFederatedUser({
+        id: customId,
+        email: validEmail,
+        tenantId: validTenantId,
+      });
+
+      expect(federatedUser.getId()).toBe(customId);
+      expect(federatedUser.hasLocalPassword()).toBe(false);
     });
   });
 

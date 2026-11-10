@@ -44,6 +44,19 @@ describe('SDK Resource: FederationResource (US-10)', () => {
     getMock.mockResolvedValueOnce({
       data: {
         status: 'success',
+        tokens: {
+          access_token: 'rs256-mock-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          refresh_token: 'mock-refresh-token',
+        },
+        user: {
+          id: 'user-uuid-1',
+          email: 'user@corp.com',
+          tenantId: 'corp-tenant',
+        },
+        isNewUser: false,
+        linked: true,
         userProfile: {
           provider: 'microsoft',
           externalSubjectId: 'msft-oid-1',
@@ -66,6 +79,10 @@ describe('SDK Resource: FederationResource (US-10)', () => {
 
     expect(result.status).toBe('success');
     expect(result.userProfile.email).toBe('user@corp.com');
+    expect(result.tokens?.access_token).toBe('rs256-mock-token');
+    expect(result.user?.id).toBe('user-uuid-1');
+    expect(result.isNewUser).toBe(false);
+    expect(result.linked).toBe(true);
     expect(getMock).toHaveBeenCalledWith(
       '/api/v1/auth/federation/microsoft/callback?code=code-123&state=state-456',
       undefined

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Email } from '../../value_objects/email/value';
 import { TenantId } from '../../value_objects/tenant_id/value';
 import { DomainValidationError } from '../../exceptions/user/error';
@@ -7,6 +8,12 @@ export interface UserCreateProps {
   email: Email;
   tenantId: TenantId;
   passwordHash: string;
+}
+
+export interface FederatedUserCreateProps {
+  id?: string;
+  email: Email;
+  tenantId: TenantId;
 }
 
 export interface UserReconstituteProps {
@@ -55,6 +62,17 @@ export class User {
     });
   }
 
+  public static createFederatedUser(props: FederatedUserCreateProps): User {
+    const id = props.id && props.id.trim().length > 0 ? props.id.trim() : crypto.randomUUID();
+    const unmatchablePasswordHash = `$2b$12$FEDERATED_NO_LOCAL_PASSWORD_${crypto.randomUUID()}`;
+    return User.create({
+      id,
+      email: props.email,
+      tenantId: props.tenantId,
+      passwordHash: unmatchablePasswordHash,
+    });
+  }
+
   public static reconstitute(props: UserReconstituteProps): User {
     return new User(props);
   }
@@ -73,6 +91,10 @@ export class User {
 
   public getPasswordHash(): string {
     return this.passwordHash;
+  }
+
+  public hasLocalPassword(): boolean {
+    return !this.passwordHash.startsWith('$2b$12$FEDERATED_NO_LOCAL_PASSWORD_');
   }
 
   public getCreatedAt(): Date {

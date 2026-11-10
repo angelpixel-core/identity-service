@@ -729,10 +729,11 @@ paths:
     get:
       tags:
         - Federation
-      summary: External OIDC Provider Callback (US-10)
+      summary: External OIDC Provider Callback & JIT Provisioning (US-10 & US-11)
       description: |
         Processes authorization code from external IdP (Google / Microsoft).
-        Verifies cryptographic state anti-CSRF token, exchanges code for ID Token, and verifies ID Token signature against provider JWKS.
+        Verifies cryptographic state anti-CSRF token, exchanges code for ID Token, verifies signature against provider JWKS,
+        links account or provisions user Just-In-Time (JIT), issues native RS256 session tokens, and sets HttpOnly refresh cookie.
       parameters:
         - name: provider
           in: path
@@ -752,7 +753,13 @@ paths:
             type: string
       responses:
         '200':
-          description: Callback processed successfully and profile verified
+          description: Callback processed successfully, account linked/provisioned, and session issued
+          headers:
+            Set-Cookie:
+              description: HttpOnly SameSite=Strict refresh token cookie for sliding session rotation
+              schema:
+                type: string
+                example: refresh_token=32_bytes_random_hex; Path=/api/v1/oauth2; HttpOnly; SameSite=Strict; Max-Age=2592000
           content:
             application/json:
               schema:
@@ -761,6 +768,32 @@ paths:
                   status:
                     type: string
                     example: success
+                  tokens:
+                    type: object
+                    properties:
+                      access_token:
+                        type: string
+                      token_type:
+                        type: string
+                        example: Bearer
+                      expires_in:
+                        type: integer
+                        example: 3600
+                      refresh_token:
+                        type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      email:
+                        type: string
+                      tenantId:
+                        type: string
+                  isNewUser:
+                    type: boolean
+                  linked:
+                    type: boolean
                   userProfile:
                     type: object
                     properties:
