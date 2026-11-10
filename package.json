@@ -13,6 +13,8 @@
     "docker:up": "docker compose up",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
+    "docker:cloud": "docker compose --profile cloud up -d floci",
+    "docker:cloud:down": "docker compose --profile cloud stop floci",
     "demo:m2m": "tsx scripts/demo_m2m_client.ts",
     "test:unit": "NODE_ENV=test jest --config jest.config.js tests/unit",
     "test:integration": "NODE_ENV=test jest --config jest.config.js tests/integration --runInBand",

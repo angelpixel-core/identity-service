@@ -111,7 +111,7 @@ Feature: Terraform Azure Resources Provisioning over Floci
 
 ## 4. Definición de Hecho (DoD)
 
-- [ ] Contenedor Floci orquestado vía Docker Compose en `infrastructure/local/floci/`.
+- [x] Contenedor Floci orquestado vía Docker Compose en `compose.yml` (profiles: `cloud`, `infra`).
 - [ ] 6 módulos Terraform reutilizables (`aks`, `postgres`, `keyvault`, `acr`, `storage`, `log_analytics`).
 - [ ] Entorno `environments/local/` configurado con variables y outputs correspondientes.
 - [ ] `terraform validate` y `terraform fmt` pasando sin errores.
