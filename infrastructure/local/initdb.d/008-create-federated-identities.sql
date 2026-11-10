@@ -41,3 +41,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_federated_user_provider ON federated_ident
 CREATE INDEX IF NOT EXISTS idx_federated_identities_tenant_id ON federated_identities (tenant_id);
 
 SELECT apply_tenant_rls('federated_identities');
+

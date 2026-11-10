@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { UserRepositoryPort } from '../../ports/user/repository';
 import { FederatedIdentityRepositoryPort } from '../../../domain/ports/repositories/federated_identity_repository_port';
 import { TokenProviderPort } from '../../ports/security/token_provider';
@@ -19,7 +18,7 @@ export class LinkOrProvisionFederatedUserCommandHandler {
     private readonly tokenProvider: TokenProviderPort,
     private readonly refreshSessionRepository: RefreshSessionRepositoryPort,
     private readonly auditLogger?: SecurityAuditLoggerPort
-  ) {}
+  ) { }
 
   public async execute(
     command: LinkOrProvisionFederatedUserCommand
@@ -56,7 +55,7 @@ export class LinkOrProvisionFederatedUserCommandHandler {
 
     if (existingIdentity) {
       // Verificar que el tenant coincide
-      if (!existingIdentity.getTenantId().equals(tenantId)) {
+      if (!existingIdentity.belongsToTenant(tenantId)) {
         await this.auditLogger?.logEvent({
           eventType: 'cross_tenant_violation',
           timestamp: new Date(),
@@ -131,20 +130,15 @@ export class LinkOrProvisionFederatedUserCommandHandler {
         isNewUser = true;
         linked = true;
 
-        const newUserId = crypto.randomUUID();
-        const unmatchablePasswordHash = `$2b$12$FEDERATED_NO_LOCAL_PASSWORD_${crypto.randomUUID()}`;
-
-        user = User.create({
-          id: newUserId,
+        user = User.createFederatedUser({
           email,
           tenantId,
-          passwordHash: unmatchablePasswordHash,
         });
 
         await this.userRepository.save(user);
 
         const newIdentity = FederatedIdentity.create({
-          userId: newUserId,
+          userId: user.getId(),
           tenantId,
           provider: userProfile.provider,
           externalSubjectId: userProfile.externalSubjectId,
@@ -159,7 +153,7 @@ export class LinkOrProvisionFederatedUserCommandHandler {
           timestamp: new Date(),
           ip,
           metadata: {
-            userId: newUserId,
+            userId: user.getId(),
             tenantId: tenantId.getValue(),
             provider: userProfile.provider,
             subject: userProfile.externalSubjectId,

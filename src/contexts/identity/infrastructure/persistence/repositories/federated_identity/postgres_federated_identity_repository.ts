@@ -7,7 +7,7 @@ import { FederatedIdentityMapper } from '../../mappers/federated_identity/mapper
 import { FederatedIdentityDatabaseModel } from '../../models/federated_identity/model';
 
 export class PostgresFederatedIdentityRepository implements FederatedIdentityRepositoryPort {
-  constructor(private readonly db: DatabaseClient) {}
+  constructor(private readonly db: DatabaseClient) { }
 
   public withClient(client: DatabaseClient): PostgresFederatedIdentityRepository {
     return new PostgresFederatedIdentityRepository(client);

@@ -118,6 +118,14 @@ export class FederatedIdentity {
     );
   }
 
+  public matchesSubject(provider: FederatedProviderId, externalSubjectId: string): boolean {
+    return this.provider === provider && this.externalSubjectId === externalSubjectId.trim();
+  }
+
+  public belongsToTenant(tenantId: TenantId): boolean {
+    return this.tenantId.equals(tenantId);
+  }
+
   private validateId(id: string): void {
     if (!id || typeof id !== 'string' || id.trim().length === 0) {
       throw new DomainValidationError('FederatedIdentity id must be a non-empty string');
