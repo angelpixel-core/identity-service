@@ -1,4 +1,4 @@
-import http from 'http';
+import { Express } from 'express';
 import request from 'supertest';
 import { createApp } from '../../../../interfaces/http/server';
 import { InMemoryClientApplicationRepository } from '../../../../src/contexts/identity/infrastructure/persistence/repositories/client_application/in_memory_client_repository';
@@ -8,7 +8,7 @@ import { OriginDomain } from '../../../../src/contexts/identity/domain/value_obj
 import { BcryptAdapter } from '../../../../src/contexts/identity/infrastructure/security/bcrypt_adapter';
 
 describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credentials Grant)', () => {
-  let server: http.Server;
+  let app: Express;
   let clientRepository: InMemoryClientApplicationRepository;
   const hashProvider = new BcryptAdapter(4);
 
@@ -47,24 +47,13 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     await clientRepository.save(deactivatedClient);
   });
 
-  beforeEach((done) => {
-    const app = createApp({ clientRepository, hashProvider });
-    server = http.createServer(app);
-    server.listen(0, done);
-  });
-
-  afterEach((done) => {
-    if (server) {
-      server.closeAllConnections?.();
-      server.close(done);
-    } else {
-      done();
-    }
+  beforeEach(() => {
+    app = createApp({ clientRepository, hashProvider });
   });
 
   describe('Happy Path: Successful Client Credentials Grant (200 OK)', () => {
     it('should issue Bearer JWT access token with JSON payload and authorized scope', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'client_credentials',
@@ -84,7 +73,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     });
 
     it('should support application/x-www-form-urlencoded content type per RFC 6749 Section 4.4.2', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .type('form')
         .send({
@@ -102,7 +91,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     it('should authenticate client credentials via HTTP Basic Authorization header', async () => {
       const credentials = Buffer.from('order-service:ValidSecret123!_SuperSecureSecretForTesting_2026').toString('base64');
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .set('Authorization', `Basic ${credentials}`)
         .send({
@@ -116,7 +105,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     });
 
     it('should default to all client scopes when no scope parameter is requested', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'client_credentials',
@@ -131,7 +120,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
 
   describe('Validation & Protocol Violations (400 Bad Request)', () => {
     it('should reject when client_id is missing with error invalid_request', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'client_credentials',
@@ -144,7 +133,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     });
 
     it('should reject when grant_type is missing with error invalid_request', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           client_id: 'order-service',
@@ -156,7 +145,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     });
 
     it('should reject when grant_type is not supported with error unsupported_grant_type', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'password',
@@ -169,7 +158,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     });
 
     it('should reject client_credentials from public client with error unauthorized_client', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'client_credentials',
@@ -182,7 +171,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     });
 
     it('should reject when requested scope exceeds client permissions with error invalid_scope', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'client_credentials',
@@ -198,7 +187,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
 
   describe('Authentication Failures (401 Unauthorized)', () => {
     it('should reject with 401 and error invalid_client when client_secret is incorrect', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'client_credentials',
@@ -211,7 +200,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     });
 
     it('should reject with 401 and error invalid_client when client_id does not exist', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'client_credentials',
@@ -224,7 +213,7 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
     });
 
     it('should reject with 401 and error invalid_client when client is deactivated', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/oauth2/token')
         .send({
           grant_type: 'client_credentials',

@@ -1,4 +1,3 @@
-import http from 'http';
 import request from 'supertest';
 import { Express } from 'express';
 import { createApp } from '../../../../interfaces/http/server';
@@ -10,13 +9,12 @@ import { RefreshSession } from '../../../../src/contexts/identity/domain/entitie
 
 describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Management (US-09)', () => {
   let app: Express;
-  let server: http.Server;
   let clientRepository: InMemoryClientApplicationRepository;
   let sessionRepository: InMemoryRefreshSessionRepository;
   let auditLogger: InMemorySecurityAuditLogger;
   let asymmetricKeyProvider: RsaKeyAdapter;
 
-  beforeEach((done) => {
+  beforeEach(() => {
     clientRepository = new InMemoryClientApplicationRepository(true);
     sessionRepository = new InMemoryRefreshSessionRepository();
     auditLogger = new InMemorySecurityAuditLogger();
@@ -28,17 +26,6 @@ describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Manag
       auditLogger,
       asymmetricKeyProvider,
     });
-    server = http.createServer(app);
-    server.listen(0, done);
-  });
-
-  afterEach((done) => {
-    if (server) {
-      server.closeAllConnections?.();
-      server.close(done);
-    } else {
-      done();
-    }
   });
 
   describe('POST /oauth2/refresh & POST /api/v1/oauth2/refresh', () => {
@@ -51,7 +38,7 @@ describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Manag
       });
       await sessionRepository.save(session);
 
-      const res = await request(server)
+      const res = await request(app)
         .post('/oauth2/refresh')
         .set('Cookie', [`refresh_token=${plainToken}`])
         .send();
@@ -82,7 +69,7 @@ describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Manag
       });
       await sessionRepository.save(session);
 
-      const res = await request(server)
+      const res = await request(app)
         .post('/api/v1/oauth2/refresh')
         .set('Cookie', [`refresh_token=${plainToken}`])
         .send();
@@ -94,14 +81,14 @@ describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Manag
     });
 
     it('should reject with 400 invalid_request when no refresh token is provided', async () => {
-      const res = await request(server).post('/oauth2/refresh').send();
+      const res = await request(app).post('/oauth2/refresh').send();
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('invalid_request');
     });
 
     it('should reject with 401 invalid_grant when refresh token is unknown', async () => {
-      const res = await request(server)
+      const res = await request(app)
         .post('/oauth2/refresh')
         .set('Cookie', ['refresh_token=non_existent_token_string_1234567890'])
         .send();
@@ -125,7 +112,7 @@ describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Manag
       await sessionRepository.save(childSession);
 
       // 2. Attacker replays consumed token
-      const res = await request(server)
+      const res = await request(app)
         .post('/oauth2/refresh')
         .set('Cookie', [`refresh_token=${plainToken}`])
         .send();
@@ -158,7 +145,7 @@ describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Manag
       });
       await sessionRepository.save(session);
 
-      const res = await request(server)
+      const res = await request(app)
         .post('/oauth2/token')
         .send({
           grant_type: 'refresh_token',
@@ -182,7 +169,7 @@ describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Manag
       });
       await sessionRepository.save(session);
 
-      const res = await request(server)
+      const res = await request(app)
         .post('/oauth2/revoke')
         .set('Cookie', [`refresh_token=${plainToken}`])
         .send();
@@ -195,7 +182,7 @@ describe('Integration API: Sliding Session Refresh Token Rotation & Cookie Manag
       expect(cookieHeader).toMatch(/Max-Age=0/i);
 
       // Subsequent refresh with revoked token must fail
-      const refreshRes = await request(server)
+      const refreshRes = await request(app)
         .post('/oauth2/refresh')
         .set('Cookie', [`refresh_token=${plainToken}`])
         .send();

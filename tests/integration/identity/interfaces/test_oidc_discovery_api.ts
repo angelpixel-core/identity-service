@@ -1,4 +1,3 @@
-import http from 'http';
 import request from 'supertest';
 import { Express } from 'express';
 import jwt from 'jsonwebtoken';
@@ -7,26 +6,14 @@ import { AsymmetricKeyProviderPort, JwksResponseDto } from '../../../../src/cont
 
 describe('Integration API: OIDC Discovery & JWKS Endpoints (US-07 & RFC 8414 / RFC 7517)', () => {
   let app: Express;
-  let server: http.Server;
 
-  beforeEach((done) => {
+  beforeEach(() => {
     app = createApp();
-    server = http.createServer(app);
-    server.listen(0, done);
-  });
-
-  afterEach((done) => {
-    if (server) {
-      server.closeAllConnections?.();
-      server.close(done);
-    } else {
-      done();
-    }
   });
 
   describe('GET /.well-known/openid-configuration', () => {
     it('should return 200 OK with valid OpenID Provider Metadata and CORS headers', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .get('/.well-known/openid-configuration')
         .set('Host', 'id.angelpixel.io');
 
@@ -60,7 +47,7 @@ describe('Integration API: OIDC Discovery & JWKS Endpoints (US-07 & RFC 8414 / R
 
   describe('GET /.well-known/jwks.json', () => {
     it('should return 200 OK with keys array and enable verifying tokens signed with the server key', async () => {
-      const response = await request(server).get('/.well-known/jwks.json');
+      const response = await request(app).get('/.well-known/jwks.json');
 
       expect(response.status).toBe(200);
       expect(response.headers['content-type']).toMatch(/application\/json/);

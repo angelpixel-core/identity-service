@@ -1,28 +1,17 @@
-import http from 'http';
+import { Express } from 'express';
 import request from 'supertest';
 import { createApp } from '../../../../interfaces/http/server';
 
 describe('Integration API: POST /api/v1/auth/register', () => {
-  let server: http.Server;
+  let app: Express;
 
-  beforeEach((done) => {
-    const app = createApp();
-    server = http.createServer(app);
-    server.listen(0, done);
-  });
-
-  afterEach((done) => {
-    if (server) {
-      server.closeAllConnections?.();
-      server.close(done);
-    } else {
-      done();
-    }
+  beforeEach(() => {
+    app = createApp();
   });
 
   describe('Happy Path: User Registration (201 Created)', () => {
     it('should successfully register a new tenant user and return 201 with auth token', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({
@@ -42,7 +31,7 @@ describe('Integration API: POST /api/v1/auth/register', () => {
 
   describe('Validation Failures (400 Bad Request)', () => {
     it('should reject when x-tenant-id header is missing or empty', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/auth/register')
         .send({
           email: 'user@acme.com',
@@ -54,7 +43,7 @@ describe('Integration API: POST /api/v1/auth/register', () => {
     });
 
     it('should reject when email format is invalid', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({
@@ -67,7 +56,7 @@ describe('Integration API: POST /api/v1/auth/register', () => {
     });
 
     it('should reject when password is shorter than 8 characters', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({
@@ -80,7 +69,7 @@ describe('Integration API: POST /api/v1/auth/register', () => {
     });
 
     it('should reject when request body is empty', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({});
@@ -93,7 +82,7 @@ describe('Integration API: POST /api/v1/auth/register', () => {
   describe('Business Rule Violations: Duplicate Registration (409 Conflict)', () => {
     it('should return 409 Conflict when attempting to register duplicate email within same tenant', async () => {
       // First registration
-      const firstResponse = await request(server)
+      const firstResponse = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({
@@ -104,7 +93,7 @@ describe('Integration API: POST /api/v1/auth/register', () => {
       expect(firstResponse.status).toBe(201);
 
       // Duplicate registration attempt
-      const duplicateResponse = await request(server)
+      const duplicateResponse = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({
@@ -119,7 +108,7 @@ describe('Integration API: POST /api/v1/auth/register', () => {
 
     it('should allow registering the same email under a different tenant (multi-tenant isolation)', async () => {
       // Register in tenant A
-      const tenantAResponse = await request(server)
+      const tenantAResponse = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({
@@ -130,7 +119,7 @@ describe('Integration API: POST /api/v1/auth/register', () => {
       expect(tenantAResponse.status).toBe(201);
 
       // Register same email in tenant B
-      const tenantBResponse = await request(server)
+      const tenantBResponse = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'beta-corp')
         .send({

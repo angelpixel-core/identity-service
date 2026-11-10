@@ -1,4 +1,3 @@
-import http from 'http';
 import request from 'supertest';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -11,7 +10,6 @@ import { JsonWebKey } from '../../../../src/contexts/identity/infrastructure/fed
 
 describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
   let app: Express;
-  let server: http.Server;
   let federationStateManager: FederationStateManager;
   let googleAdapter: GoogleOidcAdapter;
   let microsoftAdapter: MicrosoftEntraAdapter;
@@ -34,7 +32,7 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
     };
   });
 
-  beforeEach((done) => {
+  beforeEach(() => {
     federationStateManager = new FederationStateManager({ secret: 'fed-api-test-secret-32-chars-long' });
 
     const mockHttpClient = async (url: string, init?: any) => {
@@ -90,22 +88,11 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
       googleOidcAdapter: googleAdapter,
       microsoftEntraAdapter: microsoftAdapter,
     });
-    server = http.createServer(app);
-    server.listen(0, done);
-  });
-
-  afterEach((done) => {
-    if (server) {
-      server.closeAllConnections?.();
-      server.close(done);
-    } else {
-      done();
-    }
   });
 
   describe('GET /api/v1/auth/federation/:provider/login', () => {
     it('should redirect 302 to Google authorization URL by default', async () => {
-      const res = await request(server)
+      const res = await request(app)
         .get('/api/v1/auth/federation/google/login')
         .query({
           tenant_id: 'acme-tenant',
@@ -120,7 +107,7 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
     });
 
     it('should return JSON when format=json query parameter is present', async () => {
-      const res = await request(server)
+      const res = await request(app)
         .get('/api/v1/auth/federation/microsoft/login')
         .query({
           tenant_id: 'acme-tenant',
@@ -136,7 +123,7 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
     });
 
     it('should reject with 400 when provider is not supported', async () => {
-      const res = await request(server)
+      const res = await request(app)
         .get('/api/v1/auth/federation/github/login')
         .query({
           tenant_id: 'acme-tenant',
@@ -149,7 +136,7 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
     });
 
     it('should reject with 400 when tenant_id is missing', async () => {
-      const res = await request(server)
+      const res = await request(app)
         .get('/api/v1/auth/federation/google/login')
         .query({
           redirect_uri: 'https://acme.local/auth/callback',
@@ -171,7 +158,7 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
         nonce: 'test-nonce-1',
       });
 
-      const res = await request(server)
+      const res = await request(app)
         .get('/api/v1/auth/federation/google/callback')
         .query({
           code: 'valid-google-auth-code',
@@ -194,7 +181,7 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
         nonce: 'test-nonce-1',
       });
 
-      const res = await request(server)
+      const res = await request(app)
         .post('/api/v1/auth/federation/microsoft/callback')
         .send({
           code: 'valid-msft-auth-code',
@@ -208,7 +195,7 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
     });
 
     it('should reject with 400 when state signature is invalid', async () => {
-      const res = await request(server)
+      const res = await request(app)
         .get('/api/v1/auth/federation/google/callback')
         .query({
           code: 'valid-code',
@@ -227,7 +214,7 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
         nonce: 'test-nonce-1',
       });
 
-      const res = await request(server)
+      const res = await request(app)
         .get('/api/v1/auth/federation/google/callback')
         .query({
           code: 'unverified-code',
