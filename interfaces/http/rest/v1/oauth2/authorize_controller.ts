@@ -81,9 +81,9 @@ export class OAuth2AuthorizeController {
 
       // Redirección HTTP 302 estándar según RFC 6749
       res.redirect(302, result.callbackUrl);
-    } catch (error: unknown) {
-      if (error instanceof OAuth2AuthenticationError) {
-        res.status(error.statusCode).json({
+    } catch (error: any) {
+      if (error instanceof OAuth2AuthenticationError || (error && typeof error === 'object' && error.errorCode)) {
+        res.status(error.statusCode || 400).json({
           error: error.errorCode,
           error_description: error.errorDescription,
         });

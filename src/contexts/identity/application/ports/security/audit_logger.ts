@@ -4,7 +4,9 @@ export type SecurityAuditEventType =
   | 'cross_tenant_violation'
   | 'code_reuse_violation'
   | 'pkce_verification_failed'
-  | 'refresh_token_reuse_detected';
+  | 'refresh_token_reuse_detected'
+  | 'federation_callback_processed'
+  | 'federation_callback_failed';
 
 /**
  * Evento estructurado de auditoría de seguridad para operaciones OAuth2 y autenticación.

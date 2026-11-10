@@ -5,6 +5,7 @@ import { AuthResource } from './resources/auth_resource';
 import { UsersResource } from './resources/users_resource';
 import { OAuth2Resource } from './resources/oauth2_resource';
 import { DiscoveryResource } from './resources/discovery_resource';
+import { FederationResource } from './resources/federation_resource';
 import { RequestTokenParams, OAuth2TokenResponse } from './types/oauth2';
 
 /**
@@ -16,6 +17,7 @@ export class IdentityServiceClient {
   public readonly users: UsersResource;
   public readonly oauth2: OAuth2Resource;
   public readonly discovery: DiscoveryResource;
+  public readonly federation: FederationResource;
   public readonly transport: HttpTransport;
   public readonly tokenManager: TokenManager;
 
@@ -33,6 +35,7 @@ export class IdentityServiceClient {
     this.users = new UsersResource(this.transport);
     this.oauth2 = new OAuth2Resource(this.transport, this.tokenManager);
     this.discovery = new DiscoveryResource(this.transport);
+    this.federation = new FederationResource(this.transport);
   }
 
   // ---------------------------------------------------------------------------

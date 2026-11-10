@@ -656,6 +656,190 @@ paths:
                   message:
                     type: string
 
+  /api/v1/auth/federation/{provider}/login:
+    get:
+      tags:
+        - Federation
+      summary: Initiate External OIDC Federated Authentication (US-10)
+      description: |
+        Generates authorization URL pointing to Google Accounts or Microsoft Entra ID with cryptographic state and nonce parameters.
+        Returns HTTP 302 redirect by default, or 200 OK JSON when format=json is specified.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [google, microsoft]
+        - name: tenant_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: client_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: prompt
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: login_hint
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, redirect]
+      responses:
+        '302':
+          description: Redirects browser to external IdP authorization URL
+        '200':
+          description: Authorization URL payload returned as JSON
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                  state:
+                    type: string
+                  nonce:
+                    type: string
+        '400':
+          description: Invalid request parameters or unsupported provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+
+  /api/v1/auth/federation/{provider}/callback:
+    get:
+      tags:
+        - Federation
+      summary: External OIDC Provider Callback (US-10)
+      description: |
+        Processes authorization code from external IdP (Google / Microsoft).
+        Verifies cryptographic state anti-CSRF token, exchanges code for ID Token, and verifies ID Token signature against provider JWKS.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [google, microsoft]
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Callback processed successfully and profile verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  userProfile:
+                    type: object
+                    properties:
+                      provider:
+                        type: string
+                      externalSubjectId:
+                        type: string
+                      email:
+                        type: string
+                      emailVerified:
+                        type: boolean
+                      name:
+                        type: string
+                      picture:
+                        type: string
+                  statePayload:
+                    type: object
+                    properties:
+                      tenantId:
+                        type: string
+                      clientId:
+                        type: string
+                      redirectUri:
+                        type: string
+                      provider:
+                        type: string
+        '400':
+          description: Anti-CSRF verification failed or invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+        '401':
+          description: ID Token signature verification failed or email not verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+    post:
+      tags:
+        - Federation
+      summary: External OIDC Provider Callback (POST / form_post mode) (US-10)
+      description: Alias supporting POST callbacks from providers using form_post response mode.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [google, microsoft]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [code, state]
+              properties:
+                code:
+                  type: string
+                state:
+                  type: string
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              properties:
+                code:
+                  type: string
+                state:
+                  type: string
+      responses:
+        '200':
+          description: Callback processed successfully
+        '400':
+          description: Invalid request or state
+        '401':
+          description: Authentication or verification failed
+
   /.well-known/openid-configuration:
     get:
       tags:

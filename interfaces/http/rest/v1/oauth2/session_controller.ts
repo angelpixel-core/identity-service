@@ -76,11 +76,11 @@ export class OAuth2SessionController {
         expires_in: result.expires_in,
         ...(result.id_token ? { id_token: result.id_token } : {}),
       });
-    } catch (error: unknown) {
-      if (error instanceof OAuth2AuthenticationError) {
+    } catch (error: any) {
+      if (error instanceof OAuth2AuthenticationError || (error && typeof error === 'object' && error.errorCode)) {
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('Pragma', 'no-cache');
-        res.status(error.statusCode).json({
+        res.status(error.statusCode || 400).json({
           error: error.errorCode,
           error_description: error.errorDescription,
         });
@@ -115,11 +115,11 @@ export class OAuth2SessionController {
       res.status(200).json({
         message: 'Session revoked successfully',
       });
-    } catch (error: unknown) {
-      if (error instanceof OAuth2AuthenticationError) {
+    } catch (error: any) {
+      if (error instanceof OAuth2AuthenticationError || (error && typeof error === 'object' && error.errorCode)) {
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('Pragma', 'no-cache');
-        res.status(error.statusCode).json({
+        res.status(error.statusCode || 400).json({
           error: error.errorCode,
           error_description: error.errorDescription,
         });

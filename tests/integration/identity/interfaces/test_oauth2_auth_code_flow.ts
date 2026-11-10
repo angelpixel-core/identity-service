@@ -1,4 +1,3 @@
-import http from 'http';
 import request from 'supertest';
 import { Express } from 'express';
 import { createApp } from '../../../../interfaces/http/server';
@@ -12,7 +11,6 @@ import { BcryptAdapter } from '../../../../src/contexts/identity/infrastructure/
 
 describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & RFC 7636)', () => {
   let app: Express;
-  let server: http.Server;
   let clientRepository: InMemoryClientApplicationRepository;
   let authCodeRepository: InMemoryAuthorizationCodeRepository;
   let asymmetricKeyProvider: RsaKeyAdapter;
@@ -58,7 +56,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     await clientRepository.save(m2mClient);
   });
 
-  beforeEach((done) => {
+  beforeEach(() => {
     authCodeRepository = new InMemoryAuthorizationCodeRepository();
     app = createApp({
       clientRepository,
@@ -66,22 +64,11 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
       asymmetricKeyProvider,
       hashProvider,
     });
-    server = http.createServer(app);
-    server.listen(0, done);
-  });
-
-  afterEach((done) => {
-    if (server) {
-      server.closeAllConnections?.();
-      server.close(done);
-    } else {
-      done();
-    }
   });
 
   describe('GET /oauth2/authorize & POST /oauth2/authorize (Protocol Endpoints)', () => {
     it('should return 302 redirect with code and state on valid public client authorization request', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .get('/oauth2/authorize')
         .query({
           response_type: 'code',
@@ -104,7 +91,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     });
 
     it('should return JSON payload when requested via Accept: application/json', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/oauth2/authorize')
         .set('Accept', 'application/json')
         .send({
@@ -125,7 +112,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     });
 
     it('should reject when response_type is not code with error unsupported_response_type', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .get('/oauth2/authorize')
         .query({
           response_type: 'token',
@@ -140,7 +127,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     });
 
     it('should reject when redirect_uri is not pre-registered for the client with error invalid_request', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .get('/oauth2/authorize')
         .query({
           response_type: 'code',
@@ -155,7 +142,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     });
 
     it('should reject when client_id does not exist with error invalid_client', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .get('/oauth2/authorize')
         .query({
           response_type: 'code',
@@ -172,7 +159,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
 
   describe('POST /oauth2/token (authorization_code grant)', () => {
     it('should exchange code for public client and return RS256 signed access_token & id_token', async () => {
-      const authRes = await request(server)
+      const authRes = await request(app)
         .get('/oauth2/authorize')
         .query({
           response_type: 'code',
@@ -186,7 +173,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
       const target = new URL(authRes.headers.location as string);
       const code = target.searchParams.get('code')!;
 
-      const tokenRes = await request(server)
+      const tokenRes = await request(app)
         .post('/oauth2/token')
         .send({
           grant_type: 'authorization_code',
@@ -210,7 +197,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     });
 
     it('should exchange code for confidential client with Basic Auth credentials', async () => {
-      const authRes = await request(server)
+      const authRes = await request(app)
         .get('/oauth2/authorize')
         .query({
           response_type: 'code',
@@ -225,7 +212,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
       const code = target.searchParams.get('code')!;
 
       const credentials = Buffer.from('portal-admin:ConfidentialSecret123!_SuperSecure').toString('base64');
-      const tokenRes = await request(server)
+      const tokenRes = await request(app)
         .post('/oauth2/token')
         .set('Authorization', `Basic ${credentials}`)
         .send({
@@ -241,7 +228,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     });
 
     it('should reject token exchange when redirect_uri does not match authorization step', async () => {
-      const authRes = await request(server)
+      const authRes = await request(app)
         .get('/oauth2/authorize')
         .query({
           response_type: 'code',
@@ -254,7 +241,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
       const target = new URL(authRes.headers.location as string);
       const code = target.searchParams.get('code')!;
 
-      const tokenRes = await request(server)
+      const tokenRes = await request(app)
         .post('/oauth2/token')
         .send({
           grant_type: 'authorization_code',
@@ -269,7 +256,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     });
 
     it('should reject token exchange when code is non-existent', async () => {
-      const tokenRes = await request(server)
+      const tokenRes = await request(app)
         .post('/oauth2/token')
         .send({
           grant_type: 'authorization_code',
@@ -284,7 +271,7 @@ describe('Integration API: OAuth2 Authorization Code Flow with PKCE (RFC 6749 & 
     });
 
     it('should reject token exchange when client is not authorized for authorization_code grant', async () => {
-      const tokenRes = await request(server)
+      const tokenRes = await request(app)
         .post('/oauth2/token')
         .send({
           grant_type: 'authorization_code',

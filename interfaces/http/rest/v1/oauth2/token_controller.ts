@@ -54,7 +54,7 @@ export function extractOAuth2TokenParams(req: Request): {
       basicClientId = decoded.slice(0, delimiterIndex);
       basicClientSecret = decoded.slice(delimiterIndex + 1);
     } catch (err: unknown) {
-      if (err instanceof OAuth2AuthenticationError) {
+      if (err instanceof OAuth2AuthenticationError || (err && typeof err === 'object' && 'errorCode' in err)) {
         throw err;
       }
       throw new OAuth2AuthenticationError(
@@ -199,14 +199,14 @@ export class OAuth2TokenController {
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Pragma', 'no-cache');
       res.status(200).json(tokenResponse);
-    } catch (error: unknown) {
-      if (error instanceof OAuth2AuthenticationError) {
+    } catch (error: any) {
+      if (error instanceof OAuth2AuthenticationError || (error && typeof error === 'object' && error.errorCode)) {
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('Pragma', 'no-cache');
-        if (error.statusCode === 401 && req.headers.authorization?.startsWith('Basic ')) {
+        if ((error.statusCode === 401 || (!error.statusCode && error.errorCode === 'invalid_client')) && req.headers.authorization?.startsWith('Basic ')) {
           res.setHeader('WWW-Authenticate', 'Basic realm="OAuth2"');
         }
-        res.status(error.statusCode).json({
+        res.status(error.statusCode || 400).json({
           error: error.errorCode,
           error_description: error.errorDescription,
         });

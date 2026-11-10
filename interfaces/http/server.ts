@@ -55,6 +55,13 @@ import { InMemoryRefreshSessionRepository } from '../../src/contexts/identity/in
 import { RotateRefreshTokenCommandHandler } from '../../src/contexts/identity/application/commands/rotate_refresh_token/handler';
 import { RevokeSessionCommandHandler } from '../../src/contexts/identity/application/commands/revoke_session/handler';
 import { OAuth2SessionController } from './rest/v1/oauth2/session_controller';
+import { ExternalIdentityProviderPort } from '../../src/contexts/identity/domain/ports/external_identity_provider_port';
+import { FederationStateManager } from '../../src/contexts/identity/infrastructure/federation/federation_state_manager';
+import { GoogleOidcAdapter } from '../../src/contexts/identity/infrastructure/federation/google_oidc_adapter';
+import { MicrosoftEntraAdapter } from '../../src/contexts/identity/infrastructure/federation/microsoft_entra_adapter';
+import { GenerateFederatedLoginUrlQueryHandler } from '../../src/contexts/identity/application/queries/generate_federated_login_url/handler';
+import { ProcessFederatedCallbackCommandHandler } from '../../src/contexts/identity/application/commands/process_federated_callback/handler';
+import { FederationController } from './rest/v1/federation/federation_controller';
 
 /**
  * Implementación en memoria del repositorio para testing e inicialización desacoplada.
@@ -96,6 +103,9 @@ export interface AppDependencies {
   cacheProvider?: CacheProviderPort;
   transactionRunner?: TenantTransactionRunnerPort;
   auditLogger?: SecurityAuditLoggerPort;
+  googleOidcAdapter?: ExternalIdentityProviderPort;
+  microsoftEntraAdapter?: ExternalIdentityProviderPort;
+  federationStateManager?: FederationStateManager;
 }
 
 /**
@@ -257,6 +267,29 @@ export function createApp(deps?: AppDependencies): Express {
   );
   const revokeSessionHandler = new RevokeSessionCommandHandler(refreshSessionRepository);
 
+  const federationStateManager = deps?.federationStateManager ?? new FederationStateManager();
+  const googleAdapter = deps?.googleOidcAdapter ?? new GoogleOidcAdapter();
+  const microsoftAdapter = deps?.microsoftEntraAdapter ?? new MicrosoftEntraAdapter();
+  const federationProviders = [googleAdapter, microsoftAdapter];
+
+  const generateFederatedLoginUrlHandler = new GenerateFederatedLoginUrlQueryHandler(
+    federationProviders,
+    federationStateManager
+  );
+  const processFederatedCallbackHandler = new ProcessFederatedCallbackCommandHandler(
+    federationProviders,
+    federationStateManager,
+    auditLogger
+  );
+  const federationController = new FederationController(
+    generateFederatedLoginUrlHandler,
+    processFederatedCallbackHandler
+  );
+
+  app.locals.federationStateManager = federationStateManager;
+  app.locals.googleAdapter = googleAdapter;
+  app.locals.microsoftAdapter = microsoftAdapter;
+
   const authorizeController = new OAuth2AuthorizeController(issueAuthCodeHandler);
   const sessionController = new OAuth2SessionController(rotateRefreshTokenHandler, revokeSessionHandler);
   const oauth2TokenController = new OAuth2TokenController(
@@ -313,6 +346,14 @@ export function createApp(deps?: AppDependencies): Express {
   app.post('/api/v1/oauth2/refresh', sessionController.refresh);
   app.post('/oauth2/revoke', sessionController.revoke);
   app.post('/api/v1/oauth2/revoke', sessionController.revoke);
+
+  // Rutas de Identidad Federada (External OIDC Providers - US-10)
+  app.get('/api/v1/auth/federation/:provider/login', federationController.login);
+  app.get('/api/v1/auth/federation/:provider/callback', federationController.callback);
+  app.post('/api/v1/auth/federation/:provider/callback', federationController.callback);
+  app.get('/auth/federation/:provider/login', federationController.login);
+  app.get('/auth/federation/:provider/callback', federationController.callback);
+  app.post('/auth/federation/:provider/callback', federationController.callback);
 
   // Cargar especificación OpenAPI declarativa y montar Swagger UI
   const openApiYamlPath = path.resolve(__dirname, '../../docs/openapi.yaml');
