@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticateClientM2MCommandHandler } from '../../../../../src/contexts/identity/application/commands/authenticate_client_m2m/handler';
 import { ExchangeAuthorizationCodeCommandHandler } from '../../../../../src/contexts/identity/application/commands/exchange_authorization_code/handler';
+import { RotateRefreshTokenCommandHandler } from '../../../../../src/contexts/identity/application/commands/rotate_refresh_token/handler';
 import { OAuth2AuthenticationError } from '../../../../../src/contexts/identity/domain/exceptions/oauth2/error';
 import { validateOAuth2TokenRequest } from './schemas';
 
@@ -18,6 +19,7 @@ export function extractOAuth2TokenParams(req: Request): {
   code?: string;
   redirectUri?: string;
   codeVerifier?: string;
+  refreshToken?: string;
   ip?: string;
 } {
   const bodyClientId = (req.body && req.body.client_id) || (req.query && (req.query.client_id as string)) || '';
@@ -68,7 +70,7 @@ export function extractOAuth2TokenParams(req: Request): {
   if (hasBasicAuth && hasBodyAuth) {
     throw new OAuth2AuthenticationError(
       'invalid_request',
-      'Multiple client authentication methods detected. Client credentials must be provided via HTTP Basic OR request body, not both.',
+      'Multiple client authentication methods detected: cannot mix HTTP Basic Authentication and request body credentials',
       400
     );
   }
@@ -76,7 +78,7 @@ export function extractOAuth2TokenParams(req: Request): {
   const clientId = hasBasicAuth ? basicClientId : bodyClientId;
   const clientSecret = hasBasicAuth ? basicClientSecret : bodyClientSecret;
   const grantType = (req.body && req.body.grant_type) || (req.query && (req.query.grant_type as string)) || '';
-  const scope = (req.body && req.body.scope) || (req.query && (req.query.scope as string)) || undefined;
+  const scope = (req.body && req.body.scope) || (req.query && (req.query.scope as string));
   const code = (req.body && req.body.code) || (req.query && (req.query.code as string)) || undefined;
   const redirectUri =
     (req.body && (req.body.redirect_uri || req.body.redirectUri)) ||
@@ -85,6 +87,11 @@ export function extractOAuth2TokenParams(req: Request): {
   const codeVerifier =
     (req.body && (req.body.code_verifier || req.body.codeVerifier)) ||
     (req.query && (req.query.code_verifier as string)) ||
+    undefined;
+  const refreshToken =
+    (req.body && (req.body.refresh_token || req.body.refreshToken)) ||
+    (req.cookies && req.cookies.refresh_token) ||
+    (req.query && (req.query.refresh_token as string)) ||
     undefined;
 
   return {
@@ -95,6 +102,7 @@ export function extractOAuth2TokenParams(req: Request): {
     code,
     redirectUri,
     codeVerifier,
+    refreshToken,
     ip: req.ip || (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress,
   };
 }
@@ -106,7 +114,8 @@ export function extractOAuth2TokenParams(req: Request): {
 export class OAuth2TokenController {
   constructor(
     private readonly authenticateM2MHandler: AuthenticateClientM2MCommandHandler,
-    private readonly exchangeAuthCodeHandler?: ExchangeAuthorizationCodeCommandHandler
+    private readonly exchangeAuthCodeHandler?: ExchangeAuthorizationCodeCommandHandler,
+    private readonly rotateRefreshTokenHandler?: RotateRefreshTokenCommandHandler
   ) {}
 
   public issueToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -142,6 +151,49 @@ export class OAuth2TokenController {
           codeVerifier: validatedParams.codeVerifier,
           ip: validatedParams.ip,
         });
+      } else if (validatedParams.grantType === 'refresh_token') {
+        if (!this.rotateRefreshTokenHandler) {
+          throw new OAuth2AuthenticationError(
+            'unsupported_grant_type',
+            'refresh_token grant handler is not configured on this server instance',
+            500
+          );
+        }
+
+        const refreshToken = validatedParams.refreshToken;
+        if (!refreshToken) {
+          throw new OAuth2AuthenticationError(
+            'invalid_request',
+            'Missing refresh_token parameter',
+            400
+          );
+        }
+
+        const rotateResult = await this.rotateRefreshTokenHandler.execute({
+          refreshToken,
+          clientId: validatedParams.clientId || undefined,
+          ip: validatedParams.ip,
+        });
+
+        const isProduction = process.env.NODE_ENV === 'production';
+        const isV1 = req.originalUrl?.includes('/api/v1') || req.baseUrl?.includes('/api/v1');
+        const cookiePath = isV1 ? '/api/v1/oauth2' : '/oauth2';
+
+        res.cookie('refresh_token', rotateResult.new_refresh_token, {
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: 'strict',
+          path: cookiePath,
+          maxAge: 30 * 24 * 60 * 60 * 1000,
+        });
+
+        tokenResponse = {
+          access_token: rotateResult.access_token,
+          token_type: rotateResult.token_type,
+          expires_in: rotateResult.expires_in,
+          refresh_token: rotateResult.new_refresh_token,
+          ...(rotateResult.id_token ? { id_token: rotateResult.id_token } : {}),
+        };
       }
 
       res.setHeader('Cache-Control', 'no-store');

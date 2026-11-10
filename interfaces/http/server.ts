@@ -50,6 +50,11 @@ import { RsaKeyAdapter } from '../../src/contexts/identity/infrastructure/securi
 import { GetOpenIdConfigurationQueryHandler } from '../../src/contexts/identity/application/queries/get_openid_configuration/handler';
 import { GetJwksQueryHandler } from '../../src/contexts/identity/application/queries/get_jwks/handler';
 import { DiscoveryController } from './rest/v1/oidc/discovery_controller';
+import { RefreshSessionRepositoryPort } from '../../src/contexts/identity/domain/ports/repositories/refresh_session_repository_port';
+import { InMemoryRefreshSessionRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/refresh_session/in_memory_repository';
+import { RotateRefreshTokenCommandHandler } from '../../src/contexts/identity/application/commands/rotate_refresh_token/handler';
+import { RevokeSessionCommandHandler } from '../../src/contexts/identity/application/commands/revoke_session/handler';
+import { OAuth2SessionController } from './rest/v1/oauth2/session_controller';
 
 /**
  * Implementación en memoria del repositorio para testing e inicialización desacoplada.
@@ -84,6 +89,7 @@ export interface AppDependencies {
   userRepository?: UserRepositoryPort;
   clientRepository?: ClientApplicationRepositoryPort;
   authCodeRepository?: AuthorizationCodeRepositoryPort;
+  refreshSessionRepository?: RefreshSessionRepositoryPort;
   hashProvider?: HashProviderPort;
   tokenProvider?: TokenProviderPort;
   asymmetricKeyProvider?: AsymmetricKeyProviderPort;
@@ -101,6 +107,24 @@ export function createApp(deps?: AppDependencies): Express {
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  // Middleware ligero para parsing de cookies sin dependencias externas
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (!req.cookies) {
+      const cookieHeader = req.headers.cookie;
+      const cookies: Record<string, string> = {};
+      if (cookieHeader) {
+        cookieHeader.split(';').forEach((cookie) => {
+          const [name, ...rest] = cookie.trim().split('=');
+          if (name) {
+            cookies[name] = decodeURIComponent(rest.join('='));
+          }
+        });
+      }
+      req.cookies = cookies;
+    }
+    next();
+  });
 
   let pool: Pool | null = null;
   const getPool = (): Pool => {
@@ -133,6 +157,11 @@ export function createApp(deps?: AppDependencies): Express {
     authCodeRepository = new InMemoryAuthorizationCodeRepository();
   }
 
+  let refreshSessionRepository = deps?.refreshSessionRepository;
+  if (!refreshSessionRepository) {
+    refreshSessionRepository = new InMemoryRefreshSessionRepository();
+  }
+
   let transactionRunner = deps?.transactionRunner;
   if (!transactionRunner) {
     if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
@@ -144,6 +173,7 @@ export function createApp(deps?: AppDependencies): Express {
   app.locals.userRepository = userRepository;
   app.locals.clientRepository = clientRepository;
   app.locals.authCodeRepository = authCodeRepository;
+  app.locals.refreshSessionRepository = refreshSessionRepository;
   if (transactionRunner) {
     app.locals.transactionRunner = transactionRunner;
   }
@@ -216,8 +246,24 @@ export function createApp(deps?: AppDependencies): Express {
     900,
     process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000'
   );
+  const rotateRefreshTokenHandler = new RotateRefreshTokenCommandHandler(
+    refreshSessionRepository,
+    asymmetricKeyProvider,
+    auditLogger,
+    {
+      issuerUrl: process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000',
+      tokenLifetimeSeconds: 900,
+    }
+  );
+  const revokeSessionHandler = new RevokeSessionCommandHandler(refreshSessionRepository);
+
   const authorizeController = new OAuth2AuthorizeController(issueAuthCodeHandler);
-  const oauth2TokenController = new OAuth2TokenController(authenticateClientM2MHandler, exchangeAuthCodeHandler);
+  const sessionController = new OAuth2SessionController(rotateRefreshTokenHandler, revokeSessionHandler);
+  const oauth2TokenController = new OAuth2TokenController(
+    authenticateClientM2MHandler,
+    exchangeAuthCodeHandler,
+    rotateRefreshTokenHandler
+  );
   const authMiddleware = createAuthMiddleware(tokenProvider, auditLogger);
   const crossTenantGuard = createCrossTenantGuard(auditLogger);
 
@@ -261,6 +307,12 @@ export function createApp(deps?: AppDependencies): Express {
   // Rutas OAuth2 Token (RFC 6749 & RFC 7636)
   app.post('/api/v1/oauth2/token', oauth2TokenController.issueToken);
   app.post('/oauth2/token', oauth2TokenController.issueToken);
+
+  // Rutas de Sesión y Rotación de Refresh Tokens (US-09 & RFC 6749 / RFC 7009)
+  app.post('/oauth2/refresh', sessionController.refresh);
+  app.post('/api/v1/oauth2/refresh', sessionController.refresh);
+  app.post('/oauth2/revoke', sessionController.revoke);
+  app.post('/api/v1/oauth2/revoke', sessionController.revoke);
 
   // Cargar especificación OpenAPI declarativa y montar Swagger UI
   const openApiYamlPath = path.resolve(__dirname, '../../docs/openapi.yaml');

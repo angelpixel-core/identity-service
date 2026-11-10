@@ -6,12 +6,13 @@ import { OAuth2AuthenticationError } from '../../../../../src/contexts/identity/
  */
 export const OAuth2TokenRequestSchema = z.object({
   grantType: z.string().trim().min(1, 'Missing grant_type parameter'),
-  clientId: z.string().trim().min(1, 'Missing client_id parameter'),
+  clientId: z.string().optional().default(''),
   clientSecret: z.string().optional().default(''),
   scope: z.string().optional(),
   code: z.string().optional(),
   redirectUri: z.string().optional(),
   codeVerifier: z.string().optional(),
+  refreshToken: z.string().optional(),
   ip: z.string().optional(),
 });
 
@@ -38,14 +39,6 @@ export function validateOAuth2TokenRequest(rawParams: unknown): OAuth2TokenReque
       );
     }
 
-    if (path === 'clientId') {
-      throw new OAuth2AuthenticationError(
-        'invalid_request',
-        firstIssue?.message || 'Missing client_id parameter',
-        400
-      );
-    }
-
     throw new OAuth2AuthenticationError(
       'invalid_request',
       firstIssue?.message || 'Invalid OAuth2 token request parameters',
@@ -55,11 +48,23 @@ export function validateOAuth2TokenRequest(rawParams: unknown): OAuth2TokenReque
 
   if (
     result.data.grantType !== 'client_credentials' &&
-    result.data.grantType !== 'authorization_code'
+    result.data.grantType !== 'authorization_code' &&
+    result.data.grantType !== 'refresh_token'
   ) {
     throw new OAuth2AuthenticationError(
       'unsupported_grant_type',
-      `Unsupported grant_type: "${result.data.grantType}". Supported: "client_credentials", "authorization_code".`,
+      `Unsupported grant_type: "${result.data.grantType}". Supported: "client_credentials", "authorization_code", "refresh_token".`,
+      400
+    );
+  }
+
+  if (
+    (result.data.grantType === 'client_credentials' || result.data.grantType === 'authorization_code') &&
+    (!result.data.clientId || result.data.clientId.trim().length === 0)
+  ) {
+    throw new OAuth2AuthenticationError(
+      'invalid_request',
+      'Missing client_id parameter',
       400
     );
   }

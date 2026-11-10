@@ -13,6 +13,21 @@ export interface OAuth2TokenResponse {
   expires_in: number;
   scope?: string;
   id_token?: string;
+  refresh_token?: string;
+}
+
+export interface RefreshTokenParams {
+  refreshToken: string;
+  clientId?: string;
+}
+
+export interface RevokeTokenParams {
+  refreshToken: string;
+  reason?: string;
+}
+
+export interface RevokeTokenResponse {
+  message: string;
 }
 
 export interface ExchangeAuthorizationCodeParams {

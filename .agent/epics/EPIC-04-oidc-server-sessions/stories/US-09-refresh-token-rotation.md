@@ -4,22 +4,31 @@ title: "Sliding Session Refresh Token Rotation with HttpOnly Cookies"
 epic:
   id: EPIC-04
   name: "OIDC / OAuth2 Authorization Server & Session Lifecycle"
-status: planned
+status: completed
 priority: P0
 bounded_context: identity
 subdomain: session-management
 slice_type: command
 timestamps:
   created_at: "2026-11-04T00:00:00-03:00"
-  started_at: null
-  completed_at: null
-  updated_at: "2026-11-09T15:00:00-03:00"
+  started_at: "2026-11-09T22:30:00-03:00"
+  completed_at: "2026-11-10T01:05:00-03:00"
+  updated_at: "2026-11-10T01:05:00-03:00"
 traceability:
   adrs:
     - docs/adr/0006-oidc-session-flow.md
-  guidelines: []
-  publications: []
-  commits: []
+  guidelines:
+    - .agent/guidelines/GUIDELINE-10-refresh-token-rotation.md
+  publications:
+    - .agent/publications/ARTICLE-09-refresh-token-rotation.md
+    - .agent/publications/ARTICLE-09-B-refactoring-session-lifecycle.md
+  commits:
+    - "df5f93a"
+    - "1141692"
+    - "b3867cb"
+    - "b729f2e"
+    - "4ffc403"
+    - "9f336d4"
 tags:
   - session
   - refresh-token
@@ -31,11 +40,13 @@ tags:
 # US-09: Sliding Session Refresh Token Rotation with HttpOnly Cookies
 
 **Epic:** [EPIC-04: OIDC / OAuth2 Authorization Server & Session Lifecycle](../README.md)  
-**Status:** Planned  
+**Status:** Completed  
 **Domain / Bounded Context:** `identity` / `session-management`  
 **Slice Type:** Command & Security (Session Lifecycle Slice)  
 **Referencia Estructural:** [`.agent/TREE.txt`](../../../TREE.txt)  
 **ADR Relacionado:** [`ADR-0006: OIDC Authorization Server & Cryptography`](../../../docs/adr/0006-oidc-session-flow.md)
+**Plan de Refactorización:** [`US-09: Refactoring Plan Inside-Out`](US-09-refresh-token-refactoring-plan.md)
+**Guía Interactiva:** [`GUIDELINE-10: Rotación de Refresh Tokens y Ciclo de Vida de Sesión`](../../guidelines/GUIDELINE-10-refresh-token-rotation.md)
 
 ---
 
@@ -85,12 +96,17 @@ Feature: Sliding Session Refresh Token Rotation with HttpOnly Cookies
 
 ## 4. Cobertura de Pruebas Requerida (Pirámide de Testing)
 
-- [ ] **Unit Test 1 (Session Aggregate):** `tests/unit/identity/domain/test_refresh_session_aggregate.ts`
-  - Validar lógica de rotación y detección de reuso en el agregado `RefreshSession`.
-- [ ] **Integration Test 1 (Endpoint Refresh & Cookies):** `tests/integration/identity/interfaces/test_refresh_token_rotation.ts`
-  - Verificar emisión y actualización de cookies HttpOnly con supertest.
-- [ ] **Acceptance Test (BDD):** `tests/acceptance/features/refresh_token_rotation.feature`
-  - Escenario ejecutable con Cucumber.
+- [x] **Unit Tests (Dominio & Aplicación Aislados):**
+  - [x] `tests/unit/identity/domain/session/test_refresh_session_aggregate.ts` (Invariantes, rotación 1 a 1, timingSafeEqual y redacción de secretos).
+  - [x] `tests/unit/identity/infrastructure/repositories/test_in_memory_refresh_session_repository.ts` (Auto-purga por umbral, lazy cleanup y revokeFamily).
+  - [x] `tests/unit/identity/application/session/test_rotate_refresh_token_handler.ts` (Emisión de access_token RS256 y detección de reuso).
+  - [x] `tests/unit/identity/application/session/test_revoke_session_handler.ts` (Revocación RFC 7009 idempotente).
+- [x] **Integration Tests (Endpoints & Cookies):**
+  - [x] `tests/integration/identity/interfaces/test_refresh_token_rotation.ts` (Validación de cabeceras Set-Cookie HttpOnly y SameSite=Strict).
+- [x] **SDK Tests (TypeScript):**
+  - [x] `sdks/typescript/tests/refresh_token.test.ts` (Métodos client.oauth2.refreshToken y client.oauth2.revokeToken).
+- [x] **Acceptance Tests (BDD Living Doc):**
+  - [x] `tests/acceptance/features/refresh_token_rotation.feature` (Escenarios ejecutables en Cucumber: rotación feliz y detección de reuso con revocación de familia).
 
 ---
 
@@ -98,9 +114,19 @@ Feature: Sliding Session Refresh Token Rotation with HttpOnly Cookies
 
 - **Dominio:**
   - `src/contexts/identity/domain/entities/refresh_session/aggregate.ts`
+  - `src/contexts/identity/domain/ports/repositories/refresh_session_repository_port.ts`
 - **Application Commands:**
-  - `src/contexts/identity/application/commands/rotate_refresh_token/`
-  - `src/contexts/identity/application/commands/revoke_session/`
+  - `src/contexts/identity/application/commands/rotate_refresh_token/handler.ts`
+  - `src/contexts/identity/application/commands/revoke_session/handler.ts`
+- **Infraestructura:**
+  - `src/contexts/identity/infrastructure/persistence/repositories/refresh_session/in_memory_repository.ts`
 - **Interfaces HTTP:**
   - `interfaces/http/rest/v1/oauth2/session_controller.ts`
+- **SDK Oficial:**
+  - `sdks/typescript/src/resources/oauth2_resource.ts`
+- **Guía Técnica Interactiva:**
+  - `.agent/guidelines/GUIDELINE-10-refresh-token-rotation.md`
+- **Publicaciones Oficiales:**
+  - `.agent/publications/ARTICLE-09-refresh-token-rotation.md`
+  - `.agent/publications/ARTICLE-09-B-refactoring-session-lifecycle.md`
 

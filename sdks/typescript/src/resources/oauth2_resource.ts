@@ -6,6 +6,9 @@ import {
   ValidateClientOriginResponse,
   BuildAuthorizationUrlParams,
   ExchangeAuthorizationCodeParams,
+  RefreshTokenParams,
+  RevokeTokenParams,
+  RevokeTokenResponse,
 } from '../types/oauth2';
 import { TokenManager } from '../auth';
 
@@ -143,6 +146,49 @@ export class OAuth2Resource {
    */
   public clearTokenCache(): void {
     this.tokenManager.clearTokenCache();
+  }
+
+  /**
+   * Rota el refresh token y renueva el access token (US-09).
+   */
+  public async refreshToken(
+    params: RefreshTokenParams,
+    options?: RequestOptions
+  ): Promise<OAuth2TokenResponse> {
+    const payload: Record<string, string> = {
+      grant_type: 'refresh_token',
+      refresh_token: params.refreshToken,
+    };
+    if (params.clientId) {
+      payload.client_id = params.clientId;
+    }
+
+    const response = await this.transport.post<OAuth2TokenResponse>(
+      '/oauth2/refresh',
+      payload,
+      options
+    );
+
+    return response.data;
+  }
+
+  /**
+   * Revoca una sesión / Refresh Token explícitamente (Logout / RFC 7009).
+   */
+  public async revokeToken(
+    params: RevokeTokenParams,
+    options?: RequestOptions
+  ): Promise<RevokeTokenResponse> {
+    const response = await this.transport.post<RevokeTokenResponse>(
+      '/oauth2/revoke',
+      {
+        refresh_token: params.refreshToken,
+        ...(params.reason ? { reason: params.reason } : {}),
+      },
+      options
+    );
+
+    return response.data;
   }
 }
 

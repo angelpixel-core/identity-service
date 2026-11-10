@@ -532,6 +532,130 @@ paths:
               schema:
                 $ref: '#/components/schemas/OAuth2ErrorResponse'
 
+  /api/v1/oauth2/refresh:
+    post:
+      tags:
+        - OAuth2 Session
+      summary: Refresh Access Token with Sliding Session and HttpOnly Cookie (US-09)
+      description: |
+        Rotates the active Refresh Token (1-to-1 strict rotation), renewing the access token.
+        Detects token reuse and automatically revokes all tokens within the compromised family.
+        The refresh token can be delivered via HttpOnly Cookie (`refresh_token`) or request body.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                  description: Refresh token string (optional if sent via Cookie)
+                client_id:
+                  type: string
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                client_id:
+                  type: string
+      responses:
+        '200':
+          description: Session refreshed successfully. Sets updated HttpOnly cookie.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: refresh_token=abc123...; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/oauth2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2TokenResponse'
+        '400':
+          description: Missing refresh token or invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+        '401':
+          description: Invalid, expired, or reused refresh token (family revocation triggered)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+
+  /oauth2/refresh:
+    post:
+      tags:
+        - OAuth2 Session
+      summary: RFC Standard Refresh Endpoint Alias
+      description: Alias to `/api/v1/oauth2/refresh`.
+      responses:
+        '200':
+          description: Session refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2TokenResponse'
+
+  /api/v1/oauth2/revoke:
+    post:
+      tags:
+        - OAuth2 Session
+      summary: Revoke Session / Logout (RFC 7009 / US-09)
+      description: |
+        Explicitly revokes a session / Refresh Token and invalidates its generation family.
+        Clears the `refresh_token` HttpOnly cookie (`Max-Age=0`).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                reason:
+                  type: string
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Session revoked and cookie cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Session revoked successfully
+
+  /oauth2/revoke:
+    post:
+      tags:
+        - OAuth2 Session
+      summary: RFC 7009 Standard Revoke Endpoint Alias
+      description: Alias to `/api/v1/oauth2/revoke`.
+      responses:
+        '200':
+          description: Session revoked and cookie cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
   /.well-known/openid-configuration:
     get:
       tags:
@@ -717,7 +841,7 @@ components:
       properties:
         grant_type:
           type: string
-          enum: [client_credentials, authorization_code]
+          enum: [client_credentials, authorization_code, refresh_token]
           example: authorization_code
         client_id:
           type: string
@@ -737,6 +861,10 @@ components:
           type: string
           description: RFC 7636 PKCE code verifier (43-128 unreserved characters)
           example: dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
+        refresh_token:
+          type: string
+          description: Refresh token string for session renewal (US-09)
+          example: 8f9b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b
         scope:
           type: string
           example: openid profile
@@ -763,6 +891,10 @@ components:
         id_token:
           type: string
           description: Signed RS256 OpenID Connect ID token conforming to RFC 7519 & OIDC Core 1.0
+        refresh_token:
+          type: string
+          description: New opaque refresh token when rotation occurs (US-09)
+          example: 8f9b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b
 
     OAuth2ErrorResponse:
       type: object
