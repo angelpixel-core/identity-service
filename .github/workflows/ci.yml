@@ -57,10 +57,18 @@ jobs:
 
       - name: Initialize PostgreSQL database & schema
         run: |
-          docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d postgres -c "SELECT 'CREATE DATABASE identity_test_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'identity_test_db')\gexec"
+          # 1. Crear base de datos de pruebas si no existe (vía stdin para que psql procese \gexec)
+          echo "SELECT 'CREATE DATABASE identity_test_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'identity_test_db')\gexec" | docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d postgres
+
+          # 2. Habilitar extensiones criptográficas requeridas en ambas bases de datos
           docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d identity_db -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS "pgcrypto";'
           docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d identity_test_db -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS "pgcrypto";'
-          docker exec -i ${{ job.services.postgres.id }} psql -U postgres -d postgres < infrastructure/local/initdb.d/005-create-identity-schema.sql
+
+          # 3. Aplicar todas las migraciones DDL en orden ascendente (005, 006, 007, 008)
+          for sql_file in infrastructure/local/initdb.d/*.sql; do
+            echo "Applying $sql_file..."
+            docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U postgres -d postgres < "$sql_file"
+          done
 
       - name: Set up Node.js & dependencies
         uses: ./.github/actions/setup-environment
