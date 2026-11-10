@@ -223,6 +223,14 @@ export class ClientApplication {
     return this.allowedOrigins.some((allowed) => allowed.equals(targetOrigin));
   }
 
+  public isRedirectUriAllowed(redirectUri: string): boolean {
+    if (!redirectUri || typeof redirectUri !== 'string') {
+      return false;
+    }
+    const target = redirectUri.trim();
+    return this.redirectUris.includes(target);
+  }
+
   public hasGrantType(rawGrant: GrantType | string): boolean {
     let targetGrant: GrantType;
     try {

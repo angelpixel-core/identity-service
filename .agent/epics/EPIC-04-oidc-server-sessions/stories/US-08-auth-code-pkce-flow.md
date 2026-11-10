@@ -4,22 +4,32 @@ title: "OAuth2 Authorization Code Flow with PKCE & User Consent"
 epic:
   id: EPIC-04
   name: "OIDC / OAuth2 Authorization Server & Session Lifecycle"
-status: planned
+status: completed
 priority: P0
 bounded_context: identity
 subdomain: oauth2-auth-flow
 slice_type: command
 timestamps:
   created_at: "2026-11-04T00:00:00-03:00"
-  started_at: null
-  completed_at: null
-  updated_at: "2026-11-09T15:00:00-03:00"
+  started_at: "2026-11-09T20:30:00-03:00"
+  completed_at: "2026-11-09T22:15:00-03:00"
+  updated_at: "2026-11-09T22:15:00-03:00"
 traceability:
   adrs:
+    - docs/adr/0004-client-authentication-strategy.md
     - docs/adr/0006-oidc-session-flow.md
-  guidelines: []
-  publications: []
-  commits: []
+  guidelines:
+    - .agent/guidelines/GUIDELINE-09-oauth2-authorization-code-pkce.md
+  publications:
+    - .agent/publications/ARTICLE-08-oauth2-authorization-code-pkce.md
+    - .agent/publications/ARTICLE-08-B-refactoring-pkce-flow.md
+  commits:
+    - "7e77537"
+    - "959c6d7"
+    - "e27a6ab"
+    - "0fa93e0"
+    - "e79a640"
+    - "e2f47dc"
 tags:
   - oauth2
   - authorization-code
@@ -31,7 +41,7 @@ tags:
 # US-08: OAuth2 Authorization Code Flow with PKCE & User Consent
 
 **Epic:** [EPIC-04: OIDC / OAuth2 Authorization Server & Session Lifecycle](../README.md)  
-**Status:** Planned  
+**Status:** Completed  
 **Domain / Bounded Context:** `identity` / `oauth2-auth-flow`  
 **Slice Type:** Command & Protocol (Authorization Code with PKCE Slice)  
 **Referencia Estructural:** [`.agent/TREE.txt`](../../../TREE.txt)  
@@ -88,21 +98,41 @@ Feature: OAuth2 Authorization Code Flow with PKCE
 
 ## 4. Cobertura de Pruebas Requerida (Pirámide de Testing)
 
-- [ ] **Unit Test 1 (PKCE Verifier Domain Service):** `tests/unit/identity/domain/services/test_pkce_validator.ts`
-  - Validar cálculo SHA-256 / Base64URL y verificación de cadenas RFC 7636.
-- [ ] **Integration Test 1 (Authorize & Token Handshake):** `tests/integration/identity/interfaces/test_oauth2_auth_code_flow.ts`
+- [x] **Unit Test 1 (PKCE Verifier Domain Service):** `tests/unit/identity/domain/oauth2/test_pkce_validator.ts`
+  - Validar cálculo SHA-256 / Base64URL, gramática RFC 7636 y verificación en tiempo constante (`timingSafeEqual`).
+- [x] **Unit Test 2 (Authorization Code Entity):** `tests/unit/identity/domain/oauth2/test_authorization_code_entity.ts`
+  - Validar ciclo de vida (TTL 60s), prevención de doble uso y redacción de secretos `[REDACTED]`.
+- [x] **Unit Test 3 (In-Memory Repository & Purge):** `tests/unit/identity/infrastructure/repositories/test_in_memory_auth_code_repository.ts`
+  - Validar persistencia, lazy cleanup y auto-purga de códigos expirados.
+- [x] **Unit Test 4 (Issue Authorization Code Handler):** `tests/unit/identity/application/oauth2/test_issue_authorization_code_handler.ts`
+  - Validar emisión de código, rechazo de URI no permitida y obligatoriedad de PKCE para clientes públicos.
+- [x] **Unit Test 5 (Exchange Authorization Code Handler):** `tests/unit/identity/application/oauth2/test_exchange_authorization_code_handler.ts`
+  - Validar canje exitoso por tokens RS256, rechazo por verifier inválido y rechazo de reuso.
+- [x] **Integration Test 1 (Authorize & Token Handshake):** `tests/integration/identity/interfaces/test_oauth2_auth_code_flow.ts`
   - Ejecutar el flujo completo de dos pasos (emisión de código y canje) verificando que el código no pueda reutilizarse.
-- [ ] **Acceptance Test (BDD):** `tests/acceptance/features/oauth2_pkce_flow.feature`
-  - Escenario ejecutable con Cucumber.
+- [x] **Integration Test 2 (TypeScript SDK Client):** `sdks/typescript/tests/oauth2_auth_code.test.ts`
+  - Validar helpers `buildAuthorizationUrl` y `exchangeAuthorizationCode` del SDK.
+- [x] **Acceptance Test (BDD):** `tests/acceptance/features/oauth2_pkce_flow.feature`
+  - Escenario ejecutable con Cucumber (5 escenarios completos pasando).
 
 ---
 
 ## 5. Trazabilidad de Implementación
 
+- **Domain Entities & Services:**
+  - `src/contexts/identity/domain/entities/authorization_code.ts`
+  - `src/contexts/identity/domain/services/pkce_validator.ts`
+  - `src/contexts/identity/domain/ports/repositories/authorization_code_repository_port.ts`
 - **Application Commands:**
   - `src/contexts/identity/application/commands/issue_authorization_code/`
   - `src/contexts/identity/application/commands/exchange_authorization_code/`
-- **Interfaces HTTP:**
+- **Infrastructure:**
+  - `src/contexts/identity/infrastructure/repositories/in_memory_authorization_code_repository.ts`
+- **Interfaces HTTP & OpenAPI:**
   - `interfaces/http/rest/v1/oauth2/authorize_controller.ts`
   - `interfaces/http/rest/v1/oauth2/token_controller.ts`
+  - `docs/openapi.yaml`
+- **TypeScript SDK:**
+  - `sdks/typescript/src/resources/oauth2_resource.ts`
+  - `sdks/typescript/src/types/oauth2.ts`
 

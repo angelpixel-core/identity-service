@@ -12,6 +12,27 @@ export interface OAuth2TokenResponse {
   token_type: string;
   expires_in: number;
   scope?: string;
+  id_token?: string;
+}
+
+export interface ExchangeAuthorizationCodeParams {
+  clientId: string;
+  clientSecret?: string;
+  code: string;
+  redirectUri: string;
+  codeVerifier?: string;
+}
+
+export interface BuildAuthorizationUrlParams {
+  clientId: string;
+  redirectUri: string;
+  responseType?: 'code';
+  scope?: string;
+  state?: string;
+  codeChallenge?: string;
+  codeChallengeMethod?: 'S256';
+  nonce?: string;
+  baseUrl?: string;
 }
 
 export interface OAuth2ErrorResponse {

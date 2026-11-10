@@ -4,6 +4,8 @@ import {
   OAuth2TokenResponse,
   ValidateClientOriginParams,
   ValidateClientOriginResponse,
+  BuildAuthorizationUrlParams,
+  ExchangeAuthorizationCodeParams,
 } from '../types/oauth2';
 import { TokenManager } from '../auth';
 
@@ -58,6 +60,75 @@ export class OAuth2Resource {
     options?: RequestOptions
   ): Promise<OAuth2TokenResponse> {
     return this.tokenManager.requestToken(params, options);
+  }
+
+  /**
+   * Construye de manera segura la URL del endpoint de autorización (/oauth2/authorize).
+   */
+  public buildAuthorizationUrl(params: BuildAuthorizationUrlParams): string {
+    const base = params.baseUrl || '';
+    const url = new URL(`${base}/oauth2/authorize`, 'https://identity.local');
+    url.searchParams.set('response_type', params.responseType || 'code');
+    url.searchParams.set('client_id', params.clientId);
+    url.searchParams.set('redirect_uri', params.redirectUri);
+
+    if (params.scope) {
+      url.searchParams.set('scope', params.scope);
+    }
+    if (params.state) {
+      url.searchParams.set('state', params.state);
+    }
+    if (params.codeChallenge) {
+      url.searchParams.set('code_challenge', params.codeChallenge);
+      url.searchParams.set('code_challenge_method', params.codeChallengeMethod || 'S256');
+    }
+    if (params.nonce) {
+      url.searchParams.set('nonce', params.nonce);
+    }
+
+    if (params.baseUrl) {
+      return url.toString();
+    }
+    return `${url.pathname}${url.search}`;
+  }
+
+  /**
+   * Realiza el canje de un AuthorizationCode con PKCE por access_token e id_token (RFC 7636).
+   */
+  public async exchangeAuthorizationCode(
+    params: ExchangeAuthorizationCodeParams,
+    options?: RequestOptions
+  ): Promise<OAuth2TokenResponse> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {}),
+    };
+
+    const payload: Record<string, string> = {
+      grant_type: 'authorization_code',
+      client_id: params.clientId,
+      code: params.code,
+      redirect_uri: params.redirectUri,
+    };
+
+    if (params.codeVerifier) {
+      payload.code_verifier = params.codeVerifier;
+    }
+
+    if (params.clientSecret) {
+      payload.client_secret = params.clientSecret;
+    }
+
+    const response = await this.transport.post<OAuth2TokenResponse>(
+      '/oauth2/token',
+      payload,
+      {
+        headers,
+        timeoutMs: options?.timeoutMs,
+      }
+    );
+
+    return response.data;
   }
 
   /**

@@ -244,15 +244,210 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /oauth2/authorize:
+    get:
+      tags:
+        - OAuth2 Authorization Code & PKCE
+      summary: OAuth2 / OIDC Authorization Endpoint (RFC 6749 & RFC 7636 / US-08)
+      description: |
+        Initiates the Authorization Code Flow with PKCE. Public clients MUST provide `code_challenge`
+        and `code_challenge_method=S256`. Successful requests redirect (302) to `redirect_uri` with `code`
+        and optional `state`, or return JSON (200) when requested via `Accept: application/json`.
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Client application identifier
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Pre-registered redirect URI for callback
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+          description: Must be "code"
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Space-delimited list of requested scopes (e.g. "openid profile email")
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+          description: CSRF protection state parameter echoed back to client
+        - name: code_challenge
+          in: query
+          required: false
+          schema:
+            type: string
+          description: BASE64URL-encoded SHA-256 hash of code_verifier (RFC 7636)
+        - name: code_challenge_method
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [S256]
+          description: PKCE transformation method (S256 required for public clients)
+        - name: nonce
+          in: query
+          required: false
+          schema:
+            type: string
+          description: OIDC replay mitigation nonce injected into issued ID token
+      responses:
+        '302':
+          description: Redirect to client callback URI with authorization code and state
+          headers:
+            Location:
+              schema:
+                type: string
+                example: "https://shop.local/callback?code=splat123&state=xyz"
+        '200':
+          description: JSON authorization code response (when Accept application/json is present)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  redirect_uri:
+                    type: string
+                  state:
+                    type: string
+                  callback_url:
+                    type: string
+        '400':
+          description: Unsupported response_type, invalid redirect_uri, or missing PKCE challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+        '401':
+          description: Client application not found or deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+
+    post:
+      tags:
+        - OAuth2 Authorization Code & PKCE
+      summary: OAuth2 / OIDC Authorization Endpoint (POST alternative) (US-08)
+      description: Alternative POST method for large parameter sets or interactive form submissions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - client_id
+                - redirect_uri
+                - response_type
+              properties:
+                client_id:
+                  type: string
+                redirect_uri:
+                  type: string
+                response_type:
+                  type: string
+                  enum: [code]
+                scope:
+                  type: string
+                state:
+                  type: string
+                code_challenge:
+                  type: string
+                code_challenge_method:
+                  type: string
+                  enum: [S256]
+                nonce:
+                  type: string
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - client_id
+                - redirect_uri
+                - response_type
+              properties:
+                client_id:
+                  type: string
+                redirect_uri:
+                  type: string
+                response_type:
+                  type: string
+                  enum: [code]
+                scope:
+                  type: string
+                state:
+                  type: string
+                code_challenge:
+                  type: string
+                code_challenge_method:
+                  type: string
+                  enum: [S256]
+                nonce:
+                  type: string
+      responses:
+        '302':
+          description: Redirect to client callback URI
+        '200':
+          description: JSON authorization response
+        '400':
+          description: Protocol validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2ErrorResponse'
+
+  /api/v1/oauth2/authorize:
+    get:
+      tags:
+        - OAuth2 Authorization Code & PKCE
+      summary: OAuth2 Authorize Endpoint Alias
+      description: Alias to `/oauth2/authorize` under `/api/v1` prefix.
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+      responses:
+        '302':
+          description: Redirect to client callback URI
+
   /api/v1/oauth2/token:
     post:
       tags:
         - OAuth2 Token
-      summary: Issue OAuth2 M2M Access Token (RFC 6749 Client Credentials Grant) (US-04)
+      summary: Issue OAuth2 Access & ID Tokens (Client Credentials & PKCE Authorization Code) (US-04, US-08)
       description: |
-        Issues a signed JWT access token for confidential client applications.
-        Supports both HTTP Basic Authorization header (`Authorization: Basic <base64>`)
-        and JSON / application/x-www-form-urlencoded body.
+        Issues signed JWT access tokens and OpenID Connect RS256 id_tokens. Supports both
+        `client_credentials` grant for M2M communication and `authorization_code` grant with PKCE
+        (RFC 7636) for single-page and native applications.
       security:
         - BasicAuth: []
         - {}
@@ -267,7 +462,7 @@ paths:
               $ref: '#/components/schemas/OAuth2TokenRequest'
       responses:
         '200':
-          description: Access token issued successfully
+          description: Tokens issued successfully
           headers:
             Cache-Control:
               schema:
@@ -282,7 +477,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/OAuth2TokenResponse'
         '400':
-          description: Invalid request, unsupported grant_type, invalid_scope, or unauthorized_client
+          description: Invalid request, invalid_grant, unsupported grant_type, invalid_scope, or unauthorized_client
           content:
             application/json:
               schema:
@@ -319,13 +514,13 @@ paths:
               $ref: '#/components/schemas/OAuth2TokenRequest'
       responses:
         '200':
-          description: Access token issued successfully
+          description: Tokens issued successfully
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OAuth2TokenResponse'
         '400':
-          description: OAuth2 protocol or validation failure
+          description: OAuth2 protocol, invalid_grant, or validation failure
           content:
             application/json:
               schema:
@@ -522,17 +717,29 @@ components:
       properties:
         grant_type:
           type: string
-          enum: [client_credentials]
-          example: client_credentials
+          enum: [client_credentials, authorization_code]
+          example: authorization_code
         client_id:
           type: string
-          example: m2m-service-app
+          example: e-commerce-spa
         client_secret:
           type: string
           example: ValidSecret123!_SuperSecureSecretForTesting_2026
+        code:
+          type: string
+          description: Authorization code returned from /oauth2/authorize
+          example: SplatCode1234567890
+        redirect_uri:
+          type: string
+          description: Matching redirect URI provided in authorization request
+          example: https://shop.local/callback
+        code_verifier:
+          type: string
+          description: RFC 7636 PKCE code verifier (43-128 unreserved characters)
+          example: dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
         scope:
           type: string
-          example: identity:read
+          example: openid profile
 
     OAuth2TokenResponse:
       type: object
@@ -549,10 +756,13 @@ components:
           example: Bearer
         expires_in:
           type: integer
-          example: 3600
+          example: 900
         scope:
           type: string
-          example: identity:read identity:write audit:log
+          example: openid profile
+        id_token:
+          type: string
+          description: Signed RS256 OpenID Connect ID token conforming to RFC 7519 & OIDC Core 1.0
 
     OAuth2ErrorResponse:
       type: object
@@ -564,13 +774,15 @@ components:
           enum:
             - invalid_request
             - invalid_client
-            - invalid_scope
+            - invalid_grant
             - unauthorized_client
             - unsupported_grant_type
-          example: invalid_client
+            - unsupported_response_type
+            - invalid_scope
+          example: invalid_grant
         error_description:
           type: string
-          example: "Client authentication failed: invalid client credentials"
+          example: "Authorization code has already been consumed (replay attack detected)"
 
     ErrorResponse:
       type: object

@@ -6,6 +6,8 @@ export type OAuth2ErrorCode =
   | 'invalid_grant'
   | 'unauthorized_client'
   | 'unsupported_grant_type'
+  | 'unsupported_response_type'
+  | 'access_denied'
   | 'invalid_scope';
 
 /**

@@ -9,6 +9,9 @@ export const OAuth2TokenRequestSchema = z.object({
   clientId: z.string().trim().min(1, 'Missing client_id parameter'),
   clientSecret: z.string().optional().default(''),
   scope: z.string().optional(),
+  code: z.string().optional(),
+  redirectUri: z.string().optional(),
+  codeVerifier: z.string().optional(),
   ip: z.string().optional(),
 });
 
@@ -50,10 +53,13 @@ export function validateOAuth2TokenRequest(rawParams: unknown): OAuth2TokenReque
     );
   }
 
-  if (result.data.grantType !== 'client_credentials') {
+  if (
+    result.data.grantType !== 'client_credentials' &&
+    result.data.grantType !== 'authorization_code'
+  ) {
     throw new OAuth2AuthenticationError(
       'unsupported_grant_type',
-      `Unsupported grant_type: "${result.data.grantType}". Only "client_credentials" is supported on this endpoint.`,
+      `Unsupported grant_type: "${result.data.grantType}". Supported: "client_credentials", "authorization_code".`,
       400
     );
   }

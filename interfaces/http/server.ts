@@ -40,6 +40,11 @@ import { AuthController } from './rest/v1/identity/controllers';
 import { UserController } from './rest/v1/identity/user_controller';
 import { OAuth2ClientController } from './rest/v1/oauth2/client_controller';
 import { OAuth2TokenController } from './rest/v1/oauth2/token_controller';
+import { OAuth2AuthorizeController } from './rest/v1/oauth2/authorize_controller';
+import { AuthorizationCodeRepositoryPort } from '../../src/contexts/identity/domain/ports/authorization_code_repository_port';
+import { InMemoryAuthorizationCodeRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/authorization_code/in_memory_repository';
+import { IssueAuthorizationCodeCommandHandler } from '../../src/contexts/identity/application/commands/issue_authorization_code/handler';
+import { ExchangeAuthorizationCodeCommandHandler } from '../../src/contexts/identity/application/commands/exchange_authorization_code/handler';
 import { AsymmetricKeyProviderPort } from '../../src/contexts/identity/domain/ports/crypto/asymmetric_key_provider_port';
 import { RsaKeyAdapter } from '../../src/contexts/identity/infrastructure/security/rsa_key_adapter';
 import { GetOpenIdConfigurationQueryHandler } from '../../src/contexts/identity/application/queries/get_openid_configuration/handler';
@@ -78,6 +83,7 @@ class InMemoryUserRepository implements UserRepositoryPort {
 export interface AppDependencies {
   userRepository?: UserRepositoryPort;
   clientRepository?: ClientApplicationRepositoryPort;
+  authCodeRepository?: AuthorizationCodeRepositoryPort;
   hashProvider?: HashProviderPort;
   tokenProvider?: TokenProviderPort;
   asymmetricKeyProvider?: AsymmetricKeyProviderPort;
@@ -122,6 +128,11 @@ export function createApp(deps?: AppDependencies): Express {
     }
   }
 
+  let authCodeRepository = deps?.authCodeRepository;
+  if (!authCodeRepository) {
+    authCodeRepository = new InMemoryAuthorizationCodeRepository();
+  }
+
   let transactionRunner = deps?.transactionRunner;
   if (!transactionRunner) {
     if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
@@ -132,6 +143,7 @@ export function createApp(deps?: AppDependencies): Express {
   // Registrar dependencias e infraestructura en locals para extensibilidad del contenedor
   app.locals.userRepository = userRepository;
   app.locals.clientRepository = clientRepository;
+  app.locals.authCodeRepository = authCodeRepository;
   if (transactionRunner) {
     app.locals.transactionRunner = transactionRunner;
   }
@@ -189,7 +201,23 @@ export function createApp(deps?: AppDependencies): Express {
   const authController = new AuthController(registerUserHandler, getProfileHandler);
   const userController = new UserController(getProfileHandler, updateUserProfileHandler);
   const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
-  const oauth2TokenController = new OAuth2TokenController(authenticateClientM2MHandler);
+
+  const issueAuthCodeHandler = new IssueAuthorizationCodeCommandHandler(
+    clientRepository,
+    authCodeRepository,
+    auditLogger
+  );
+  const exchangeAuthCodeHandler = new ExchangeAuthorizationCodeCommandHandler(
+    clientRepository,
+    authCodeRepository,
+    hashProvider,
+    asymmetricKeyProvider,
+    auditLogger,
+    900,
+    process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000'
+  );
+  const authorizeController = new OAuth2AuthorizeController(issueAuthCodeHandler);
+  const oauth2TokenController = new OAuth2TokenController(authenticateClientM2MHandler, exchangeAuthCodeHandler);
   const authMiddleware = createAuthMiddleware(tokenProvider, auditLogger);
   const crossTenantGuard = createCrossTenantGuard(auditLogger);
 
@@ -224,7 +252,13 @@ export function createApp(deps?: AppDependencies): Express {
     oauth2ClientController.validateClientOrigin
   );
 
-  // Rutas OAuth2 Token (RFC 6749)
+  // Rutas OAuth2 Authorize (RFC 6749 & RFC 7636)
+  app.get('/oauth2/authorize', authorizeController.authorize);
+  app.post('/oauth2/authorize', authorizeController.authorize);
+  app.get('/api/v1/oauth2/authorize', authorizeController.authorize);
+  app.post('/api/v1/oauth2/authorize', authorizeController.authorize);
+
+  // Rutas OAuth2 Token (RFC 6749 & RFC 7636)
   app.post('/api/v1/oauth2/token', oauth2TokenController.issueToken);
   app.post('/oauth2/token', oauth2TokenController.issueToken);
 

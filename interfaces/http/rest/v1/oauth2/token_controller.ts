@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticateClientM2MCommandHandler } from '../../../../../src/contexts/identity/application/commands/authenticate_client_m2m/handler';
+import { ExchangeAuthorizationCodeCommandHandler } from '../../../../../src/contexts/identity/application/commands/exchange_authorization_code/handler';
 import { OAuth2AuthenticationError } from '../../../../../src/contexts/identity/domain/exceptions/oauth2/error';
 import { validateOAuth2TokenRequest } from './schemas';
 
@@ -14,6 +15,9 @@ export function extractOAuth2TokenParams(req: Request): {
   clientId: string;
   clientSecret: string;
   scope?: string;
+  code?: string;
+  redirectUri?: string;
+  codeVerifier?: string;
   ip?: string;
 } {
   const bodyClientId = (req.body && req.body.client_id) || (req.query && (req.query.client_id as string)) || '';
@@ -73,35 +77,72 @@ export function extractOAuth2TokenParams(req: Request): {
   const clientSecret = hasBasicAuth ? basicClientSecret : bodyClientSecret;
   const grantType = (req.body && req.body.grant_type) || (req.query && (req.query.grant_type as string)) || '';
   const scope = (req.body && req.body.scope) || (req.query && (req.query.scope as string)) || undefined;
+  const code = (req.body && req.body.code) || (req.query && (req.query.code as string)) || undefined;
+  const redirectUri =
+    (req.body && (req.body.redirect_uri || req.body.redirectUri)) ||
+    (req.query && (req.query.redirect_uri as string)) ||
+    undefined;
+  const codeVerifier =
+    (req.body && (req.body.code_verifier || req.body.codeVerifier)) ||
+    (req.query && (req.query.code_verifier as string)) ||
+    undefined;
 
   return {
     grantType,
     clientId,
     clientSecret,
     scope,
+    code,
+    redirectUri,
+    codeVerifier,
     ip: req.ip || (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress,
   };
 }
 
 /**
  * REST Driver Controller: OAuth2TokenController
- * Implementa el endpoint de emisión de tokens OAuth2 / OIDC conforme a RFC 6749.
+ * Implementa el endpoint de emisión de tokens OAuth2 / OIDC conforme a RFC 6749 y RFC 7636.
  */
 export class OAuth2TokenController {
-  constructor(private readonly authenticateM2MHandler: AuthenticateClientM2MCommandHandler) { }
+  constructor(
+    private readonly authenticateM2MHandler: AuthenticateClientM2MCommandHandler,
+    private readonly exchangeAuthCodeHandler?: ExchangeAuthorizationCodeCommandHandler
+  ) {}
 
   public issueToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const rawParams = extractOAuth2TokenParams(req);
       const validatedParams = validateOAuth2TokenRequest(rawParams);
 
-      const tokenResponse = await this.authenticateM2MHandler.execute({
-        grantType: validatedParams.grantType,
-        clientId: validatedParams.clientId,
-        clientSecret: validatedParams.clientSecret,
-        scope: validatedParams.scope,
-        ip: validatedParams.ip,
-      });
+      let tokenResponse: any;
+
+      if (validatedParams.grantType === 'client_credentials') {
+        tokenResponse = await this.authenticateM2MHandler.execute({
+          grantType: validatedParams.grantType,
+          clientId: validatedParams.clientId,
+          clientSecret: validatedParams.clientSecret,
+          scope: validatedParams.scope,
+          ip: validatedParams.ip,
+        });
+      } else if (validatedParams.grantType === 'authorization_code') {
+        if (!this.exchangeAuthCodeHandler) {
+          throw new OAuth2AuthenticationError(
+            'unsupported_grant_type',
+            'authorization_code grant handler is not configured on this server instance',
+            500
+          );
+        }
+
+        tokenResponse = await this.exchangeAuthCodeHandler.execute({
+          grantType: validatedParams.grantType,
+          clientId: validatedParams.clientId,
+          clientSecret: validatedParams.clientSecret || undefined,
+          code: validatedParams.code || '',
+          redirectUri: validatedParams.redirectUri || '',
+          codeVerifier: validatedParams.codeVerifier,
+          ip: validatedParams.ip,
+        });
+      }
 
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Pragma', 'no-cache');
@@ -123,4 +164,3 @@ export class OAuth2TokenController {
     }
   };
 }
-

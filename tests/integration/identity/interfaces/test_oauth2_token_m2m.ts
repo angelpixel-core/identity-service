@@ -155,11 +155,11 @@ describe('Integration API: POST /api/v1/oauth2/token (RFC 6749 Client Credential
       expect(response.body).toHaveProperty('error', 'invalid_request');
     });
 
-    it('should reject when grant_type is not client_credentials with error unsupported_grant_type', async () => {
+    it('should reject when grant_type is not supported with error unsupported_grant_type', async () => {
       const response = await request(server)
         .post('/api/v1/oauth2/token')
         .send({
-          grant_type: 'authorization_code',
+          grant_type: 'password',
           client_id: 'order-service',
           client_secret: 'ValidSecret123!_SuperSecureSecretForTesting_2026',
         });

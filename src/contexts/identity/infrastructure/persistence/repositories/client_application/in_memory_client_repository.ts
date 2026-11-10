@@ -49,8 +49,21 @@ export class InMemoryClientApplicationRepository implements ClientApplicationRep
       isActive: false,
     });
 
+    const eCommerceSpa = ClientApplication.create({
+      id: 'client-seed-3',
+      clientId: ClientId.create('e-commerce-spa'),
+      clientName: 'AngelPixel E-Commerce SPA',
+      clientType: 'public',
+      allowedOrigins: [OriginDomain.create('https://shop.local')],
+      redirectUris: ['https://shop.local/callback'],
+      allowedGrantTypes: ['authorization_code', 'refresh_token'],
+      scopes: ['openid', 'profile', 'email'],
+      isActive: true,
+    });
+
     this.clients.set(portalWeb.getClientId().getValue(), portalWeb);
     this.clients.set(legacyApp.getClientId().getValue(), legacyApp);
+    this.clients.set(eCommerceSpa.getClientId().getValue(), eCommerceSpa);
   }
 }
 
