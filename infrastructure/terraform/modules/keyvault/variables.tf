@@ -45,7 +45,6 @@ variable "secrets" {
   description = "Map of secrets to store in the Key Vault (key = secret name, value = secret value)"
   type        = map(string)
   default     = {}
-  sensitive   = true
 }
 
 variable "tags" {
