@@ -28,9 +28,16 @@ tests
 
 # Documentation & IDE
 docs
-README.md
+*.md
 .DS_Store
 Thumbs.db
+
+# Cloud Infrastructure, Helm Charts & CI/CD (Not needed inside application image)
+infrastructure
+deployments
+scripts
+.github
+.circleci
 
 # Logs
 npm-debug.log*
