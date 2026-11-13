@@ -26,6 +26,16 @@ export interface AsymmetricSignOptions {
 }
 
 /**
+ * Opciones para la rotación en caliente de pares de claves asimétricas (US-16 Key Rollover).
+ */
+export interface KeyPairRotationOptions {
+  readonly privateKeyPem: string;
+  readonly publicKeyPem: string;
+  readonly keyId?: string;
+  readonly gracePeriodMs?: number;
+}
+
+/**
  * Secondary Port (SPI): AsymmetricKeyProviderPort
  * Abstracción de dominio para la gestión del par de claves asimétricas RSA,
  * exportación de claves públicas en formato JWK / PEM y firma/verificación con RS256.
@@ -55,4 +65,9 @@ export interface AsymmetricKeyProviderPort {
    * Verifica la firma y vigencia de un token RS256 utilizando la clave pública correspondiente.
    */
   verifyToken<T = any>(token: string): Promise<T>;
+
+  /**
+   * Rota en caliente el par de claves asimétricas reteniendo las claves previas durante una ventana de gracia.
+   */
+  rotateKeyPair?(options: KeyPairRotationOptions): void;
 }
