@@ -315,5 +315,93 @@ b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG
       await poolManager.close();
     });
   });
+
+  describe('Scenario 4: CA Certificate Resolution from Mounted CSI Volume File (DATABASE_SSL_CA_PATH)', () => {
+    let tempDir: string;
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(async () => {
+      originalEnv = { ...process.env };
+      tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'csi-ca-file-'));
+    });
+
+    afterEach(async () => {
+      process.env = originalEnv;
+      try {
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+      } catch {
+        // Best effort cleanup
+      }
+    });
+
+    it('should read CA certificate file from DATABASE_SSL_CA_PATH and bind it to pool configuration', async () => {
+      const caFilePath = path.join(tempDir, 'azure-ca.crt');
+      await fs.promises.writeFile(caFilePath, MOCK_AZURE_DIGICERT_CA, 'utf8');
+
+      process.env.DATABASE_URL = 'postgresql://app_user:strong_pass@pg-flexible-server.postgres.database.azure.com:5432/identity_prod';
+      process.env.DATABASE_SSL_ENABLED = 'true';
+      process.env.DATABASE_SSL_MIN_VERSION = 'TLSv1.2';
+      process.env.DATABASE_SSL_CA_PATH = caFilePath;
+
+      const capturedConfig: { current?: any } = {};
+      const mockPoolFactory = createMockTlsPool(capturedConfig);
+
+      const customPoolManager = new DynamicPostgresPoolManager({
+        connectionString: process.env.DATABASE_URL,
+        sslOptions: {
+          enabled: true,
+          minVersion: 'TLSv1.2',
+          caPath: caFilePath,
+        },
+        poolFactory: mockPoolFactory,
+      });
+
+      const app: Express = createApp({
+        poolManager: customPoolManager,
+      });
+
+      // 1. Verificar resolución del archivo CA
+      expect(capturedConfig.current).toBeDefined();
+      expect(capturedConfig.current.ssl).toBeDefined();
+      expect(capturedConfig.current.ssl.rejectUnauthorized).toBe(true);
+      expect(capturedConfig.current.ssl.minVersion).toBe('TLSv1.2');
+      expect(capturedConfig.current.ssl.ca).toBe(MOCK_AZURE_DIGICERT_CA);
+
+      // 2. Probes HTTP deben responder 200 OK
+      const readyRes = await request(app).get('/health/ready');
+      expect(readyRes.status).toBe(200);
+      expect(readyRes.body.status).toBe('UP');
+      expect(readyRes.body.checks.database).toBe('OK');
+
+      const healthRes = await request(app).get('/health');
+      expect(healthRes.status).toBe(200);
+      expect(healthRes.body.checks.database).toBe('OK');
+
+      await customPoolManager.close();
+    });
+
+    it('should bootstrap server directly with DATABASE_SSL_CA_PATH environment variable', async () => {
+      const caFilePath = path.join(tempDir, 'root-ca.crt');
+      await fs.promises.writeFile(caFilePath, MOCK_AZURE_DIGICERT_CA, 'utf8');
+
+      process.env.DATABASE_URL = 'postgresql://app_user:strong_pass@pg-prod.postgres.database.azure.com:5432/identity_prod';
+      process.env.DATABASE_SSL_ENABLED = 'true';
+      process.env.DATABASE_SSL_MIN_VERSION = 'TLSv1.2';
+      process.env.DATABASE_SSL_CA_PATH = caFilePath;
+
+      const app: Express = createApp();
+
+      const poolManager = app.locals.poolManager as DynamicPostgresPoolManager;
+      expect(poolManager).toBeDefined();
+
+      const resolvedSsl = poolManager.getSslOptions();
+      expect(resolvedSsl).toBeDefined();
+      expect(resolvedSsl?.enabled).toBe(true);
+      expect(resolvedSsl?.caPath).toBe(caFilePath);
+      expect(resolvedSsl?.minVersion).toBe('TLSv1.2');
+
+      await poolManager.close();
+    });
+  });
 });
 
