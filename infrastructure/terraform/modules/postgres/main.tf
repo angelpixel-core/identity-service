@@ -9,7 +9,35 @@ resource "azurerm_postgresql_flexible_server" "this" {
   storage_mb             = var.storage_mb
   zone                   = "1"
 
+  dynamic "identity" {
+    for_each = var.primary_user_assigned_identity_id != null ? [1] : []
+    content {
+      type         = "UserAssigned"
+      identity_ids = [var.primary_user_assigned_identity_id]
+    }
+  }
+
+  dynamic "customer_managed_key" {
+    for_each = var.customer_managed_key_id != null ? [1] : []
+    content {
+      key_vault_key_id                  = var.customer_managed_key_id
+      primary_user_assigned_identity_id = var.primary_user_assigned_identity_id
+    }
+  }
+
   tags = var.tags
+}
+
+resource "azurerm_postgresql_flexible_server_configuration" "require_secure_transport" {
+  name      = "require_secure_transport"
+  server_id = azurerm_postgresql_flexible_server.this.id
+  value     = var.require_secure_transport
+}
+
+resource "azurerm_postgresql_flexible_server_configuration" "ssl_min_protocol_version" {
+  name      = "ssl_min_protocol_version"
+  server_id = azurerm_postgresql_flexible_server.this.id
+  value     = var.ssl_min_protocol_version
 }
 
 resource "azurerm_postgresql_flexible_server_database" "this" {
