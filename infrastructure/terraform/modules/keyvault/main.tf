@@ -35,7 +35,7 @@ resource "azurerm_key_vault_access_policy" "admin" {
 }
 
 resource "azurerm_key_vault_secret" "this" {
-  for_each     = nonsensitive(toset(keys(var.secrets)))
+  for_each     = toset(keys(var.secrets))
   name         = each.key
   value        = var.secrets[each.key]
   key_vault_id = azurerm_key_vault.this.id

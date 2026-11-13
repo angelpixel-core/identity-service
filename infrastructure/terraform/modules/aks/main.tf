@@ -24,7 +24,7 @@ resource "azurerm_kubernetes_cluster" "this" {
 }
 
 resource "azurerm_role_assignment" "acr_pull" {
-  count                            = var.acr_id != null ? 1 : 0
+  count                            = var.attach_acr ? 1 : 0
   principal_id                     = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
   role_definition_name             = "AcrPull"
   scope                            = var.acr_id

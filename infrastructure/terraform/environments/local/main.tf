@@ -87,6 +87,7 @@ module "aks" {
   dns_prefix          = "${var.prefix}-k8s"
   node_count          = 1
   vm_size             = "Standard_B2s"
+  attach_acr          = true
   acr_id              = module.acr.registry_id
   tags                = local.common_tags
 }

@@ -1,7 +1,7 @@
 prefix                  = "id-local"
 location                = "eastus2"
 environment             = "local"
-metadata_host           = "localhost:4577"
+metadata_host           = "localhost:4578"
 postgres_admin_login    = "pgadmin"
 postgres_admin_password = "SuperP@ssw0rdLocal123!"
 jwt_secret              = "super-secret-tenant-key-minimum-32-characters"

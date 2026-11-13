@@ -19,7 +19,7 @@ variable "environment" {
 variable "metadata_host" {
   description = "Floci ARM metadata host endpoint"
   type        = string
-  default     = "localhost:4577"
+  default     = "localhost:4578"
 }
 
 variable "postgres_admin_login" {

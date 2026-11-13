@@ -16,11 +16,11 @@ provider "azurerm" {
     }
   }
 
-  metadata_host               = var.metadata_host
+  metadata_host              = var.metadata_host
   skip_provider_registration = true
 
-  subscription_id = "00000000-0000-0000-0000-000000000000"
-  tenant_id       = "00000000-0000-0000-0000-000000000000"
-  client_id       = "00000000-0000-0000-0000-000000000000"
+  subscription_id = "00000000-0000-0000-0000-000000000001"
+  tenant_id       = "00000000-0000-0000-0000-000000000002"
+  client_id       = "00000000-0000-0000-0000-000000000003"
   client_secret   = "dummy-secret-floci"
 }

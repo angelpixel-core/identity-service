@@ -43,3 +43,8 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+
+# Local Floci Emulator TLS & Cache
+infrastructure/local/floci/.tls/
+*.crt
+*.key

@@ -98,23 +98,24 @@ services:
       - /app/node_modules
 
   floci:
-    image: floci/floci:latest
+    image: floci/floci-az:latest
     container_name: floci-azure-arm
     restart: unless-stopped
     profiles:
       - cloud
       - infra
     ports:
-      - "${FLOCI_AZURE_PORT:-4577}:4566"
-      - "${FLOCI_AWS_PORT:-4566}:4566"
+      - "${FLOCI_AZURE_PORT:-4577}:4577"
     environment:
-      FLOCI_PORT: 4566
       QUARKUS_HTTP_HOST: 0.0.0.0
       FLOCI_SECURITY_ALLOW_UNSAFE_NETWORK_EXPOSURE: "true"
+      FLOCI_AZ_STORAGE_MODE: hybrid
+      FLOCI_AZ_TLS_ENABLED: "true"
+      FLOCI_AZ_PARITY: "azure"
     volumes:
       - floci_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:4566/_floci/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:4577/_floci/health || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 5
