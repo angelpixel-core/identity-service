@@ -323,6 +323,11 @@
           "type": "string",
           "enum": ["azure"]
         },
+        "rotationPollInterval": {
+          "type": "string",
+          "pattern": "^[0-9]+(m|s|h)$",
+          "description": "Frecuencia de sondeo para auto-rotación de secretos por el Azure Key Vault CSI Driver (ej: 2m, 30s, 1h)"
+        },
         "usePodIdentity": {
           "type": "string"
         },

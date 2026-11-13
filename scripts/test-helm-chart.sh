@@ -124,6 +124,9 @@ if (!spc || spc.spec.provider !== "azure") {
 if (spc.spec.parameters.keyvaultName !== "id-local-kv") {
   throw new Error(`Expected keyvaultName id-local-kv, got ${spc.spec.parameters.keyvaultName}`);
 }
+if (spc.spec.parameters.rotationPollInterval !== "2m") {
+  throw new Error(`Expected rotationPollInterval 2m, got ${spc.spec.parameters.rotationPollInterval}`);
+}
 
 const svc = byKind("Service");
 if (!svc || svc.spec.type !== "ClusterIP" || svc.spec.ports[0].port !== 4000) {
@@ -138,7 +141,7 @@ if (!ing || ing.spec.ingressClassName !== "nginx") {
 console.log("✓ Invariantes de Deployment (RollingUpdate 25%/0, 2 réplicas, recursos 100m/128Mi -> 500m/512Mi) verificadas.");
 console.log("✓ Contexto de seguridad no-root (runAsNonRoot: true, allowPrivilegeEscalation: false, drop: ALL) verificado.");
 console.log("✓ Probes /health/live y /health/ready verificadas.");
-console.log("✓ SecretProviderClass (Azure Key Vault CSI Driver: id-local-kv) y proyección de DATABASE_URL, JWT_SECRET y REDIS_URL verificados.");
+console.log("✓ SecretProviderClass (Azure Key Vault CSI: id-local-kv, rotationPollInterval: 2m) y proyección de DATABASE_URL, JWT_SECRET y REDIS_URL verificados.");
 console.log("✓ PodDisruptionBudget (minAvailable: 1), Service (ClusterIP:4000) e Ingress (nginx TLS) verificados.");
 '
 
@@ -182,7 +185,8 @@ assert_lint_failure "replicaCount=0 menor al mínimo permitido (>= 1)" "replicaC
 assert_lint_failure "keyVaultCSI.provider no soportado (debe ser azure)" "keyVaultCSI/provider.*must be 'azure'" --set keyVaultCSI.provider=aws
 assert_lint_failure "service.type inválido (enum ClusterIP/NodePort/LoadBalancer)" "service/type.*value must be one of" --set service.type=IngressIP
 assert_lint_failure "livenessProbe.httpGet.path sin barra inicial (pattern ^/)" "livenessProbe/httpGet/path.*pattern" --set livenessProbe.httpGet.path=health/live
+assert_lint_failure "keyVaultCSI.rotationPollInterval con formato inválido (sin unidad m/s/h)" "rotationPollInterval.*pattern" --set keyVaultCSI.rotationPollInterval=invalid
 
 echo -e "\n${GREEN}================================================================${NC}"
-echo -e "${GREEN}✓ Todas las pruebas de empaquetado Helm (US-14) pasaron con éxito.${NC}"
+echo -e "${GREEN}✓ Todas las pruebas de empaquetado Helm (US-14 & US-16) pasaron con éxito.${NC}"
 echo -e "${GREEN}================================================================${NC}"
