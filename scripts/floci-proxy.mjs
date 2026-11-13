@@ -14,7 +14,7 @@ const targetHost = process.env.FLOCI_TARGET_HOST || 'localhost';
 const targetPort = parseInt(process.env.FLOCI_TARGET_PORT || '4577', 10);
 const proxyPort = parseInt(process.env.FLOCI_PROXY_PORT || '4578', 10);
 
-// Ensure TLS directory and files exist
+// Ensure TLS directory and assets exist
 if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
   fs.mkdirSync(tlsDir, { recursive: true });
   try {
@@ -84,6 +84,23 @@ const getLocalFallbackMetadata = (url) => {
 };
 
 const server = https.createServer({ cert, key }, (req, res) => {
+  // Liveness / health probe for testing and monitoring
+  if (req.url === '/__proxy_health' || req.url === '/health') {
+    const healthPayload = JSON.stringify({
+      status: 'UP',
+      target: `${targetHost}:${targetPort}`,
+      proxyPort,
+      timestamp: new Date().toISOString()
+    });
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(healthPayload)
+    });
+    res.end(healthPayload);
+    return;
+  }
+
+  // Intercept and rewrite Azure ARM endpoint metadata queries
   if (req.url && req.url.includes('/metadata/endpoints')) {
     https.get(`https://management.azure.com${req.url}`, (azRes) => {
       let azBody = [];
@@ -111,13 +128,15 @@ const server = https.createServer({ cert, key }, (req, res) => {
     return;
   }
 
+  // Forward all other ARM calls to local Floci container
   const options = {
     hostname: targetHost,
     port: targetPort,
     path: req.url,
     method: req.method,
     headers: req.headers,
-    rejectUnauthorized: false
+    rejectUnauthorized: false,
+    timeout: 30000
   };
 
   const clientReq = https.request(options, (clientRes) => {
@@ -125,12 +144,47 @@ const server = https.createServer({ cert, key }, (req, res) => {
     clientRes.pipe(res);
   });
 
+  clientReq.on('timeout', () => {
+    clientReq.destroy(new Error(`Gateway timeout connecting to Floci at ${targetHost}:${targetPort}`));
+  });
+
   clientReq.on('error', (err) => {
-    res.writeHead(502);
-    res.end(err.message);
+    if (!res.headersSent) {
+      res.writeHead(502, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Bad Gateway', message: err.message }));
+    }
   });
 
   req.pipe(clientReq);
+});
+
+// Guard against malformed TLS client handshakes without crashing the process
+server.on('clientError', (_err, socket) => {
+  if (socket.writable) {
+    socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+  }
+});
+
+// Graceful termination handling
+const shutdown = (signal) => {
+  console.log(`[Floci Proxy] Received ${signal}, closing proxy server gracefully...`);
+  server.close(() => {
+    console.log('[Floci Proxy] Proxy server closed cleanly.');
+    process.exit(0);
+  });
+  // Force exit after 3 seconds if existing sockets do not drain
+  setTimeout(() => process.exit(0), 3000).unref();
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+process.on('uncaughtException', (err) => {
+  console.error('[Floci Proxy] Uncaught Exception:', err.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Floci Proxy] Unhandled Rejection:', reason);
 });
 
 server.listen(proxyPort, () => {

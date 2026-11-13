@@ -23,7 +23,7 @@ run_helm() {
   fi
 }
 
-echo -e "${BLUE}=== [1/5] Verificando Motor Helm CLI ===${NC}"
+echo -e "${BLUE}=== [1/6] Verificando Motor Helm CLI ===${NC}"
 if command -v helm >/dev/null 2>&1; then
   HELM_VER=$(helm version --short)
   echo -e "${GREEN}✓ Binario local Helm detectado: ${HELM_VER}${NC}"
@@ -33,14 +33,14 @@ else
   echo -e "${GREEN}✓ Contenedor oficial ${HELM_IMAGE} activo: ${HELM_VER}${NC}"
 fi
 
-echo -e "\n${BLUE}=== [2/5] Ejecutando Helm Lint Estricto (values.yaml & values-local.yaml) ===${NC}"
+echo -e "\n${BLUE}=== [2/6] Ejecutando Helm Lint Estricto (values.yaml & values-local.yaml) ===${NC}"
 run_helm lint "${CHART_REL_PATH}" --strict
 echo -e "${GREEN}✓ Helm lint (values.yaml) aprobado con 0 errores y 0 advertencias.${NC}"
 
 run_helm lint "${CHART_REL_PATH}" -f "${CHART_REL_PATH}/values-local.yaml" --strict
 echo -e "${GREEN}✓ Helm lint (values-local.yaml) aprobado con 0 errores y 0 advertencias.${NC}"
 
-echo -e "\n${BLUE}=== [3/5] Renderizando Plantillas Kubernetes (helm template) ===${NC}"
+echo -e "\n${BLUE}=== [3/6] Renderizando Plantillas Kubernetes (helm template) ===${NC}"
 RENDERED_LOCAL=$(run_helm template identity-service "${CHART_REL_PATH}" -f "${CHART_REL_PATH}/values-local.yaml")
 
 for kind in "ServiceAccount" "SecretProviderClass" "Service" "Deployment" "PodDisruptionBudget" "Ingress"; do
@@ -52,7 +52,7 @@ for kind in "ServiceAccount" "SecretProviderClass" "Service" "Deployment" "PodDi
   fi
 done
 
-echo -e "\n${BLUE}=== [4/5] Auditando Invariantes de Orquestación, Probes, CSI y Seguridad ===${NC}"
+echo -e "\n${BLUE}=== [4/6] Auditando Invariantes de Orquestación, Probes, CSI y Seguridad ===${NC}"
 RENDERED_YAML="${RENDERED_LOCAL}" node -e '
 const yaml = require("yaml");
 const raw = process.env.RENDERED_YAML;
@@ -142,7 +142,7 @@ console.log("✓ SecretProviderClass (Azure Key Vault CSI Driver: id-local-kv) y
 console.log("✓ PodDisruptionBudget (minAvailable: 1), Service (ClusterIP:4000) e Ingress (nginx TLS) verificados.");
 '
 
-echo -e "\n${BLUE}=== [5/5] Verificando Renderizado Condicional de HorizontalPodAutoscaler (HPA) ===${NC}"
+echo -e "\n${BLUE}=== [5/6] Verificando Renderizado Condicional de HorizontalPodAutoscaler (HPA) ===${NC}"
 RENDERED_HPA=$(run_helm template identity-service "${CHART_REL_PATH}" --set autoscaling.enabled=true)
 if echo "${RENDERED_HPA}" | grep -q "^kind: HorizontalPodAutoscaler$"; then
   echo -e "${GREEN}✓ HorizontalPodAutoscaler renderizado dinámicamente cuando autoscaling.enabled=true.${NC}"
@@ -150,6 +150,38 @@ else
   echo -e "${RED}Error: HorizontalPodAutoscaler no se renderizó cuando autoscaling.enabled=true.${NC}"
   exit 1
 fi
+
+echo -e "\n${BLUE}=== [6/6] Verificando Rechazo Estricto de Casos Negativos (values.schema.json) ===${NC}"
+assert_lint_failure() {
+  local description="$1"
+  local expected_pattern="$2"
+  shift 2
+  local output
+
+  echo "Probando caso negativo: ${description}..."
+  set +e
+  output=$(run_helm lint "${CHART_REL_PATH}" "$@" 2>&1)
+  local status=$?
+  set -e
+
+  if [[ $status -eq 0 ]]; then
+    echo -e "${RED}Error: helm lint debió fallar para '${description}', pero fue aceptado exitosamente.${NC}"
+    exit 1
+  fi
+
+  if ! echo "${output}" | grep -qE "${expected_pattern}"; then
+    echo -e "${RED}Error: El mensaje de error no contiene el patrón esperado '${expected_pattern}'.${NC}"
+    echo "Salida obtenida:"
+    echo "${output}"
+    exit 1
+  fi
+  echo -e "${GREEN}✓ Caso negativo validado (falló según lo esperado): ${description}.${NC}"
+}
+
+assert_lint_failure "replicaCount=0 menor al mínimo permitido (>= 1)" "replicaCount.*minimum.*got 0" --set replicaCount=0
+assert_lint_failure "keyVaultCSI.provider no soportado (debe ser azure)" "keyVaultCSI/provider.*must be 'azure'" --set keyVaultCSI.provider=aws
+assert_lint_failure "service.type inválido (enum ClusterIP/NodePort/LoadBalancer)" "service/type.*value must be one of" --set service.type=IngressIP
+assert_lint_failure "livenessProbe.httpGet.path sin barra inicial (pattern ^/)" "livenessProbe/httpGet/path.*pattern" --set livenessProbe.httpGet.path=health/live
 
 echo -e "\n${GREEN}================================================================${NC}"
 echo -e "${GREEN}✓ Todas las pruebas de empaquetado Helm (US-14) pasaron con éxito.${NC}"

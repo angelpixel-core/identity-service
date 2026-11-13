@@ -54,20 +54,36 @@ if ! lsof -i :4578 -sTCP:LISTEN -t >/dev/null 2>&1; then
   echo "Starting background Floci ARM proxy on port 4578..."
   node "${PROXY_SCRIPT}" &
   PROXY_PID=$!
-  sleep 2
+  
+  # Wait for proxy liveness via dedicated diagnostic endpoint
+  READY=false
+  for _ in {1..20}; do
+    if curl -sk https://localhost:4578/__proxy_health >/dev/null 2>&1; then
+      READY=true
+      break
+    fi
+    sleep 0.2
+  done
+  if [[ "${READY}" != "true" ]]; then
+    echo -e "${RED}Error: Floci ARM proxy failed to start within timeout.${NC}"
+    exit 1
+  fi
 else
   echo "Proxy already active on port 4578."
 fi
 
 cleanup() {
+  local exit_code=$?
   if [[ -n "${PROXY_PID}" ]]; then
     echo "Stopping test proxy process (PID ${PROXY_PID})..."
-    kill "${PROXY_PID}" 2>/dev/null || true
+    kill -TERM "${PROXY_PID}" 2>/dev/null || true
+    wait "${PROXY_PID}" 2>/dev/null || true
   fi
+  exit "${exit_code}"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM HUP
 
-echo -e "${GREEN}✓ Floci ARM Proxy is ready.${NC}"
+echo -e "${GREEN}✓ Floci ARM Proxy is ready and verified via /__proxy_health.${NC}"
 
 echo -e "\n${BLUE}=== [4/5] Validating Terraform Modules & Providers ===${NC}"
 TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" validate
