@@ -1,5 +1,7 @@
 import {
   DynamicPostgresPoolManager,
+  PostgresSslOptions,
+  SecurityConfigurationError,
 } from '../../../../../src/contexts/identity/infrastructure/persistence/database/dynamic_postgres_pool_manager';
 import { PoolClientWithRelease } from '../../../../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 
@@ -202,5 +204,135 @@ describe('Unit: DynamicPostgresPoolManager (US-16 Zero-Downtime Database Pool Re
     await expect(manager.reloadCredentials('postgresql://...')).rejects.toThrow(
       'DynamicPostgresPoolManager is closed and cannot accept queries'
     );
+  });
+
+  describe('US-17 Strict TLS 1.2+ & Anti-Downgrade SSL Guard', () => {
+    it('should initialize pool with strict SSL configuration when sslOptions are provided', () => {
+      let capturedConfig: any = null;
+      const poolFactory = jest.fn().mockImplementation((config: any) => {
+        capturedConfig = config;
+        return mockInitialPool;
+      });
+
+      const sslOptions: PostgresSslOptions = {
+        enabled: true,
+        minVersion: 'TLSv1.3',
+        ca: '-----BEGIN CERTIFICATE-----\nMOCK_ROOT_CA\n-----END CERTIFICATE-----',
+      };
+
+      const manager = new DynamicPostgresPoolManager({
+        connectionString: 'postgresql://app_user:app_pass@flexible-pg.postgres.database.azure.com:5432/identity_prod',
+        sslOptions,
+        poolFactory,
+      });
+
+      expect(manager.getGeneration()).toBe(1);
+      expect(manager.getSslOptions()).toEqual(sslOptions);
+      expect(poolFactory).toHaveBeenCalledTimes(1);
+      expect(capturedConfig.ssl).toBeDefined();
+      expect(capturedConfig.ssl.rejectUnauthorized).toBe(true);
+      expect(capturedConfig.ssl.minVersion).toBe('TLSv1.3');
+      expect(capturedConfig.ssl.ca).toBe('-----BEGIN CERTIFICATE-----\nMOCK_ROOT_CA\n-----END CERTIFICATE-----');
+    });
+
+    it('should block initialization and throw SecurityConfigurationError if rejectUnauthorized is disabled', () => {
+      const poolFactory = jest.fn();
+
+      expect(() => {
+        new DynamicPostgresPoolManager({
+          poolConfig: {
+            host: 'flexible-pg.postgres.database.azure.com',
+            database: 'identity_prod',
+            ssl: { rejectUnauthorized: false },
+          },
+          poolFactory,
+        });
+      }).toThrow(SecurityConfigurationError);
+
+      expect(() => {
+        new DynamicPostgresPoolManager({
+          connectionString: 'postgresql://app_user:app_pass@flexible-pg.postgres.database.azure.com:5432/identity_prod?sslmode=no-verify',
+          poolFactory,
+        });
+      }).toThrow(SecurityConfigurationError);
+
+      expect(poolFactory).not.toHaveBeenCalled();
+    });
+
+    it('should inherit SSL security configuration during reloadCredentials with string connection', async () => {
+      let reloadedConfig: any = null;
+      const poolFactory = jest.fn().mockImplementation((config: any) => {
+        reloadedConfig = config;
+        return mockNewPool;
+      });
+
+      const sslOptions: PostgresSslOptions = {
+        enabled: true,
+        minVersion: 'TLSv1.2',
+        ca: '-----BEGIN CERTIFICATE-----\nAZURE_DIGICERT_GLOBAL_ROOT_CA\n-----END CERTIFICATE-----',
+      };
+
+      const manager = new DynamicPostgresPoolManager({
+        initialPool: mockInitialPool,
+        sslOptions,
+        poolFactory,
+        drainGracePeriodMs: 50,
+      });
+
+      expect(manager.getGeneration()).toBe(1);
+
+      await manager.reloadCredentials(
+        'postgresql://rotated_user:new_rotated_pass@flexible-pg.postgres.database.azure.com:5432/identity_prod'
+      );
+
+      expect(manager.getGeneration()).toBe(2);
+      expect(manager.getActivePool()).toBe(mockNewPool);
+      expect(poolFactory).toHaveBeenCalledTimes(1);
+      expect(reloadedConfig.ssl).toBeDefined();
+      expect(reloadedConfig.ssl.rejectUnauthorized).toBe(true);
+      expect(reloadedConfig.ssl.minVersion).toBe('TLSv1.2');
+      expect(reloadedConfig.ssl.ca).toBe('-----BEGIN CERTIFICATE-----\nAZURE_DIGICERT_GLOBAL_ROOT_CA\n-----END CERTIFICATE-----');
+
+      await manager.close();
+    });
+
+    it('should fail-safe and preserve active pool if reloadCredentials attempts an SSL downgrade', async () => {
+      const poolFactory = jest.fn().mockImplementation(() => mockNewPool);
+
+      const manager = new DynamicPostgresPoolManager({
+        initialPool: mockInitialPool,
+        poolFactory,
+      });
+
+      expect(manager.getGeneration()).toBe(1);
+
+      // Attempt 1: Insecure sslmode in URL query
+      await expect(
+        manager.reloadCredentials(
+          'postgresql://hacker_user:pass@flexible-pg:5432/identity_prod?sslmode=no-verify'
+        )
+      ).rejects.toThrow(SecurityConfigurationError);
+
+      // Attempt 2: Explicit rejectUnauthorized: false in PoolConfig
+      await expect(
+        manager.reloadCredentials({
+          host: 'flexible-pg',
+          database: 'identity_prod',
+          ssl: { rejectUnauthorized: false },
+        })
+      ).rejects.toThrow(SecurityConfigurationError);
+
+      // Verify that candidate pool was NEVER created or swapped
+      expect(poolFactory).not.toHaveBeenCalled();
+      expect(manager.getGeneration()).toBe(1);
+      expect(manager.getActivePool()).toBe(mockInitialPool);
+
+      // Original pool continues to serve queries seamlessly
+      const result = await manager.query('SELECT 1');
+      expect(result.rows).toEqual([{ health_check: 1 }]);
+      expect(mockInitialPool.end).not.toHaveBeenCalled();
+
+      await manager.close();
+    });
   });
 });
