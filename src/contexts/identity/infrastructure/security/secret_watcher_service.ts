@@ -53,6 +53,29 @@ export class SecretWatcherService {
   }
 
   /**
+   * Alias de subscribe para compatibilidad de interfaz fluida.
+   */
+  public onSecretChanged(filename: string, callback: SecretChangeCallback): void {
+    this.subscribe(filename, callback);
+  }
+
+  /**
+   * Lee sincrónicamente el contenido actual de un secreto si el archivo existe.
+   */
+  public readSecret(filename: string): string | null {
+    const cleanFilename = path.basename(filename.trim());
+    const filePath = path.join(this.secretsDir, cleanFilename);
+    try {
+      if (fs.existsSync(filePath)) {
+        return fs.readFileSync(filePath, 'utf8');
+      }
+    } catch {
+      // Ignorar errores de lectura momentáneos durante transiciones de archivo
+    }
+    return null;
+  }
+
+  /**
    * Inicia el observador de archivos, escaneando el estado inicial y armando el watcher de FS.
    */
   public async start(): Promise<void> {
