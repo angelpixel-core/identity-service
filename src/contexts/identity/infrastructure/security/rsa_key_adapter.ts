@@ -156,6 +156,16 @@ export class RsaKeyAdapter implements AsymmetricKeyProviderPort {
 
     const rawKid = options.keyId ?? this.computeThumbprint(options.publicKeyPem);
     const candidateKeyId = KeyId.create(rawKid);
+
+    // Idempotencia defensiva: Si el par de claves candidato es idéntico al activo, evitar re-rotación innecesaria
+    if (
+      candidateKeyId.getValue() === this.activeKeyId.getValue() &&
+      this.activePublicKeyPem.trim() === options.publicKeyPem.trim() &&
+      this.activePrivateKeyPem.trim() === options.privateKeyPem.trim()
+    ) {
+      return;
+    }
+
     const candidateJwkDto = this.buildJwkDto(candidateKeyId, options.publicKeyPem);
 
     // 2. Retener clave pública previa en memoria durante la ventana de gracia
@@ -168,6 +178,9 @@ export class RsaKeyAdapter implements AsymmetricKeyProviderPort {
       jwkDto: this.activeJwkDto,
       expiresAt,
     });
+
+    // Si la clave candidata existía previamente en retenidas, se promueve eliminándose de retenidas
+    this.retainedKeys.delete(candidateKeyId.getValue());
 
     // 3. Promover nuevo par de claves a activo
     this.activePrivateKeyPem = options.privateKeyPem;
