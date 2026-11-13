@@ -112,6 +112,8 @@ export interface AppDependencies {
   googleOidcAdapter?: ExternalIdentityProviderPort;
   microsoftEntraAdapter?: ExternalIdentityProviderPort;
   federationStateManager?: FederationStateManager;
+  dbHealthCheck?: () => Promise<boolean>;
+  cacheHealthCheck?: () => Promise<boolean>;
 }
 
 /**
@@ -342,6 +344,44 @@ export function createApp(deps?: AppDependencies): Express {
   const crossTenantGuard = createCrossTenantGuard(auditLogger);
 
   // Rutas de Diagnóstico y Health Probes (US-13 & US-14)
+  const evaluateReadiness = async (): Promise<{
+    isHealthy: boolean;
+    dbStatus: 'OK' | 'DOWN';
+    cacheStatus: 'OK' | 'DOWN';
+  }> => {
+    let dbStatus: 'OK' | 'DOWN' = 'OK';
+    let cacheStatus: 'OK' | 'DOWN' = 'OK';
+
+    try {
+      if (deps?.dbHealthCheck) {
+        const dbOk = await deps.dbHealthCheck();
+        if (!dbOk) {
+          dbStatus = 'DOWN';
+        }
+      } else if (pool) {
+        await pool.query('SELECT 1');
+      }
+    } catch {
+      dbStatus = 'DOWN';
+    }
+
+    try {
+      if (deps?.cacheHealthCheck) {
+        const cacheOk = await deps.cacheHealthCheck();
+        if (!cacheOk) {
+          cacheStatus = 'DOWN';
+        }
+      } else {
+        await cacheProvider.get('__health_probe__');
+      }
+    } catch {
+      cacheStatus = 'DOWN';
+    }
+
+    const isHealthy = dbStatus === 'OK' && cacheStatus === 'OK';
+    return { isHealthy, dbStatus, cacheStatus };
+  };
+
   app.get('/health/live', (req: Request, res: Response) => {
     res.status(200).json({
       status: 'UP',
@@ -354,18 +394,7 @@ export function createApp(deps?: AppDependencies): Express {
   });
 
   app.get('/health/ready', async (_req: Request, res: Response) => {
-    let dbStatus = 'OK';
-    let cacheStatus = 'OK';
-
-    if (pool) {
-      try {
-        await pool.query('SELECT 1');
-      } catch {
-        dbStatus = 'DOWN';
-      }
-    }
-
-    const isHealthy = dbStatus === 'OK' && cacheStatus === 'OK';
+    const { isHealthy, dbStatus, cacheStatus } = await evaluateReadiness();
     const statusCode = isHealthy ? 200 : 503;
 
     res.status(statusCode).json({
@@ -379,18 +408,7 @@ export function createApp(deps?: AppDependencies): Express {
   });
 
   app.get('/health', async (_req: Request, res: Response) => {
-    let dbStatus = 'OK';
-    let cacheStatus = 'OK';
-
-    if (pool) {
-      try {
-        await pool.query('SELECT 1');
-      } catch {
-        dbStatus = 'DOWN';
-      }
-    }
-
-    const isHealthy = dbStatus === 'OK' && cacheStatus === 'OK';
+    const { isHealthy, dbStatus, cacheStatus } = await evaluateReadiness();
     const statusCode = isHealthy ? 200 : 503;
 
     res.status(statusCode).json({
