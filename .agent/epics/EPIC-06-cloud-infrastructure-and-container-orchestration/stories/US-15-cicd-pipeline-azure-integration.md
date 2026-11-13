@@ -4,16 +4,16 @@ title: "CI/CD Pipeline Automation (GitHub Actions & CircleCI)"
 epic:
   id: EPIC-06
   name: "Cloud Infrastructure & Container Orchestration (Azure & Floci)"
-status: planned
+status: completed
 priority: P1
 bounded_context: infrastructure
 subdomain: cicd-automation
 slice_type: continuous-delivery
 timestamps:
   created_at: "2026-11-10T14:15:00-03:00"
-  started_at: null
-  completed_at: null
-  updated_at: "2026-11-10T14:15:00-03:00"
+  started_at: "2026-11-13T01:15:00-03:00"
+  completed_at: "2026-11-13T02:00:00-03:00"
+  updated_at: "2026-11-13T02:00:00-03:00"
 traceability:
   adrs:
     - docs/adr/0007-cloud-infrastructure-topology.md
@@ -21,7 +21,12 @@ traceability:
     - .agent/guidelines/GUIDELINE-16-cicd-azure-container-delivery.md
   publications:
     - .agent/publications/ARTICLE-12-cloud-infrastructure-azure-floci.md
-  commits: []
+  commits:
+    - "de4531c"
+    - "13e47b5"
+    - "e8fc351"
+    - "c057baf"
+    - "91c6e6f"
 tags:
   - cicd
   - github-actions
@@ -36,7 +41,7 @@ tags:
 # US-15: CI/CD Pipeline Automation (GitHub Actions & CircleCI)
 
 **Epic:** [EPIC-06: Cloud Infrastructure & Container Orchestration (Azure & Floci)](../README.md)  
-**Status:** Planned  
+**Status:** Completed  
 **Domain / Bounded Context:** `infrastructure` / `cicd-automation`  
 **Slice Type:** Continuous Delivery & Automated Rollout Slice  
 **Referencia Estructural:** [`.agent/TREE.txt`](../../../TREE.txt)  
@@ -107,8 +112,8 @@ Feature: CI/CD Pipeline Automation (GitHub Actions & CircleCI)
 
 ## 4. Definición de Hecho (DoD)
 
-- [ ] `Dockerfile.production` multi-etapa optimizado y no-root.
-- [ ] Workflow `.github/workflows/cd.yml` implementado y validado.
-- [ ] Configuración `.circleci/config.yml` completa, validada sintácticamente y documentada.
-- [ ] Mecanismo de rollout check y rollback automático integrado en los scripts/steps.
-- [ ] Registro en `TRACEABILITY_MATRIX.md`.
+- [x] `Dockerfile.production` multi-etapa optimizado y no-root (< 250MB).
+- [x] Workflow `.github/workflows/cd.yml` implementado y validado.
+- [x] Configuración `.circleci/config.yml` completa, validada sintácticamente y documentada.
+- [x] Mecanismo de rollout check y rollback automático integrado en los scripts/steps (`deploy-helm-rollout.sh`).
+- [x] Registro en `TRACEABILITY_MATRIX.md`.

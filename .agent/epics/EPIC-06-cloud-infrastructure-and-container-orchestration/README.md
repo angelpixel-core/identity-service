@@ -2,7 +2,7 @@
 
 * **ID:** EPIC-06
 * **Bounded Context:** `infrastructure` / `cloud-orchestration`
-* **Estado:** Planned
+* **Estado:** Completed
 * **Arquitectura:** Infrastructure as Code (IaC) / Cloud-Native Kubernetes / Azure Emulation / GitOps & CI/CD
 * **Topología de Referencia:** [`.agent/TREE.txt`](../../TREE.txt)
 * **Plataforma de Emulación:** [Floci (floci-az)](https://github.com/floci-io/floci)
@@ -88,9 +88,9 @@ Para permitir el desarrollo, prueba y validación continua en local sin incurrir
 
 ## 4. Definición de Hecho (Definition of Done - DoD)
 
-- [ ] Terraform valida y planifica sin errores los recursos de Azure sobre Floci.
-- [ ] Ingress-Nginx enruta tráfico HTTPS hacia `auth.angelpixel.local` con certificado TLS válido.
-- [ ] Chart de Helm despliega réplicas de `identity-service` con health probes y CSI SecretProviderClass.
-- [ ] Pipelines duales (GitHub Actions + CircleCI) sintáctica y estructuralmente validados.
-- [ ] Trazabilidad completa en [`TRACEABILITY_MATRIX.md`](../../memory/TRACEABILITY_MATRIX.md) con estado `Completed`.
-- [ ] Artículo técnico documentado en `.agent/publications/`.
+- [x] Terraform valida y planifica sin errores los recursos de Azure sobre Floci (`npm run test:infra`).
+- [x] Ingress-Nginx enruta tráfico HTTPS hacia `auth.angelpixel.local` con certificado TLS válido (`npm run test:ingress`).
+- [x] Chart de Helm despliega réplicas de `identity-service` con health probes y CSI SecretProviderClass (`npm run test:helm`).
+- [x] Pipelines duales (GitHub Actions + CircleCI) sintáctica y estructuralmente validados (`npm run test:cicd`).
+- [x] Trazabilidad completa en [`TRACEABILITY_MATRIX.md`](../../memory/TRACEABILITY_MATRIX.md) con estado `Completed`.
+- [x] Artículo técnico documentado en `.agent/publications/` (`ARTICLE-12-cloud-infrastructure-azure-floci.md`).
