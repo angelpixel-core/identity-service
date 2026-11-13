@@ -4,7 +4,7 @@ title: "Azure Key Vault CSI Driver Secret Rotation & In-Process Dynamic Reload"
 epic:
   id: EPIC-07
   name: "Fintech Compliance, Hardening & Security Standards"
-status: ready
+status: completed
 priority: P1
 bounded_context: security
 subdomain: secrets-management
@@ -34,7 +34,7 @@ tags:
 # US-16: Azure Key Vault CSI Driver Secret Rotation & In-Process Dynamic Reload
 
 **Epic:** [EPIC-07: Fintech Compliance, Hardening & Security Standards](../README.md)  
-**Status:** Ready  
+**Status:** Completed  
 **Domain / Bounded Context:** `security` / `secrets-management`  
 **Slice Type:** Runtime Security & Infrastructure Slice  
 **Regulatory Framework:** PCI-DSS v4.0 (Req 3.6) · SOC 2 Type II (CC6.1)  
@@ -95,8 +95,8 @@ Feature: Rotación Inyectada de Secretos con Azure Key Vault CSI Driver
 
 ## 4. Definición de Hecho (Definition of Done)
 
-- [ ] `SecretWatcherService` implementado con debounce, checksum y manejo seguro de symlinks.
-- [ ] Recarga en caliente del pool de base de datos validada con pruebas de concurrencia.
-- [ ] Key rollover asimétrico validado sin invalidación prematura de tokens vigentes.
-- [ ] Helm Chart parametrizado con `rotationPollInterval: 2m`.
-- [ ] Pruebas unitarias e integradas cubriendo escenarios de rotación y error.
+- [x] `SecretWatcherService` implementado con debounce, checksum y manejo seguro de symlinks.
+- [x] Recarga en caliente del pool de base de datos validada con pruebas de concurrencia.
+- [x] Key rollover asimétrico validado sin invalidación prematura de tokens vigentes.
+- [x] Helm Chart parametrizado con `rotationPollInterval: 2m`.
+- [x] Pruebas unitarias e integradas cubriendo escenarios de rotación y error.
