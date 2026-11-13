@@ -4,6 +4,7 @@ description: Enterprise Multi-Tenant Identity & Access Management Service Helm C
 type: application
 version: 1.0.0
 appVersion: "0.1.0"
+icon: https://angelpixel.io/assets/identity-icon.png
 maintainers:
   - name: AngelSolutions Platform Engineering
     email: contact@angelpixel.io
