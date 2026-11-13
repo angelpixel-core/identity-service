@@ -9,7 +9,10 @@ import crypto from 'crypto';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import yaml from 'yaml';
-import { DynamicPostgresPoolManager } from '../../src/contexts/identity/infrastructure/persistence/database/dynamic_postgres_pool_manager';
+import {
+  DynamicPostgresPoolManager,
+  PostgresSslOptions,
+} from '../../src/contexts/identity/infrastructure/persistence/database/dynamic_postgres_pool_manager';
 import { SecretWatcherService } from '../../src/contexts/identity/infrastructure/security/secret_watcher_service';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
 import { UpdateUserProfileCommandHandler } from '../../src/contexts/identity/application/commands/update_user_profile/handler';
@@ -119,6 +122,7 @@ export interface AppDependencies {
   secretWatcher?: SecretWatcherService;
   secretsMountPath?: string;
   enableSecretWatcher?: boolean;
+  sslOptions?: PostgresSslOptions;
 }
 
 /**
@@ -187,16 +191,31 @@ export function createApp(deps?: AppDependencies): Express {
     process.env.DATABASE_URL ||
     (secretWatcher ? secretWatcher.readSecret('database-url') ?? undefined : undefined);
 
+  // Configuración de opciones SSL/TLS estricto para base de datos (US-17)
+  const dbSslOptions: PostgresSslOptions = deps?.sslOptions ?? {
+    enabled:
+      process.env.DATABASE_SSL_ENABLED !== undefined
+        ? process.env.DATABASE_SSL_ENABLED === 'true'
+        : undefined,
+    ca: process.env.DATABASE_SSL_CA,
+    caPath: process.env.DATABASE_SSL_CA_PATH,
+    minVersion: (process.env.DATABASE_SSL_MIN_VERSION as 'TLSv1.2' | 'TLSv1.3') || undefined,
+  };
+
   let poolManager: DynamicPostgresPoolManager | null = deps?.poolManager ?? null;
   const getPool = (): DynamicPostgresPoolManager | null => {
     if (!poolManager && resolvedDbUrl) {
-      poolManager = new DynamicPostgresPoolManager({ connectionString: resolvedDbUrl });
+      poolManager = new DynamicPostgresPoolManager({
+        connectionString: resolvedDbUrl,
+        sslOptions: dbSslOptions,
+      });
       app.locals.poolManager = poolManager;
     }
     return poolManager;
   };
   getPool();
   app.locals.poolManager = poolManager;
+  app.locals.dbSslOptions = dbSslOptions;
   app.locals.secretWatcher = secretWatcher;
 
   let userRepository = deps?.userRepository;
