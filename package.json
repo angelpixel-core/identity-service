@@ -21,6 +21,7 @@
     "test:acceptance": "NODE_ENV=test jest --config jest.config.js tests/acceptance",
     "test:e2e": "NODE_ENV=test jest --config jest.config.js tests/e2e",
     "test:sdk": "NODE_ENV=test jest --config jest.config.js sdks/typescript/tests",
+    "cert:generate": "bash deployments/tls/generate-local-certs.sh",
     "test:infra": "bash scripts/test-terraform-floci.sh",
     "test": "npm run test:unit && npm run test:integration"
   },
