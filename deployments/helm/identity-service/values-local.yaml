@@ -1,0 +1,60 @@
+# ==============================================================================
+# Local Development & Emulation Overrides (k3d / kind + Floci Azure ARM) (US-14)
+# ==============================================================================
+
+replicaCount: 2
+
+image:
+  repository: idlocalacr.azurecr.io/identity-service
+  pullPolicy: IfNotPresent
+  tag: "local"
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: "25%"
+    maxUnavailable: 0
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+autoscaling:
+  enabled: false
+
+env:
+  NODE_ENV: "development"
+  PORT: "4000"
+  CACHE_TTL_SECONDS: "300"
+  JWT_EXPIRATION_SECONDS: "3600"
+  PUBLIC_ISSUER_URL: "https://auth.angelpixel.local"
+
+# Points to the Azure Key Vault provisioned on the local Floci emulator (US-12)
+keyVaultCSI:
+  enabled: true
+  provider: "azure"
+  usePodIdentity: "false"
+  useVMManagedIdentity: "true"
+  userAssignedIdentityID: "00000000-0000-0000-0000-000000000000"
+  keyvaultName: "id-local-kv"
+  tenantId: "00000000-0000-0000-0000-000000000000"
+  mountPath: "/mnt/secrets-store"
+  secretName: "identity-kv-secrets"
+  secrets:
+    - objectName: "database-url"
+      secretKey: "DATABASE_URL"
+      envVar: "DATABASE_URL"
+    - objectName: "jwt-secret"
+      secretKey: "JWT_SECRET"
+      envVar: "JWT_SECRET"
+    - objectName: "redis-url"
+      secretKey: "REDIS_URL"
+      envVar: "REDIS_URL"

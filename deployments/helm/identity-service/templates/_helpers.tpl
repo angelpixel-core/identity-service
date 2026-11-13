@@ -48,3 +48,21 @@ Selector labels
 app.kubernetes.io/name: {{ include "identity-service.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Create the name of the service account to use
+*/}}
+{{- define "identity-service.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "identity-service.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create the name of the SecretProviderClass resource
+*/}}
+{{- define "identity-service.secretProviderClassName" -}}
+{{- printf "%s-kv-csi" (include "identity-service.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
