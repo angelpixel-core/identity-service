@@ -6,7 +6,9 @@ export type SecurityAuditEventType =
   | 'pkce_verification_failed'
   | 'refresh_token_reuse_detected'
   | 'federation_callback_processed'
-  | 'federation_callback_failed';
+  | 'federation_callback_failed'
+  | 'secret_rotation_success'
+  | 'secret_rotation_failure';
 
 /**
  * Evento estructurado de auditoría de seguridad para operaciones OAuth2 y autenticación.
