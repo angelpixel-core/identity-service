@@ -1,0 +1,15 @@
+apiVersion: v2
+name: identity-service
+description: Enterprise Multi-Tenant Identity & Access Management Service Helm Chart
+type: application
+version: 1.0.0
+appVersion: "0.1.0"
+maintainers:
+  - name: AngelSolutions Platform Engineering
+    email: contact@angelpixel.io
+keywords:
+  - identity
+  - oauth2
+  - oidc
+  - security
+  - multi-tenant

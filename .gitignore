@@ -44,7 +44,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Local Floci Emulator TLS & Cache
+# Local TLS & Certificates Cache
 infrastructure/local/floci/.tls/
+deployments/tls/certs/
+deployments/tls/*.yaml
 *.crt
 *.key

@@ -5,6 +5,7 @@ if (process.env.NODE_ENV !== 'test') {
 
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import yaml from 'yaml';
@@ -120,8 +121,24 @@ export interface AppDependencies {
 export function createApp(deps?: AppDependencies): Express {
   const app = express();
 
+  // Habilitar confianza de proxy inverso (Nginx Ingress) para propagación de X-Forwarded-*
+  app.set('trust proxy', true);
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  // Middleware de correlación distribuida de peticiones (X-Request-ID)
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const incomingId = req.headers['x-request-id'];
+    const requestId =
+      typeof incomingId === 'string' && incomingId.trim().length > 0
+        ? incomingId.trim()
+        : crypto.randomUUID();
+
+    req.headers['x-request-id'] = requestId;
+    res.setHeader('X-Request-ID', requestId);
+    next();
+  });
 
   // Middleware ligero para parsing de cookies sin dependencias externas
   app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -323,6 +340,69 @@ export function createApp(deps?: AppDependencies): Express {
   );
   const authMiddleware = createAuthMiddleware(tokenProvider, auditLogger);
   const crossTenantGuard = createCrossTenantGuard(auditLogger);
+
+  // Rutas de Diagnóstico y Health Probes (US-13 & US-14)
+  app.get('/health/live', (req: Request, res: Response) => {
+    res.status(200).json({
+      status: 'UP',
+      checks: {
+        liveness: 'OK',
+      },
+      protocol: req.protocol,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get('/health/ready', async (_req: Request, res: Response) => {
+    let dbStatus = 'OK';
+    let cacheStatus = 'OK';
+
+    if (pool) {
+      try {
+        await pool.query('SELECT 1');
+      } catch {
+        dbStatus = 'DOWN';
+      }
+    }
+
+    const isHealthy = dbStatus === 'OK' && cacheStatus === 'OK';
+    const statusCode = isHealthy ? 200 : 503;
+
+    res.status(statusCode).json({
+      status: isHealthy ? 'UP' : 'DOWN',
+      checks: {
+        database: dbStatus,
+        cache: cacheStatus,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get('/health', async (_req: Request, res: Response) => {
+    let dbStatus = 'OK';
+    let cacheStatus = 'OK';
+
+    if (pool) {
+      try {
+        await pool.query('SELECT 1');
+      } catch {
+        dbStatus = 'DOWN';
+      }
+    }
+
+    const isHealthy = dbStatus === 'OK' && cacheStatus === 'OK';
+    const statusCode = isHealthy ? 200 : 503;
+
+    res.status(statusCode).json({
+      status: isHealthy ? 'UP' : 'DOWN',
+      checks: {
+        liveness: 'OK',
+        database: dbStatus,
+        cache: cacheStatus,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   // Rutas de Descubrimiento OIDC y JWKS (RFC 8414 & RFC 7517)
   app.get('/.well-known/openid-configuration', discoveryController.getOpenIdConfiguration);
