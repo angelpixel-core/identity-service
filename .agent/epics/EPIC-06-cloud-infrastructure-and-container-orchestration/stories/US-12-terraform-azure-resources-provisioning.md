@@ -4,16 +4,16 @@ title: "Terraform Azure Resources Provisioning over Floci"
 epic:
   id: EPIC-06
   name: "Cloud Infrastructure & Container Orchestration (Azure & Floci)"
-status: planned
+status: completed
 priority: P1
 bounded_context: infrastructure
 subdomain: cloud-provisioning
 slice_type: infrastructure
 timestamps:
   created_at: "2026-11-10T14:15:00-03:00"
-  started_at: null
-  completed_at: null
-  updated_at: "2026-11-10T14:15:00-03:00"
+  started_at: "2026-11-12T18:00:00-03:00"
+  completed_at: "2026-11-12T21:18:00-03:00"
+  updated_at: "2026-11-12T21:18:00-03:00"
 traceability:
   adrs:
     - docs/adr/0007-cloud-infrastructure-topology.md
@@ -21,7 +21,12 @@ traceability:
     - .agent/guidelines/GUIDELINE-13-terraform-floci-provisioning.md
   publications:
     - .agent/publications/ARTICLE-12-cloud-infrastructure-azure-floci.md
-  commits: []
+  commits:
+    - c288ede
+    - c4ece57
+    - 0d6af88
+    - 688b96b
+    - d207850
 tags:
   - terraform
   - azure
@@ -36,7 +41,7 @@ tags:
 # US-12: Terraform Azure Resources Provisioning over Floci
 
 **Epic:** [EPIC-06: Cloud Infrastructure & Container Orchestration (Azure & Floci)](../README.md)  
-**Status:** Planned  
+**Status:** Completed  
 **Domain / Bounded Context:** `infrastructure` / `cloud-provisioning`  
 **Slice Type:** Infrastructure as Code (IaC) Provisioning Slice  
 **Referencia Estructural:** [`.agent/TREE.txt`](../../../TREE.txt)  
@@ -112,7 +117,9 @@ Feature: Terraform Azure Resources Provisioning over Floci
 ## 4. Definición de Hecho (DoD)
 
 - [x] Contenedor Floci orquestado vía Docker Compose en `compose.yml` (profiles: `cloud`, `infra`).
-- [ ] 6 módulos Terraform reutilizables (`aks`, `postgres`, `keyvault`, `acr`, `storage`, `log_analytics`).
-- [ ] Entorno `environments/local/` configurado con variables y outputs correspondientes.
-- [ ] `terraform validate` y `terraform fmt` pasando sin errores.
-- [ ] Registro en `TRACEABILITY_MATRIX.md`.
+- [x] 6 módulos Terraform reutilizables (`aks`, `postgres`, `keyvault`, `acr`, `storage`, `log_analytics`).
+- [x] Entorno `environments/local/` configurado con variables y outputs correspondientes.
+- [x] `terraform validate` y `terraform fmt` pasando sin errores.
+- [x] Script de testing automatizado (`scripts/test-terraform-floci.sh` / `npm run test:infra`).
+- [x] Guía técnica de aprovisionamiento en `.agent/guidelines/GUIDELINE-13-terraform-floci-provisioning.md`.
+- [x] Registro en `TRACEABILITY_MATRIX.md`.
