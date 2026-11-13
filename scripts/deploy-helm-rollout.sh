@@ -100,6 +100,9 @@ trigger_rollback() {
   exit 1
 }
 
+# Trap POSIX termination signals during rollout to ensure cluster rollback
+trap 'trigger_rollback "Interrupción del proceso por señal POSIX (SIGINT/SIGTERM)"' INT TERM
+
 echo -e "\n${BLUE}=== [2/4] Ejecutando Despliegue con Helm (helm upgrade --install) ===${NC}"
 if [[ "${DRY_RUN}" == "true" ]]; then
   echo "Ejecutando: helm upgrade --install ${RELEASE_NAME} ${CHART_DIR} -f ${VALUES_FILE} --namespace ${NAMESPACE} --set image.repository=${IMAGE_REPOSITORY} --set image.tag=${IMAGE_TAG} (client template validation)"
