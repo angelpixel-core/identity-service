@@ -4,16 +4,16 @@ title: "Nginx Ingress Controller with TLS Termination & Local Routing"
 epic:
   id: EPIC-06
   name: "Cloud Infrastructure & Container Orchestration (Azure & Floci)"
-status: planned
+status: completed
 priority: P1
 bounded_context: infrastructure
 subdomain: ingress-networking
 slice_type: networking
 timestamps:
   created_at: "2026-11-10T14:15:00-03:00"
-  started_at: null
-  completed_at: null
-  updated_at: "2026-11-10T14:15:00-03:00"
+  started_at: "2026-11-12T21:40:00-03:00"
+  completed_at: "2026-11-12T23:50:00-03:00"
+  updated_at: "2026-11-12T23:50:00-03:00"
 traceability:
   adrs:
     - docs/adr/0007-cloud-infrastructure-topology.md
@@ -21,7 +21,12 @@ traceability:
     - .agent/guidelines/GUIDELINE-14-nginx-ingress-tls-setup.md
   publications:
     - .agent/publications/ARTICLE-12-cloud-infrastructure-azure-floci.md
-  commits: []
+  commits:
+    - "1676ab3"
+    - "5ef77a9"
+    - "1ea41c7"
+    - "ff700c5"
+    - "7fc5f0a"
 tags:
   - nginx
   - ingress
@@ -35,7 +40,7 @@ tags:
 # US-13: Nginx Ingress Controller with TLS Termination & Local Routing
 
 **Epic:** [EPIC-06: Cloud Infrastructure & Container Orchestration (Azure & Floci)](../README.md)  
-**Status:** Planned  
+**Status:** Completed  
 **Domain / Bounded Context:** `infrastructure` / `ingress-networking`  
 **Slice Type:** Networking & Edge Security Slice  
 **Referencia Estructural:** [`.agent/TREE.txt`](../../../TREE.txt)  
@@ -97,8 +102,8 @@ Feature: Nginx Ingress Controller with TLS Termination
 
 ## 4. Definición de Hecho (DoD)
 
-- [ ] Script `deployments/tls/generate-local-certs.sh` funcional con SAN para `auth.angelpixel.local`.
-- [ ] Plantilla Ingress en el Helm Chart (`deployments/helm/identity-service/templates/ingress.yaml`).
-- [ ] Redirección forzada de HTTP a HTTPS verificada.
-- [ ] Cabeceras `X-Forwarded-*` correctamente recibidas en el servidor Express.
-- [ ] Registro en `TRACEABILITY_MATRIX.md`.
+- [x] Script `deployments/tls/generate-local-certs.sh` funcional con SAN para `auth.angelpixel.local`.
+- [x] Plantilla Ingress en el Helm Chart (`deployments/helm/identity-service/templates/ingress.yaml`).
+- [x] Redirección forzada de HTTP a HTTPS verificada (HTTP 308).
+- [x] Cabeceras `X-Forwarded-*` y `X-Request-ID` correctamente recibidas en el servidor Express.
+- [x] Registro en `TRACEABILITY_MATRIX.md`.
