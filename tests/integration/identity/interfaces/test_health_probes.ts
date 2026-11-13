@@ -28,6 +28,51 @@ describe('Integration API: Health Probes & Reverse Proxy Support (US-13 & US-14)
       expect(response.body.checks).toHaveProperty('cache', 'OK');
       expect(response.body).toHaveProperty('timestamp');
     });
+
+    it('should return HTTP 503 with status DOWN when database connection fails, while keeping /health/live UP (US-14)', async () => {
+      const degradedApp = createApp({
+        dbHealthCheck: async () => {
+          throw new Error('Connection terminated unexpectedly');
+        },
+      });
+
+      const readyResponse = await request(degradedApp).get('/health/ready');
+      expect(readyResponse.status).toBe(503);
+      expect(readyResponse.body).toHaveProperty('status', 'DOWN');
+      expect(readyResponse.body.checks).toEqual({
+        database: 'DOWN',
+        cache: 'OK',
+      });
+
+      const combinedResponse = await request(degradedApp).get('/health');
+      expect(combinedResponse.status).toBe(503);
+      expect(combinedResponse.body).toHaveProperty('status', 'DOWN');
+      expect(combinedResponse.body.checks).toEqual({
+        liveness: 'OK',
+        database: 'DOWN',
+        cache: 'OK',
+      });
+
+      // Liveness must remain 200 UP so K8s removes Pod from Service endpoints without restarting container
+      const liveResponse = await request(degradedApp).get('/health/live');
+      expect(liveResponse.status).toBe(200);
+      expect(liveResponse.body).toHaveProperty('status', 'UP');
+      expect(liveResponse.body.checks).toHaveProperty('liveness', 'OK');
+    });
+
+    it('should return HTTP 503 with status DOWN when cache dependency is unreachable (US-14)', async () => {
+      const degradedCacheApp = createApp({
+        cacheHealthCheck: async () => false,
+      });
+
+      const readyResponse = await request(degradedCacheApp).get('/health/ready');
+      expect(readyResponse.status).toBe(503);
+      expect(readyResponse.body).toHaveProperty('status', 'DOWN');
+      expect(readyResponse.body.checks).toEqual({
+        database: 'OK',
+        cache: 'DOWN',
+      });
+    });
   });
 
   describe('GET /health (Combined Health Endpoint)', () => {

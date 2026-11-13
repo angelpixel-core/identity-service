@@ -4,16 +4,16 @@ title: "Kubernetes Deployment with Parametric Helm Chart"
 epic:
   id: EPIC-06
   name: "Cloud Infrastructure & Container Orchestration (Azure & Floci)"
-status: planned
+status: completed
 priority: P1
 bounded_context: infrastructure
 subdomain: kubernetes-workloads
 slice_type: orchestration
 timestamps:
   created_at: "2026-11-10T14:15:00-03:00"
-  started_at: null
-  completed_at: null
-  updated_at: "2026-11-10T14:15:00-03:00"
+  started_at: "2026-11-13T00:08:00-03:00"
+  completed_at: "2026-11-13T01:08:00-03:00"
+  updated_at: "2026-11-13T01:08:00-03:00"
 traceability:
   adrs:
     - docs/adr/0007-cloud-infrastructure-topology.md
@@ -21,7 +21,12 @@ traceability:
     - .agent/guidelines/GUIDELINE-15-helm-k8s-deployment.md
   publications:
     - .agent/publications/ARTICLE-12-cloud-infrastructure-azure-floci.md
-  commits: []
+  commits:
+    - "b9eac33"
+    - "1162cd3"
+    - "1f38651"
+    - "4466245"
+    - "4e0e10f"
 tags:
   - helm
   - kubernetes
@@ -36,7 +41,7 @@ tags:
 # US-14: Kubernetes Deployment with Parametric Helm Chart
 
 **Epic:** [EPIC-06: Cloud Infrastructure & Container Orchestration (Azure & Floci)](../README.md)  
-**Status:** Planned  
+**Status:** Completed  
 **Domain / Bounded Context:** `infrastructure` / `kubernetes-workloads`  
 **Slice Type:** Container Orchestration & Workload Packaging Slice  
 **Referencia Estructural:** [`.agent/TREE.txt`](../../../TREE.txt)  
@@ -102,8 +107,8 @@ Feature: Parametric Helm Chart and Kubernetes Deployment
 
 ## 4. Definición de Hecho (DoD)
 
-- [ ] Helm Chart en `deployments/helm/identity-service/` completo y documentado.
-- [ ] Endpoints HTTP `/health/live` y `/health/ready` implementados en el servidor Express.
-- [ ] Plantilla `templates/secret-provider-class.yaml` integrada.
-- [ ] `helm lint` y `helm template` ejecutados sin advertencias ni errores.
-- [ ] Registro en `TRACEABILITY_MATRIX.md`.
+- [x] Helm Chart en `deployments/helm/identity-service/` completo y documentado.
+- [x] Endpoints HTTP `/health/live` y `/health/ready` implementados en el servidor Express (incluyendo degradación HTTP 503 `DOWN`).
+- [x] Plantilla `templates/secret-provider-class.yaml` integrada.
+- [x] `helm lint` y `helm template` ejecutados sin advertencias ni errores (`npm run test:helm`).
+- [x] Registro en `TRACEABILITY_MATRIX.md`.

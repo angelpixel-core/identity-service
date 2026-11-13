@@ -1,0 +1,179 @@
+name: CD - Azure Container Registry & AKS Helm Rollout
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - local
+          - staging
+          - production
+
+env:
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER || 'idprodacr.azurecr.io' }}
+  IMAGE_NAME: identity-service
+  AKS_CLUSTER_NAME: ${{ vars.AKS_CLUSTER_NAME || 'id-prod-aks' }}
+  AKS_RESOURCE_GROUP: ${{ vars.AKS_RESOURCE_GROUP || 'id-prod-rg' }}
+  HELM_RELEASE_NAME: identity-service
+  K8S_NAMESPACE: default
+
+jobs:
+  # ============================================================================
+  # Job 1: Quality & Helm Packaging Gate
+  # ============================================================================
+  verify-and-lint-helm:
+    name: Quality & Helm Packaging Gate
+    runs-on: ubuntu-latest
+    outputs:
+      sha_tag: ${{ steps.meta.outputs.sha_tag }}
+      semver_tag: ${{ steps.meta.outputs.semver_tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js & dependencies
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '25.x'
+
+      - name: Compute immutable image tags (Git SHA & SemVer)
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "sha_tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "semver_tag=v${PKG_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Computed immutable tags: sha-${SHORT_SHA}, v${PKG_VERSION}"
+
+      - name: TypeScript Build Gate
+        run: npm run build
+
+      - name: Unit Test Gate
+        run: npm run test:unit
+
+      - name: Helm Chart Lint & Security Invariants Gate
+        run: npm run test:helm
+
+  # ============================================================================
+  # Job 2: Build Production Image, Audit Hardening & Publish to ACR
+  # ============================================================================
+  build-and-publish-acr:
+    name: Build, Audit & Publish to ACR
+    needs: verify-and-lint-helm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build multi-stage production image (Dockerfile.production)
+        env:
+          SHA_TAG: ${{ needs.verify-and-lint-helm.outputs.sha_tag }}
+          SEMVER_TAG: ${{ needs.verify-and-lint-helm.outputs.semver_tag }}
+        run: |
+          docker build -f Dockerfile.production \
+            -t "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${SHA_TAG}" \
+            -t "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${SEMVER_TAG}" \
+            .
+
+      - name: Audit container security (Non-Root User, No Source/DevDeps, Size < 250MB)
+        env:
+          SHA_TAG: ${{ needs.verify-and-lint-helm.outputs.sha_tag }}
+        run: |
+          IMAGE_REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${SHA_TAG}"
+
+          # 1. Verify non-root execution (USER node, UID 1000)
+          EFFECTIVE_USER=$(docker run --rm --entrypoint whoami "${IMAGE_REF}")
+          if [[ "${EFFECTIVE_USER}" != "node" ]]; then
+            echo "Error: Container must run as non-root user 'node', got '${EFFECTIVE_USER}'"
+            exit 1
+          fi
+
+          # 2. Verify no TypeScript source files or devDependencies exist in runner image
+          TS_COUNT=$(docker run --rm --entrypoint sh "${IMAGE_REF}" -c "find /app/dist -name '*.ts' | wc -l" | tr -d ' ')
+          if [[ "${TS_COUNT}" != "0" ]]; then
+            echo "Error: Found ${TS_COUNT} TypeScript source files in production image"
+            exit 1
+          fi
+
+          if docker run --rm --entrypoint sh "${IMAGE_REF}" -c "test -d /app/node_modules/typescript || test -d /app/node_modules/jest"; then
+            echo "Error: Development dependencies detected in production image"
+            exit 1
+          fi
+
+          # 3. Verify image size is < 250MB (262,144,000 bytes)
+          SIZE_BYTES=$(docker image inspect "${IMAGE_REF}" --format '{{.Size}}')
+          SIZE_MB=$((SIZE_BYTES / 1024 / 1024))
+          echo "Production image size: ${SIZE_MB}MB (${SIZE_BYTES} bytes)"
+          if [[ "${SIZE_BYTES}" -ge 262144000 ]]; then
+            echo "Error: Image size (${SIZE_MB}MB) exceeds 250MB limit"
+            exit 1
+          fi
+
+      - name: Authenticate & Push immutable tags to Azure Container Registry (ACR)
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          SHA_TAG: ${{ needs.verify-and-lint-helm.outputs.sha_tag }}
+          SEMVER_TAG: ${{ needs.verify-and-lint-helm.outputs.semver_tag }}
+        run: |
+          if [[ -n "${ACR_USERNAME}" && -n "${ACR_PASSWORD}" ]]; then
+            echo "${ACR_PASSWORD}" | docker login "${ACR_LOGIN_SERVER}" -u "${ACR_USERNAME}" --password-stdin
+            docker push "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${SHA_TAG}"
+            docker push "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${SEMVER_TAG}"
+            echo "✓ Pushed immutable images: ${SHA_TAG} and ${SEMVER_TAG}"
+          else
+            echo "ACR credentials not configured in repository secrets; verified local immutable tags (${SHA_TAG}, ${SEMVER_TAG})."
+          fi
+
+  # ============================================================================
+  # Job 3: Atomic Helm Upgrade, Rollout Status Check & Rollback Circuit Breaker
+  # ============================================================================
+  deploy-aks-helm:
+    name: Deploy to AKS via Helm with Rollback Guard
+    needs:
+      - verify-and-lint-helm
+      - build-and-publish-acr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm CLI
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.3'
+
+      - name: Execute Helm Upgrade, Rollout Check (120s) & Rollback Circuit Breaker
+        env:
+          AKS_KUBECONFIG: ${{ secrets.AKS_KUBECONFIG }}
+          SHA_TAG: ${{ needs.verify-and-lint-helm.outputs.sha_tag }}
+        run: |
+          if [[ -n "${AKS_KUBECONFIG}" ]]; then
+            mkdir -p ~/.kube
+            echo "${AKS_KUBECONFIG}" > ~/.kube/config
+            chmod 600 ~/.kube/config
+            bash scripts/deploy-helm-rollout.sh \
+              --release "${HELM_RELEASE_NAME}" \
+              --namespace "${K8S_NAMESPACE}" \
+              --registry "${ACR_LOGIN_SERVER}" \
+              --image-tag "${SHA_TAG}" \
+              --timeout 120s
+          else
+            echo "AKS_KUBECONFIG not configured; running deterministic dry-run rollout and rollback circuit breaker verification..."
+            bash scripts/deploy-helm-rollout.sh \
+              --release "${HELM_RELEASE_NAME}" \
+              --namespace "${K8S_NAMESPACE}" \
+              --registry "${ACR_LOGIN_SERVER}" \
+              --image-tag "${SHA_TAG}" \
+              --timeout 120s \
+              --dry-run
+          fi

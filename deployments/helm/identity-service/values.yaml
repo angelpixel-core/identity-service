@@ -1,19 +1,61 @@
-# Default values for identity-service.
-# This is a YAML-formatted file.
-# Declare variables to be passed into your templates.
+# ==============================================================================
+# Default Production Values for identity-service Helm Chart (US-13 & US-14)
+# ==============================================================================
 
+# Number of stateless pod replicas for high availability
 replicaCount: 2
 
+# Container image configuration
 image:
   repository: identity-service
   pullPolicy: IfNotPresent
   tag: "0.1.0"
 
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Zero-downtime deployment strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: "25%"
+    maxUnavailable: 0
+
+# ServiceAccount configuration (used for Azure Workload Identity / CSI Driver)
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# Pod-level security context (non-root execution)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Container-level security hardening
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+# Internal Kubernetes Service
 service:
   type: ClusterIP
   port: 4000
   targetPort: 4000
 
+# Ingress Controller with TLS termination (US-13)
 ingress:
   enabled: true
   className: "nginx"
@@ -48,6 +90,7 @@ ingress:
       hosts:
         - auth.angelpixel.local
 
+# Compute resource requests and limits to prevent noisy-neighbor saturation
 resources:
   limits:
     cpu: 500m
@@ -55,3 +98,69 @@ resources:
   requests:
     cpu: 100m
     memory: 128Mi
+
+# Liveness Probe: verifies Node.js process vitality
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 4000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Readiness Probe: verifies active connectivity to PostgreSQL and Redis pools
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: 4000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+# PodDisruptionBudget to guarantee availability during node drains / cluster upgrades
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# HorizontalPodAutoscaler configuration
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+
+# Non-sensitive application environment variables
+env:
+  NODE_ENV: "production"
+  PORT: "4000"
+  CACHE_TTL_SECONDS: "300"
+  JWT_EXPIRATION_SECONDS: "3600"
+  PUBLIC_ISSUER_URL: "https://auth.angelpixel.local"
+
+# Azure Key Vault Secrets Store CSI Driver integration (SecretProviderClass)
+keyVaultCSI:
+  enabled: true
+  provider: "azure"
+  usePodIdentity: "false"
+  useVMManagedIdentity: "true"
+  userAssignedIdentityID: "00000000-0000-0000-0000-000000000000"
+  keyvaultName: "id-prod-kv"
+  tenantId: "00000000-0000-0000-0000-000000000000"
+  mountPath: "/mnt/secrets-store"
+  secretName: "identity-kv-secrets"
+  secrets:
+    - objectName: "database-url"
+      secretKey: "DATABASE_URL"
+      envVar: "DATABASE_URL"
+    - objectName: "jwt-secret"
+      secretKey: "JWT_SECRET"
+      envVar: "JWT_SECRET"
+    - objectName: "redis-url"
+      secretKey: "REDIS_URL"
+      envVar: "REDIS_URL"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

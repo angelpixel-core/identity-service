@@ -1,0 +1,196 @@
+# ==============================================================================
+# CircleCI 2.1 Continuous Integration & Continuous Delivery Pipeline (US-15)
+# Provides functional parity with GitHub Actions (.github/workflows/cd.yml)
+# using official CircleCI Orbs for Node.js, Docker, Azure CLI, Helm, and K8s.
+# ==============================================================================
+version: 2.1
+
+orbs:
+  node: circleci/node@5.2.0
+  docker: circleci/docker@2.6.0
+  azure-cli: circleci/azure-cli@1.2.2
+  helm: circleci/helm@3.0.0
+  kubernetes: circleci/kubernetes@1.3.1
+
+parameters:
+  acr_login_server:
+    type: string
+    default: "idprodacr.azurecr.io"
+  aks_resource_group:
+    type: string
+    default: "id-prod-rg"
+  aks_cluster_name:
+    type: string
+    default: "id-prod-aks"
+  k8s_namespace:
+    type: string
+    default: "default"
+  helm_release_name:
+    type: string
+    default: "identity-service"
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Job 1: Quality, Unit Tests & Helm Chart Packaging Gate
+  # ----------------------------------------------------------------------------
+  quality-and-helm-gate:
+    docker:
+      - image: cimg/node:20.18
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - helm/install-helm-client:
+          version: v3.16.3
+      - run:
+          name: TypeScript Compilation & Build Gate
+          command: npm run build
+      - run:
+          name: Unit Test Suite Gate
+          command: npm run test:unit
+      - run:
+          name: Helm Chart Lint & Security Invariants Gate
+          command: npm run test:helm
+
+  # ----------------------------------------------------------------------------
+  # Job 2: Multi-Stage Production Build, Hardening Audit & ACR Publish
+  # ----------------------------------------------------------------------------
+  build-and-publish-acr:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Build Production Image & Audit Security Invariants
+          command: |
+            SHORT_SHA="${CIRCLE_SHA1:0:7}"
+            PKG_VERSION=$(grep -o '"version": *"[^"]*"' package.json | head -n1 | cut -d'"' -f4)
+            SHA_TAG="sha-${SHORT_SHA}"
+            SEMVER_TAG="v${PKG_VERSION}"
+            REGISTRY="<< pipeline.parameters.acr_login_server >>"
+            IMAGE_REPO="${REGISTRY}/identity-service"
+
+            echo "Building immutable production image tags: ${SHA_TAG}, ${SEMVER_TAG}"
+            docker build -f Dockerfile.production \
+              -t "${IMAGE_REPO}:${SHA_TAG}" \
+              -t "${IMAGE_REPO}:${SEMVER_TAG}" \
+              .
+
+            # Verify non-root execution (USER node)
+            EFFECTIVE_USER=$(docker run --rm --entrypoint whoami "${IMAGE_REPO}:${SHA_TAG}")
+            if [ "${EFFECTIVE_USER}" != "node" ]; then
+              echo "Error: Container must run as non-root user 'node', got '${EFFECTIVE_USER}'"
+              exit 1
+            fi
+
+            # Verify absence of TypeScript source files and devDependencies
+            TS_COUNT=$(docker run --rm --entrypoint sh "${IMAGE_REPO}:${SHA_TAG}" -c "find /app/dist -name '*.ts' | wc -l" | tr -d ' ')
+            if [ "${TS_COUNT}" != "0" ]; then
+              echo "Error: Found ${TS_COUNT} TypeScript source files in production image"
+              exit 1
+            fi
+
+            if docker run --rm --entrypoint sh "${IMAGE_REPO}:${SHA_TAG}" -c "test -d /app/node_modules/typescript || test -d /app/node_modules/jest"; then
+              echo "Error: devDependencies detected in production image"
+              exit 1
+            fi
+
+            # Verify image size < 250MB (262,144,000 bytes)
+            SIZE_BYTES=$(docker image inspect "${IMAGE_REPO}:${SHA_TAG}" --format '{{.Size}}')
+            if [ "${SIZE_BYTES}" -ge 262144000 ]; then
+              echo "Error: Image size (${SIZE_BYTES} bytes) exceeds 250MB threshold"
+              exit 1
+            fi
+      - run:
+          name: Push Immutable Image Tags to Azure Container Registry (ACR)
+          command: |
+            SHORT_SHA="${CIRCLE_SHA1:0:7}"
+            PKG_VERSION=$(grep -o '"version": *"[^"]*"' package.json | head -n1 | cut -d'"' -f4)
+            SHA_TAG="sha-${SHORT_SHA}"
+            SEMVER_TAG="v${PKG_VERSION}"
+            REGISTRY="<< pipeline.parameters.acr_login_server >>"
+            IMAGE_REPO="${REGISTRY}/identity-service"
+
+            if [ -n "${ACR_USERNAME:-}" ] && [ -n "${ACR_PASSWORD:-}" ]; then
+              echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
+              docker push "${IMAGE_REPO}:${SHA_TAG}"
+              docker push "${IMAGE_REPO}:${SEMVER_TAG}"
+            else
+              echo "ACR credentials not set in CircleCI context; skipping remote push after local verification."
+            fi
+
+  # ----------------------------------------------------------------------------
+  # Job 3: Atomic Helm Deployment to AKS with Rollout Check & Auto-Rollback
+  # ----------------------------------------------------------------------------
+  deploy-aks-with-rollback:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - azure-cli/install
+      - kubernetes/install-kubectl
+      - helm/install-helm-client:
+          version: v3.16.3
+      - run:
+          name: Authenticate with AKS & Execute Atomic Helm Rollout with Circuit Breaker
+          command: |
+            SHORT_SHA="${CIRCLE_SHA1:0:7}"
+            SHA_TAG="sha-${SHORT_SHA}"
+
+            if [ -n "${AZURE_SP_APP_ID:-}" ] && [ -n "${AZURE_SP_PASSWORD:-}" ] && [ -n "${AZURE_TENANT_ID:-}" ]; then
+              az login --service-principal \
+                -u "${AZURE_SP_APP_ID}" \
+                -p "${AZURE_SP_PASSWORD}" \
+                --tenant "${AZURE_TENANT_ID}"
+              az aks get-credentials \
+                --resource-group "<< pipeline.parameters.aks_resource_group >>" \
+                --name "<< pipeline.parameters.aks_cluster_name >>" \
+                --overwrite-existing
+
+              bash scripts/deploy-helm-rollout.sh \
+                --release "<< pipeline.parameters.helm_release_name >>" \
+                --namespace "<< pipeline.parameters.k8s_namespace >>" \
+                --registry "<< pipeline.parameters.acr_login_server >>" \
+                --image-tag "${SHA_TAG}" \
+                --timeout 120s
+            else
+              bash scripts/deploy-helm-rollout.sh \
+                --release "<< pipeline.parameters.helm_release_name >>" \
+                --namespace "<< pipeline.parameters.k8s_namespace >>" \
+                --registry "<< pipeline.parameters.acr_login_server >>" \
+                --image-tag "${SHA_TAG}" \
+                --timeout 120s \
+                --dry-run
+            fi
+
+workflows:
+  version: 2
+  continuous-delivery-azure-aks:
+    jobs:
+      - quality-and-helm-gate
+      - build-and-publish-acr:
+          requires:
+            - quality-and-helm-gate
+          filters:
+            branches:
+              only:
+                - main
+                - development
+      - hold-production-approval:
+          type: approval
+          requires:
+            - build-and-publish-acr
+          filters:
+            branches:
+              only:
+                - main
+      - deploy-aks-with-rollback:
+          requires:
+            - hold-production-approval
+          filters:
+            branches:
+              only:
+                - main
+
