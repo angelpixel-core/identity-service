@@ -41,6 +41,7 @@ env:
 keyVaultCSI:
   enabled: true
   provider: "azure"
+  rotationPollInterval: "2m"
   usePodIdentity: "false"
   useVMManagedIdentity: "true"
   userAssignedIdentityID: "00000000-0000-0000-0000-000000000000"

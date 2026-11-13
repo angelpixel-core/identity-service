@@ -9,7 +9,8 @@ import crypto from 'crypto';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import yaml from 'yaml';
-import { Pool } from 'pg';
+import { DynamicPostgresPoolManager } from '../../src/contexts/identity/infrastructure/persistence/database/dynamic_postgres_pool_manager';
+import { SecretWatcherService } from '../../src/contexts/identity/infrastructure/security/secret_watcher_service';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
 import { UpdateUserProfileCommandHandler } from '../../src/contexts/identity/application/commands/update_user_profile/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
@@ -114,6 +115,10 @@ export interface AppDependencies {
   federationStateManager?: FederationStateManager;
   dbHealthCheck?: () => Promise<boolean>;
   cacheHealthCheck?: () => Promise<boolean>;
+  poolManager?: DynamicPostgresPoolManager;
+  secretWatcher?: SecretWatcherService;
+  secretsMountPath?: string;
+  enableSecretWatcher?: boolean;
 }
 
 /**
@@ -160,18 +165,45 @@ export function createApp(deps?: AppDependencies): Express {
     next();
   });
 
-  let pool: Pool | null = null;
-  const getPool = (): Pool => {
-    if (!pool) {
-      pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const auditLogger = deps?.auditLogger ?? new InMemorySecurityAuditLogger();
+  app.locals.auditLogger = auditLogger;
+
+  // Detección y configuración del observador de secretos CSI (US-16)
+  const secretsDir =
+    deps?.secretsMountPath ||
+    process.env.SECRETS_MOUNT_PATH ||
+    (fs.existsSync('/mnt/secrets-store') ? '/mnt/secrets-store' : undefined);
+
+  let secretWatcher = deps?.secretWatcher;
+  if (!secretWatcher && secretsDir) {
+    secretWatcher = new SecretWatcherService({
+      secretsDir,
+      auditLogger,
+    });
+  }
+
+  // Resolución de credenciales iniciales de base de datos
+  const resolvedDbUrl =
+    process.env.DATABASE_URL ||
+    (secretWatcher ? secretWatcher.readSecret('database-url') ?? undefined : undefined);
+
+  let poolManager: DynamicPostgresPoolManager | null = deps?.poolManager ?? null;
+  const getPool = (): DynamicPostgresPoolManager | null => {
+    if (!poolManager && resolvedDbUrl) {
+      poolManager = new DynamicPostgresPoolManager({ connectionString: resolvedDbUrl });
+      app.locals.poolManager = poolManager;
     }
-    return pool;
+    return poolManager;
   };
+  getPool();
+  app.locals.poolManager = poolManager;
+  app.locals.secretWatcher = secretWatcher;
 
   let userRepository = deps?.userRepository;
   if (!userRepository) {
-    if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
-      userRepository = new PostgresUserRepository(getPool());
+    const activePool = getPool();
+    if (activePool && process.env.NODE_ENV !== 'test') {
+      userRepository = new PostgresUserRepository(activePool);
     } else {
       userRepository = new InMemoryUserRepository();
     }
@@ -179,8 +211,9 @@ export function createApp(deps?: AppDependencies): Express {
 
   let clientRepository = deps?.clientRepository;
   if (!clientRepository) {
-    if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
-      clientRepository = new PostgresClientApplicationRepository(getPool());
+    const activePool = getPool();
+    if (activePool && process.env.NODE_ENV !== 'test') {
+      clientRepository = new PostgresClientApplicationRepository(activePool);
     } else {
       clientRepository = new InMemoryClientApplicationRepository(true);
     }
@@ -198,8 +231,9 @@ export function createApp(deps?: AppDependencies): Express {
 
   let federatedIdentityRepository = deps?.federatedIdentityRepository;
   if (!federatedIdentityRepository) {
-    if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
-      federatedIdentityRepository = new PostgresFederatedIdentityRepository(getPool());
+    const activePool = getPool();
+    if (activePool && process.env.NODE_ENV !== 'test') {
+      federatedIdentityRepository = new PostgresFederatedIdentityRepository(activePool);
     } else {
       federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
     }
@@ -207,8 +241,9 @@ export function createApp(deps?: AppDependencies): Express {
 
   let transactionRunner = deps?.transactionRunner;
   if (!transactionRunner) {
-    if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
-      transactionRunner = new TenantAwareTransactionRunner(getPool());
+    const activePool = getPool();
+    if (activePool && process.env.NODE_ENV !== 'test') {
+      transactionRunner = new TenantAwareTransactionRunner(activePool);
     }
   }
 
@@ -225,14 +260,92 @@ export function createApp(deps?: AppDependencies): Express {
   const hashProvider = deps?.hashProvider ?? new BcryptAdapter(6); // Rondas optimizadas para HTTP
   const jwtSecret = process.env.JWT_SECRET || 'default-jwt-secret-key-12345';
   const tokenProvider = deps?.tokenProvider ?? new JwtTokenAdapter(jwtSecret, '1h');
+
+  // Resolución de claves RSA (desde env o desde CSI mount)
+  const initialPrivKey =
+    process.env.RSA_PRIVATE_KEY_PEM ||
+    (secretWatcher ? secretWatcher.readSecret('jwt-private-key') ?? undefined : undefined);
+  const initialPubKey =
+    process.env.RSA_PUBLIC_KEY_PEM ||
+    (secretWatcher ? secretWatcher.readSecret('jwt-public-key') ?? undefined : undefined);
+  const initialKeyId =
+    process.env.RSA_KEY_ID ||
+    (secretWatcher ? secretWatcher.readSecret('jwt-key-id') ?? undefined : undefined);
+
   const asymmetricKeyProvider =
     deps?.asymmetricKeyProvider ??
     new RsaKeyAdapter({
-      privateKeyPem: process.env.RSA_PRIVATE_KEY_PEM,
-      publicKeyPem: process.env.RSA_PUBLIC_KEY_PEM,
-      keyId: process.env.RSA_KEY_ID,
+      privateKeyPem: initialPrivKey,
+      publicKeyPem: initialPubKey,
+      keyId: initialKeyId,
     });
   app.locals.asymmetricKeyProvider = asymmetricKeyProvider;
+
+  // Suscripción de eventos de recarga dinámica con SecretWatcherService (US-16)
+  if (secretWatcher) {
+    secretWatcher.onSecretChanged('database-url', async (newUrl) => {
+      const pm = getPool();
+      if (pm) {
+        await pm.reloadCredentials(newUrl.trim());
+      }
+    });
+
+    secretWatcher.onSecretChanged('database-password', async (newPassword) => {
+      const pm = getPool();
+      if (pm) {
+        const currentUrl = resolvedDbUrl || process.env.DATABASE_URL;
+        if (currentUrl) {
+          try {
+            const parsed = new URL(currentUrl);
+            parsed.password = newPassword.trim();
+            await pm.reloadCredentials(parsed.toString());
+          } catch {
+            await pm.reloadCredentials({ password: newPassword.trim() });
+          }
+        } else {
+          await pm.reloadCredentials({ password: newPassword.trim() });
+        }
+      }
+    });
+
+    const handleKeyRotation = async () => {
+      const privPem = secretWatcher?.readSecret('jwt-private-key');
+      const pubPem = secretWatcher?.readSecret('jwt-public-key');
+      const kid = secretWatcher?.readSecret('jwt-key-id') ?? undefined;
+
+      if (
+        privPem &&
+        pubPem &&
+        asymmetricKeyProvider &&
+        typeof asymmetricKeyProvider.rotateKeyPair === 'function'
+      ) {
+        try {
+          asymmetricKeyProvider.rotateKeyPair({
+            privateKeyPem: privPem,
+            publicKeyPem: pubPem,
+            keyId: kid,
+          });
+        } catch (err) {
+          await auditLogger.logEvent({
+            eventType: 'secret_rotation_failure',
+            timestamp: new Date(),
+            metadata: {
+              target: 'jwt-keypair',
+              error: err instanceof Error ? err.message : String(err),
+            },
+          });
+        }
+      }
+    };
+
+    secretWatcher.onSecretChanged('jwt-private-key', handleKeyRotation);
+    secretWatcher.onSecretChanged('jwt-public-key', handleKeyRotation);
+
+    if (deps?.enableSecretWatcher) {
+      void secretWatcher.start();
+    }
+  }
+
   const cacheProvider = deps?.cacheProvider ?? new MemoryCacheAdapter();
   const cacheTtlSeconds = Number(process.env.CACHE_TTL_SECONDS) || 300;
 
@@ -253,9 +366,6 @@ export function createApp(deps?: AppDependencies): Express {
     cacheProvider,
     cacheTtlSeconds
   );
-
-  const auditLogger = deps?.auditLogger ?? new InMemorySecurityAuditLogger();
-  app.locals.auditLogger = auditLogger;
 
   const authenticateClientM2MHandler = new AuthenticateClientM2MCommandHandler(
     clientRepository,
@@ -358,8 +468,8 @@ export function createApp(deps?: AppDependencies): Express {
         if (!dbOk) {
           dbStatus = 'DOWN';
         }
-      } else if (pool) {
-        await pool.query('SELECT 1');
+      } else if (poolManager) {
+        await poolManager.query('SELECT 1');
       }
     } catch {
       dbStatus = 'DOWN';
@@ -513,12 +623,37 @@ export const app = createApp();
 
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, async () => {
     console.log(`Identity Service HTTP Server listening on port ${PORT}`);
+    if (app.locals.secretWatcher) {
+      try {
+        await app.locals.secretWatcher.start();
+        console.log('SecretWatcherService initialized and watching for CSI secret changes');
+      } catch (err) {
+        console.error('Failed to start SecretWatcherService:', err);
+      }
+    }
     if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
       console.log(`Connected to PostgreSQL: ${process.env.DATABASE_URL}`);
     } else {
       console.log('Running in isolated in-memory storage mode');
     }
   });
+
+  const gracefulShutdown = async (signal: string) => {
+    console.log(`Received ${signal}, initiating graceful shutdown...`);
+    if (app.locals.secretWatcher) {
+      app.locals.secretWatcher.stop();
+    }
+    if (app.locals.poolManager) {
+      await app.locals.poolManager.close();
+    }
+    server.close(() => {
+      console.log('HTTP server closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
