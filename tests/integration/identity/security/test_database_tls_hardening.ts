@@ -255,5 +255,65 @@ b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG
       await poolManager.close();
     });
   });
+
+  describe('Scenario 3: Deterministic Rejection of Untrusted / MitM Certificates', () => {
+    it('should reject untrusted server certificates, returning 503 on readiness and 200 on liveness', async () => {
+      const tlsError = new Error('self-signed certificate in certificate chain');
+      (tlsError as any).code = 'SELF_SIGNED_CERT_IN_CHAIN';
+
+      const mockUntrustedPool = {
+        query: jest.fn().mockRejectedValue(tlsError),
+        connect: jest.fn().mockRejectedValue(tlsError),
+        end: jest.fn().mockResolvedValue(undefined),
+        totalCount: 0,
+        idleCount: 0,
+        waitingCount: 0,
+      } as unknown as Pool;
+
+      const sslOptions: PostgresSslOptions = {
+        enabled: true,
+        minVersion: 'TLSv1.2',
+        ca: MOCK_AZURE_DIGICERT_CA,
+      };
+
+      const poolManager = new DynamicPostgresPoolManager({
+        initialPool: mockUntrustedPool,
+        connectionString: 'postgresql://app_user:pass@rogue-db.example.com:5432/identity_prod',
+        sslOptions,
+      });
+
+      const app: Express = createApp({
+        poolManager,
+      });
+
+      // 1. Probe de preparación debe fallar con 503 Service Unavailable y checks.database: DOWN
+      const readyRes = await request(app).get('/health/ready');
+      expect(readyRes.status).toBe(503);
+      expect(readyRes.body.status).toBe('DOWN');
+      expect(readyRes.body.checks.database).toBe('DOWN');
+      expect(readyRes.body.checks.cache).toBe('OK');
+
+      // 2. Endpoint /health principal también debe indicar DOWN con 503
+      const healthRes = await request(app).get('/health');
+      expect(healthRes.status).toBe(503);
+      expect(healthRes.body.status).toBe('DOWN');
+      expect(healthRes.body.checks.database).toBe('DOWN');
+
+      // 3. Probe de vivacidad (Liveness) debe permanecer en 200 UP para evitar loops de reinicio ciego
+      const liveRes = await request(app).get('/health/live');
+      expect(liveRes.status).toBe(200);
+      expect(liveRes.body.status).toBe('UP');
+
+      // 4. Operaciones directas de datos deben fallar de inmediato (Fail-Fast)
+      await expect(poolManager.query('SELECT * FROM users')).rejects.toThrow(
+        'self-signed certificate in certificate chain'
+      );
+      await expect(poolManager.connect()).rejects.toThrow(
+        'self-signed certificate in certificate chain'
+      );
+
+      await poolManager.close();
+    });
+  });
 });
 
