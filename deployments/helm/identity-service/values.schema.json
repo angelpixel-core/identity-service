@@ -395,6 +395,120 @@
         }
       }
     },
+    "networkPolicy": {
+      "type": "object",
+      "description": "Políticas de red Zero-Trust y microsegmentación en Kubernetes (US-18: ISO 27001 A.13.1 & SOC 2 CC6.6)",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Activar o desactivar la generación de NetworkPolicies"
+        },
+        "defaultDeny": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Activar aislamiento por defecto (Default-Deny All Ingress & Egress) en el namespace"
+            }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "properties": {
+            "fromIngressController": {
+              "type": "boolean"
+            },
+            "controllerNamespaceSelector": {
+              "type": "object"
+            },
+            "controllerPodSelector": {
+              "type": "object"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "egress": {
+          "type": "object",
+          "properties": {
+            "dns": {
+              "type": "object",
+              "required": ["enabled", "port"],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "namespace": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "selector": {
+                  "type": "object"
+                }
+              }
+            },
+            "postgres": {
+              "type": "object",
+              "required": ["enabled", "port"],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              }
+            },
+            "redis": {
+              "type": "object",
+              "required": ["enabled", "port"],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              }
+            },
+            "azureHTTPS": {
+              "type": "object",
+              "required": ["enabled", "port"],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              }
+            },
+            "customEgress": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
     "nodeSelector": {
       "type": "object"
     },
