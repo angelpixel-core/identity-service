@@ -107,6 +107,21 @@ for (const secretEnv of ["DATABASE_URL", "JWT_SECRET", "REDIS_URL"]) {
   }
 }
 
+const sslEnabled = container.env.find((e) => e.name === "DATABASE_SSL_ENABLED");
+if (!sslEnabled || sslEnabled.value !== "true") {
+  throw new Error("DATABASE_SSL_ENABLED must be 'true'");
+}
+
+const sslMinVersion = container.env.find((e) => e.name === "DATABASE_SSL_MIN_VERSION");
+if (!sslMinVersion || sslMinVersion.value !== "TLSv1.2") {
+  throw new Error("DATABASE_SSL_MIN_VERSION must be 'TLSv1.2'");
+}
+
+const sslCaPath = container.env.find((e) => e.name === "DATABASE_SSL_CA_PATH");
+if (!sslCaPath || sslCaPath.value !== "/mnt/secrets-store/ca.crt") {
+  throw new Error("DATABASE_SSL_CA_PATH must be '/mnt/secrets-store/ca.crt'");
+}
+
 const csiVol = podSpec.volumes.find((v) => v.name === "secrets-store-inline");
 if (!csiVol || csiVol.csi.driver !== "secrets-store.csi.k8s.io") {
   throw new Error("Missing secrets-store.csi.k8s.io volume on Deployment");
@@ -142,6 +157,7 @@ console.log("✓ Invariantes de Deployment (RollingUpdate 25%/0, 2 réplicas, re
 console.log("✓ Contexto de seguridad no-root (runAsNonRoot: true, allowPrivilegeEscalation: false, drop: ALL) verificado.");
 console.log("✓ Probes /health/live y /health/ready verificadas.");
 console.log("✓ SecretProviderClass (Azure Key Vault CSI: id-local-kv, rotationPollInterval: 2m) y proyección de DATABASE_URL, JWT_SECRET y REDIS_URL verificados.");
+console.log("✓ Invariantes de SSL/TLS (DATABASE_SSL_ENABLED: true, DATABASE_SSL_MIN_VERSION: TLSv1.2, DATABASE_SSL_CA_PATH: /mnt/secrets-store/ca.crt) verificadas.");
 console.log("✓ PodDisruptionBudget (minAvailable: 1), Service (ClusterIP:4000) e Ingress (nginx TLS) verificados.");
 '
 
@@ -186,7 +202,9 @@ assert_lint_failure "keyVaultCSI.provider no soportado (debe ser azure)" "keyVau
 assert_lint_failure "service.type inválido (enum ClusterIP/NodePort/LoadBalancer)" "service/type.*value must be one of" --set service.type=IngressIP
 assert_lint_failure "livenessProbe.httpGet.path sin barra inicial (pattern ^/)" "livenessProbe/httpGet/path.*pattern" --set livenessProbe.httpGet.path=health/live
 assert_lint_failure "keyVaultCSI.rotationPollInterval con formato inválido (sin unidad m/s/h)" "rotationPollInterval.*pattern" --set keyVaultCSI.rotationPollInterval=invalid
+assert_lint_failure "database.ssl.minVersion no permitido (debe ser TLSv1.2 o TLSv1.3)" "database/ssl/minVersion.*value must be one of" --set database.ssl.minVersion=TLSv1.0
+assert_lint_failure "database.ssl.enabled tipo no booleano" "database/ssl/enabled.*got string, want boolean" --set database.ssl.enabled=invalid
 
 echo -e "\n${GREEN}================================================================${NC}"
-echo -e "${GREEN}✓ Todas las pruebas de empaquetado Helm (US-14 & US-16) pasaron con éxito.${NC}"
+echo -e "${GREEN}✓ Todas las pruebas de empaquetado Helm (US-14, US-16 & US-17) pasaron con éxito.${NC}"
 echo -e "${GREEN}================================================================${NC}"
