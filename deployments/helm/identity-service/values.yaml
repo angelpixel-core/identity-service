@@ -162,6 +162,13 @@ keyVaultCSI:
       secretKey: "REDIS_URL"
       envVar: "REDIS_URL"
 
+# Database connection and security configuration (US-17)
+database:
+  ssl:
+    enabled: true
+    minVersion: "TLSv1.2"
+    caPath: "/mnt/secrets-store/ca.crt"
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
