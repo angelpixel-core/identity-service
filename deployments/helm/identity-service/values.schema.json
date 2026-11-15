@@ -369,6 +369,32 @@
         }
       }
     },
+    "database": {
+      "type": "object",
+      "description": "Configuración de seguridad y conexión para PostgreSQL (US-17)",
+      "properties": {
+        "ssl": {
+          "type": "object",
+          "description": "Cifrado en tránsito y validación de certificados TLS (PCI-DSS 4.1 & SOC 2 CC6.7)",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Forzar cifrado TLS en tránsito para conexiones PostgreSQL"
+            },
+            "minVersion": {
+              "type": "string",
+              "enum": ["TLSv1.2", "TLSv1.3"],
+              "description": "Versión mínima de protocolo TLS admitida (estrictamente TLSv1.2 o TLSv1.3)"
+            },
+            "caPath": {
+              "type": "string",
+              "description": "Ruta absoluta al certificado CA raíz confiable montado en el pod"
+            }
+          }
+        }
+      }
+    },
     "nodeSelector": {
       "type": "object"
     },

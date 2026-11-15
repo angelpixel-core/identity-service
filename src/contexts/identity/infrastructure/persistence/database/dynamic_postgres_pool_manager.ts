@@ -3,6 +3,13 @@ import {
   ConnectionPool,
   PoolClientWithRelease,
 } from './tenant_aware_transaction_runner';
+import {
+  createSecurePostgresConfig,
+  PostgresSslOptions,
+  SecurityConfigurationError,
+} from './postgres_ssl_config';
+
+export { PostgresSslOptions, SecurityConfigurationError };
 
 export interface DynamicPoolManagerOptions {
   readonly connectionString?: string;
@@ -11,6 +18,7 @@ export interface DynamicPoolManagerOptions {
   readonly poolFactory?: (config: PoolConfig | string) => Pool;
   readonly healthTimeoutMs?: number;
   readonly drainGracePeriodMs?: number;
+  readonly sslOptions?: PostgresSslOptions;
 }
 
 export interface DynamicPoolStats {
@@ -43,8 +51,10 @@ export class DynamicPostgresPoolManager implements ConnectionPool {
   private readonly poolFactory: (config: PoolConfig | string) => Pool;
   private readonly healthTimeoutMs: number;
   private readonly drainGracePeriodMs: number;
+  private readonly sslOptions?: PostgresSslOptions;
 
   constructor(options: DynamicPoolManagerOptions) {
+    this.sslOptions = options.sslOptions;
     this.poolFactory = options.poolFactory ?? ((cfg) => (typeof cfg === 'string' ? new Pool({ connectionString: cfg }) : new Pool(cfg)));
     this.healthTimeoutMs = options.healthTimeoutMs ?? 5000;
     this.drainGracePeriodMs = options.drainGracePeriodMs ?? 1000;
@@ -55,9 +65,11 @@ export class DynamicPostgresPoolManager implements ConnectionPool {
     if (options.initialPool) {
       this.activePool = options.initialPool;
     } else if (options.poolConfig) {
-      this.activePool = this.poolFactory(options.poolConfig);
+      const secureConfig = createSecurePostgresConfig(options.poolConfig, this.sslOptions);
+      this.activePool = this.poolFactory(secureConfig);
     } else if (options.connectionString) {
-      this.activePool = this.poolFactory(options.connectionString);
+      const secureConfig = createSecurePostgresConfig(options.connectionString, this.sslOptions);
+      this.activePool = this.poolFactory(secureConfig);
     } else {
       throw new Error(
         'DynamicPostgresPoolManager requires either initialPool, poolConfig or connectionString'
@@ -87,6 +99,10 @@ export class DynamicPostgresPoolManager implements ConnectionPool {
    * Recarga las credenciales de conexión realizando un swap atómico con verificación previa.
    * Si la verificación de conectividad (SELECT 1) falla, el pool candidato es descartado
    * y el pool activo se conserva intacto (Fail-Safe).
+   *
+   * Cumple con PCI-DSS v4.0 Req 4.1 y SOC 2 CC6.7:
+   * Aplica un Anti-Downgrade Guard que aborta inmediatamente con SecurityConfigurationError
+   * ante cualquier intento de deshabilitar SSL o la verificación de certificados.
    */
   public async reloadCredentials(newConfig: PoolConfig | string): Promise<void> {
     this.assertNotClosed();
@@ -95,10 +111,13 @@ export class DynamicPostgresPoolManager implements ConnectionPool {
       throw new Error('Invalid connection configuration provided for reload');
     }
 
-    // 1. Instanciar pool candidato
-    const candidatePool = this.poolFactory(newConfig);
+    // 1. Blindar configuración candidata con políticas SSL estrictas (Anti-Downgrade Guard)
+    const secureCandidateConfig = createSecurePostgresConfig(newConfig, this.sslOptions);
 
-    // 2. Ejecutar prueba de salud (SELECT 1) con timeout determinista
+    // 2. Instanciar pool candidato
+    const candidatePool = this.poolFactory(secureCandidateConfig);
+
+    // 3. Ejecutar prueba de salud (SELECT 1) con timeout determinista
     try {
       await this.verifyPoolHealth(candidatePool);
     } catch (err: unknown) {
@@ -112,12 +131,12 @@ export class DynamicPostgresPoolManager implements ConnectionPool {
       throw new Error(`Failed to reload database pool with new credentials: ${msg}`);
     }
 
-    // 3. Swap Atómico de Punteros
+    // 4. Swap Atómico de Punteros
     const oldPool = this.activePool;
     this.activePool = candidatePool;
     this.generation += 1;
 
-    // 4. Drenado Ordenado del Pool Previo (Graceful Drain)
+    // 5. Drenado Ordenado del Pool Previo (Graceful Drain)
     this.retiringPools.add(oldPool);
     setTimeout(async () => {
       try {
@@ -128,6 +147,13 @@ export class DynamicPostgresPoolManager implements ConnectionPool {
         this.retiringPools.delete(oldPool);
       }
     }, this.drainGracePeriodMs);
+  }
+
+  /**
+   * Retorna las opciones de SSL configuradas para el gestor de pools.
+   */
+  public getSslOptions(): PostgresSslOptions | undefined {
+    return this.sslOptions;
   }
 
   /**

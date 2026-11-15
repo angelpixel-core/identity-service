@@ -60,6 +60,18 @@ spec:
                   key: {{ .secretKey }}
             {{- end }}
             {{- end }}
+            {{- if and .Values.database .Values.database.ssl }}
+            - name: DATABASE_SSL_ENABLED
+              value: {{ .Values.database.ssl.enabled | quote }}
+            {{- if .Values.database.ssl.minVersion }}
+            - name: DATABASE_SSL_MIN_VERSION
+              value: {{ .Values.database.ssl.minVersion | quote }}
+            {{- end }}
+            {{- if .Values.database.ssl.caPath }}
+            - name: DATABASE_SSL_CA_PATH
+              value: {{ .Values.database.ssl.caPath | quote }}
+            {{- end }}
+            {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:

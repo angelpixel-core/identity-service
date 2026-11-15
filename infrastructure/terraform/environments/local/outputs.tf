@@ -48,3 +48,18 @@ output "aks_kube_config_raw" {
   value       = module.aks.kube_config_raw
   sensitive   = true
 }
+
+output "postgres_require_secure_transport" {
+  description = "Whether SSL/TLS is strictly enforced on PostgreSQL Flexible Server"
+  value       = module.postgres.require_secure_transport
+}
+
+output "postgres_ssl_min_protocol_version" {
+  description = "The minimum TLS protocol version required by PostgreSQL Flexible Server"
+  value       = module.postgres.ssl_min_protocol_version
+}
+
+output "postgres_customer_managed_key_id" {
+  description = "Customer-managed key ID used for PostgreSQL encryption at rest"
+  value       = module.postgres.customer_managed_key_id
+}

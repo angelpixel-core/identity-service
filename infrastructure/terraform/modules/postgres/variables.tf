@@ -54,3 +54,27 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "customer_managed_key_id" {
+  description = "The ID of the Key Vault Key used for CMK encryption at rest"
+  type        = string
+  default     = null
+}
+
+variable "primary_user_assigned_identity_id" {
+  description = "The ID of the User Assigned Managed Identity with Key Vault permissions"
+  type        = string
+  default     = null
+}
+
+variable "require_secure_transport" {
+  description = "Enforce SSL/TLS connections to PostgreSQL"
+  type        = string
+  default     = "on"
+}
+
+variable "ssl_min_protocol_version" {
+  description = "Minimum TLS protocol version allowed (TLSv1.2 or TLSv1.3)"
+  type        = string
+  default     = "TLSv1.2"
+}
