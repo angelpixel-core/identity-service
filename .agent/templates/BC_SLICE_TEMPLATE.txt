@@ -1,0 +1,291 @@
+# ==============================================================================
+# PLANTILLA PARAMÉTRICA DE VERTICAL SLICE (BOUNDED CONTEXT)
+# ==============================================================================
+# NOTA DE INTEGRACIÓN CON LA PLATAFORMA BASE (DRY ARCHITECTURE):
+# Este slice NO define ni duplica clases base o transversales. Asume que la
+# superestructura de plataforma (ver 'tree/template.tree.txt') ya existe y provee
+# en 'src/<project_package>/shared_kernel/' los contratos fundamentales:
+#
+# - Clases Base de Dominio ('shared_kernel/domain/contracts/'):
+#     * AggregateRoot             -> src/<project_package>/shared_kernel/domain/contracts/aggregate_root.py (version OCC y Sequence[T] inmutable)
+#     * EventSourcedAggregate     -> src/<project_package>/shared_kernel/domain/contracts/event_sourced_aggregate.py
+#     * DomainError               -> src/<project_package>/shared_kernel/domain/contracts/domain_error.py
+#     * ConcurrencyError          -> src/<project_package>/shared_kernel/domain/contracts/concurrency_error.py
+#     * ValueObject               -> src/<project_package>/shared_kernel/domain/contracts/value_object.py (inmutabilidad profunda con freeze_deep)
+#     * DomainEvent               -> src/<project_package>/shared_kernel/domain/contracts/domain_event.py (payload y metadata inmutables)
+#
+# - Infraestructura y Puertos Transversales Consumidos:
+#     * UnitOfWorkPort            -> src/<project_package>/shared_kernel/application/ports/persistence/unit_of_work.py
+#     * Command / Query Buses     -> src/<project_package>/shared_kernel/application/bus/
+#     * RealtimeStreamPort        -> src/<project_package>/shared_kernel/application/ports/messaging/realtime_stream.py (Redis Streams)
+#     * EventPublisherPort        -> src/<project_package>/shared_kernel/application/ports/messaging/event_publisher.py (Redpanda / Kafka)
+#     * QueuePublisherPort        -> src/<project_package>/shared_kernel/application/ports/messaging/queue_publisher.py (RabbitMQ)
+#     * TaskGroup Supervisor      -> src/<project_package>/interfaces/worker/lifecycle/supervisor.py
+#     * Transactional Outbox      -> src/<project_package>/shared_kernel/infrastructure/persistence/mssql_or_pg/models/outbox/
+#     * Transactional Inbox       -> src/<project_package>/interfaces/worker/inbox/interceptor.py
+#     * DistributedLockPort       -> src/<project_package>/shared_kernel/application/ports/concurrency/distributed_lock.py (Redlock)
+#     * TenantProvisioner         -> src/<project_package>/shared_kernel/infrastructure/persistence/mssql_or_pg/tenant_provisioning/
+#     * Presenter Strategy        -> src/<project_package>/interfaces/common/presenters/
+#
+# - Integración Contract-First con SDKs de Plataforma ('sdks/'):
+#     * Los endpoints en 'interfaces/http/rest/' se etiquetan obligatoriamente con tags=['{{context_slug}}'].
+#     * El motor de autogeneración ('sdks/generator/') mapea estos tags directamente hacia namespaces:
+#         - Python:     client.{{context_slug}}.<operation>()
+#         - TypeScript: client.{{context_slug}}.<operation>()
+#     * La suite 'tests/integration/{{context_slug}}/contracts/openapi/' audita la retrocompatibilidad y generación limpia del SDK.
+#
+# - Inyección de Dependencias y Composition Root ('infrastructure/di/wiring.py'):
+#     * Cada slice expone 'register_{{context_slug}}_dependencies(container: Container) -> None'.
+#     * Asocia contratos secundarios (ports) con adaptadores físicos (repositories, gateways).
+#     * Registra automáticamente los Handlers en el CommandBus y QueryBus dentro del contenedor.
+# ==============================================================================
+
+.
+src/<project_package>/
+├── contexts/
+│   └── {{context_slug}}/                               # LÍMITES DE DOMINIO Y APLICACIÓN (BOUNDED CONTEXT)
+│       ├── domain/                                   # NÚCLEO DE DOMINIO PURO (Reglas de negocio invariantes sin dependencias externas / DB)
+│       │   ├── entities/
+│       │   │   └── {{aggregate_slug}}/               # Entidad con ciclo de vida e identidad única
+│       │   │       ├── aggregate.py                  # Aggregate Root con control de invariantes, versioning OCC, encapsulamiento hermético y despacho de eventos
+│       │   │       └── {{child_entity_slug}}.py      # Entidad interna subordinada (acceso restringido mediante Sequence[T] inmutable del Aggregate)
+│       │   ├── value_objects/
+│       │   │   └── {{concept_slug}}/
+│       │   │       └── value.py                      # Estructura profundamente inmutable (frozen dataclass con freeze_deep y tuplas, ej. Money, Status)
+│       │   ├── services/
+│       │   │   └── {{domain_service_slug}}/
+│       │   │       └── service.py                    # Lógica de dominio pura que abarca dos o más agregados
+│       │   ├── specifications/
+│       │   │   └── {{specification_slug}}/
+│       │   │       └── specification.py              # Reglas y predicados de consulta de negocio reutilizables (is_satisfied_by)
+│       │   ├── engines/
+│       │   │   └── {{engine_slug}}/
+│       │   │       └── engine.py                     # Motor determinista de cálculo intensivo en memoria sin I/O
+│       │   ├── events/
+│       │   │   └── {{aggregate_slug}}/
+│       │   │       ├── {{event_created_slug}}.py     # Evento Génesis / Creación (DomainEvent que inicializa identidad e invariantes base, ej. InvoiceCreatedEvent)
+│       │   │       └── {{event_status_changed_slug}}.py # Evento de Ciclo de Vida / Mutación (DomainEvent que aplica transiciones de estado, ej. InvoicePaidEvent)
+│       │   └── exceptions/
+│       │       └── {{aggregate_slug}}/
+│       │           └── error.py                      # Excepción de negocio tipada (Hereda de DomainError)
+│       │
+│       ├── application/                              # CASOS DE USO DE NEGOCIO, ORQUESTACIÓN Y PUERTOS SECUNDARIOS (CQRS)
+│       │   ├── commands/                             # [C - Mutaciones]: Intenciones inmutables de cambio de estado (Command Side)
+│       │   │   └── {{action_slug}}/
+│       │   │       ├── command.py                    # DTO inmutable con parámetros requeridos para la mutación
+│       │   │       └── handler.py                    # Command Handler: valida idempotencia, carga Aggregate, ejecuta regla, verifica OCC y persiste en UoW
+│       │   ├── queries/                              # [Q - Lecturas]: Consultas optimizadas sin efectos secundarios (Query Side)
+│       │   │   └── {{get_data_slug}}/
+│       │   │       ├── query.py                      # Parámetros y filtros inmutables de búsqueda
+│       │   │       └── handler.py                    # Query Handler: consulta proyecciones de lectura y devuelve Read DTOs / ViewModels
+│       │   ├── event_handlers/                       # [Reactividad]: Suscriptores internos a DomainEvents
+│       │   │   └── on_{{event_slug}}/
+│       │   │       └── handler.py                    # Ejecuta efectos secundarios locales (actualizar proyección, emitir integración)
+│       │   ├── workflows/                            # [Orquestación Distribuida]: Sagas y Process Managers guiados por eventos
+│       │   │   └── {{workflow_slug}}/
+│       │   │       ├── orchestrator.py               # Máquina de estados: escucha eventos y despacha commands existentes (compensaciones)
+│       │   │       └── state.py                      # Estado persistente del flujo, correlation_id y pasos completados
+│       │   ├── services/                             # Application Services y Pipelines de orquestación compleja
+│       │   │   ├── engines/
+│       │   │   │   └── {{orchestrator_slug}}/
+│       │   │   │       └── engine.py                 # Motor orquestador de ejecución con I/O o evaluación de grafos
+│       │   │   └── {{pipeline_slug}}/
+│       │   │       └── service.py                    # Coordinador de múltiples pasos entre adaptadores externos
+│       │   ├── ports/                                # Interfaces secundarias (SPI) que definen qué necesita la aplicación
+│       │   │   ├── {{aggregate_slug}}/
+│       │   │   │   └── repository.py                 # Contrato abstracto de persistencia (Protocol / ABC: save, find_by_id, delete)
+│       │   │   └── {{external_gateway_slug}}/
+│       │   │       └── gateway.py                    # Contrato abstracto con APIs externas o microservicios
+│       │   └── dtos/                                 # Contratos de datos limpios de entrada/salida desacoplados de HTTP y ORM
+│       │       └── {{dto_concept_slug}}/
+│       │           └── dto.py
+│       │
+│       └── infrastructure/                           # ADAPTADORES DRIVEN DE ENTRADA/SALIDA ESPECÍFICOS DEL CONTEXTO
+│           ├── di/                                   # [Cableado de Dependencias del Contexto]: Binding local de puertos y handlers
+│           │   └── wiring.py                         # Función 'register_{{context_slug}}_dependencies(container)' con bindings del slice
+│           ├── persistence/                          # Implementación física de almacenamiento (State-Based o Event-Sourced)
+│           │   ├── [Opción State-Based]:             # Patrón relacional / documento clásico
+│           │   │   ├── models/
+│           │   │   │   └── {{aggregate_slug}}/
+│           │   │   │       └── model.py              # Modelo de tabla ORM relacional (SQLModel/SQLAlchemy) o documento
+│           │   │   ├── repositories/
+│           │   │   │   └── {{aggregate_slug}}/
+│           │   │   │       └── repository.py         # Implementación física del puerto de repositorio sobre DB usando Session/UoW
+│           │   │   ├── mappers/
+│           │   │   │   └── {{aggregate_slug}}/
+│           │   │   │       └── mapper.py             # Traductor puro bidireccional: ORM Model <-> Domain Entity
+│           │   │   └── outbox/                       # Persistencia atómica de eventos en la misma transacción
+│           │   │       ├── message/
+│           │   │       │   └── model.py              # Tabla física outbox_events del contexto
+│           │   │       ├── relay/
+│           │   │       │   └── worker.py             # Proceso que despacha eventos pendientes al broker (Polling)
+│           │   │       └── cdc/
+│           │   │           └── connector.py          # [Hiper-Escala]: Conector CDC directo sobre Transaction Log
+│           │   ├── [Opción Event-Sourced]:           # Patrón inmutable append-only con replay
+│           │   │   ├── event_store/
+│           │   │   │   ├── {{stream_slug}}/
+│           │   │   │   │   └── model.py              # Tabla física de stream de eventos (aggregate_id, version, payload)
+│           │   │   │   ├── upcasters/                # [Schema Evolution]: Upcasting en memoria de versiones históricas (v1 -> v2)
+│           │   │   │   │   └── {{stream_slug}}/
+│           │   │   │   │       └── upcaster.py       # Transforma eventos obsoletos en vuelo sin mutar histórico
+│           │   │   │   └── engine.py                 # Motor físico de anexado y lectura de streams para rehidratar agregados
+│           │   │   └── snapshots/                    # Puntos de control para agregados con streams largos
+│           │   │       ├── {{aggregate_slug}}/
+│           │   │       │   ├── model.py              # Tabla física de snapshots periódicos
+│           │   │       │   └── policy.py             # Orquestador de snapshotting (reglas de frecuencia / hitos)
+│           │   │       └── engine.py                 # Motor físico de persistencia y carga de snapshots
+│           │   └── projections/                      # [CQRS Read Models]: Vistas materializadas de lectura
+│           │       └── {{read_model_slug}}/
+│           │           ├── model.py                  # Tabla física denormalizada optimizada para consultas ultra-rápidas
+│           │           ├── projection.py             # Suscriptor que actualiza la proyección ante DomainEvents (Dual-dispatch en migración)
+│           │           └── rebuilder.py              # Catch-Up y Blue-Green switch para reconstrucción en vuelo con cero downtime
+│           └── external/                             # Integraciones y clientes externos
+│               ├── {{vendor_slug}}/
+│               │   └── adapter.py                    # Cliente concreto que implementa el gateway port
+│               └── {{legacy_vendor_slug}}/           # Integración con sistemas legacy o modelos de datos ajenos
+│                   ├── adapter.py                    # Adaptador de cliente HTTP / RPC hacia el sistema externo
+│                   └── acl/                          # [Anti-Corruption Layer]: Aislamiento semántico del dominio
+│                       ├── translator.py             # Traduce contratos externos ajenos a Value Objects y Entidades limpias
+│                       └── facade.py                 # Fachada idiomática requerida por la capa de aplicación
+│
+├── interfaces/                                       # CANALES CONDUCTORES (DRIVER ADAPTERS)
+│   ├── cli/                                          # Canal Terminal / Consola
+│   │   └── commands/
+│   │       └── {{context_slug}}/
+│   │           └── cli.py                            # Subcomando CLI Typer con parseo, opciones y ayuda
+│   ├── http/                                         # Canal Red HTTP / API (M2M, Streaming y Servicios)
+│   │   ├── rest/
+│   │   │   └── v1/
+│   │   │       └── {{context_slug}}/
+│   │   │           ├── controllers.py                    # Endpoints FastAPI y ruteo (/api/{{context_slug}} despachado via cabecera Accept)
+│   │   │           └── schemas.py                        # Pydantic schemas de validación de entrada/salida
+│   │   ├── sse/                                      # [Opcional] Canal Server-Sent Events reactivo
+│   │   │   └── {{context_slug}}/
+│   │   │       └── controller.py                     # Streaming reactivo conectado a RealtimeStreamPort (Redis Streams) con soporte Last-Event-ID
+│   │   ├── websocket/                                # [Opcional] Canal Bidireccional Full-Duplex
+│   │   │   └── {{context_slug}}/
+│   │   │       └── endpoint.py                       # Endpoint WebSocket conectado a RealtimeStreamPort con protocolo de replay (X-Last-Sequence-ID)
+│   │   └── graphql/                                  # [Opcional] Apollo Federation / Strawberry GraphQL
+│   │       └── resolvers/
+│   │           └── {{context_slug}}/
+│   │               └── resolver.py                   # Resolutor federado para el supergrafo
+│   ├── web/                                          # [Opcional] Canal Visual / UI Humana ("Puerta Exterior")
+│   │   ├── server/contexts/                          # [Opcional - AppShell / Vistas Estáticas]: Vistas iniciales SSR sin lógica de negocio
+│   │   │   └── {{context_slug}}/
+│   │   │       ├── routes.py                         # Rutas HTML montadas por router/aggregator.py
+│   │   │       ├── controllers.py                    # Controladores de vista SSR (consultan Read Models vía QueryBus sin mutar estado)
+│   │   │       ├── view_models.py                    # Presenters / ViewModels inmutables (frozen dataclass) que pre-formatean datos para el template
+│   │   │       └── templates/                        # Plantillas Jinja2 para renderizado inicial del contexto
+│   │   │           └── index.html
+│   │   └── client/contexts/                          # [Clean Architecture Frontend]: SPA reactiva autónoma por Bounded Context
+│   │       └── {{context_slug}}/
+│   │           ├── domain/                           # Soberanía de contratos frontend
+│   │           │   ├── types.ts                      # Interfaces y tipos TypeScript inmutables
+│   │           │   └── schemas.ts                    # Esquemas Zod para formularios y validación de respuestas
+│   │           ├── data/                             # Capa de datos y server state
+│   │           │   ├── api.ts                        # Funciones de transporte puro consumiendo api_client.ts
+│   │           │   ├── queries.ts                    # Hooks de consulta TanStack Query con QueryKeyFactory
+│   │           │   └── mutations.ts                  # Hooks de mutación con optimistic updates e invalidación
+│   │           └── ui/                               # Component Co-location y páginas
+│   │               ├── components/                   # Widgets de negocio específicos (Co-location: Component.tsx, hook, test)
+│   │               │   └── {{concept_slug}}_widget.tsx
+│   │               ├── machines/                     # [Opcional FSM / XState]: Máquina de estados finitos tipada para flujos complejos
+│   │               │   └── state_machine.ts          # Declaración determinista de estados, eventos, guardias y transiciones
+│   │               └── pages/                        # Páginas del contexto montadas por el router (ej. OrdersPage.tsx)
+│   │                   └── {{concept_slug}}_page.tsx
+│   ├── mobile/                                       # [Opcional] Canal Visual Nativo / Dispositivos Móviles (iOS & Android)
+│   │   └── contexts/
+│   │       └── {{context_slug}}/
+│   │           ├── domain/                           # Soberanía de contratos móviles: tipos TypeScript y schemas Zod
+│   │           │   ├── types.ts                      # Interfaces y tipos TypeScript inmutables
+│   │           │   └── schemas.ts                    # Esquemas Zod para formularios móviles
+│   │           ├── data/                             # Adaptadores de datos (Offline Ligero Tier 1 + Opcional Offline Pesado Tier 2)
+│   │           │   ├── api.ts                        # Funciones de transporte puro móvil (SecureStore + api_client)
+│   │           │   ├── queries.ts                    # Hooks TanStack Query con persistencia en KV (Offline Ligero Tier 1)
+│   │           │   ├── mutations.ts                  # Hooks de mutación con optimistic updates y cola offline
+│   │           │   ├── local/                        # [Opcional Tier 2 Offline Pesado]: Base de datos embebida SQLite local
+│   │           │   │   ├── schema.ts                 # Definición de tablas SQLite y migraciones locales del contexto
+│   │           │   │   └── repository.ts             # Repositorio local para lecturas/escrituras inmediatas sin red
+│   │           │   └── sync/                         # [Opcional Tier 2 Sincronización]: Protocolo de replicación y conflictos
+│   │           │       └── synchronizer.ts           # Subida de deltas (Outbox local móvil), reconciliación y watermarks
+│   │           └── ui/                               # Capa de presentación nativa: componentes, máquinas y pantallas
+│   │               ├── components/                   # Widgets táctiles específicos del contexto
+│   │               │   └── {{concept_slug}}_card.tsx
+│   │               ├── machines/                     # [Opcional FSM / XState]: Máquinas de estados finitos (biometría, sync offline)
+│   │               │   └── state_machine.ts          # Declaración determinista de estados y transiciones nativas
+│   │               └── screens/                      # Pantallas del contexto montadas en la navegación nativa
+│   │                   └── {{concept_slug}}_screen.tsx
+│   ├── rpc/                                          # [Opcional] Canal Binario gRPC de Alta Velocidad (HTTP/2)
+│   │   ├── protos/
+│   │   │   └── {{context_slug}}.proto                # Contrato de interfaz gRPC (Service, Requests, Responses)
+│   │   ├── services/
+│   │   │   └── {{context_slug}}/
+│   │   │       └── service.py                        # Servidor gRPC Servicer que despacha comandos al CommandBus
+│   │   └── presenters/
+│   │       └── {{context_slug}}/
+│   │           └── presenter.py                      # Serializador bidireccional DTOs <-> Protobuf Messages
+│   ├── mcp/                                          # Canal para Agentes de Inteligencia Artificial (Model Context Protocol)
+│   │   ├── tools/
+│   │   │   └── {{context_slug}}/
+│   │   │       └── tools.py                          # Herramientas operacionales expuestas para agentes AI (FastMCP)
+│   │   ├── resources/
+│   │   │   └── {{context_slug}}/
+│   │   │       └── resources.py                      # Recursos URI de lectura para agentes AI ({{context_slug}}://{id})
+│   │   └── prompts/
+│   │       └── {{context_slug}}/
+│   │           └── prompts.py                        # Prompts estandarizados para interacción con agentes
+│   └── worker/                                       # Canal Asíncrono de Eventos (Event-Driven Consumer)
+│       └── consumers/
+│           └── {{context_slug}}/
+│               └── {{flow_slug}}/
+│                   └── consumer.py                   # Listener AMQP patrón supervisado (TaskGroup) y protegido por Inbox con deserialización y UoW
+│
+└── tests/                                            # PIRÁMIDE DE PRUEBAS DEL SLICE (NIVELES APLICABLES AL SLICE)
+    ├── unit/                                         # Nivel 1: Tests unitarios aislados en memoria
+    │   └── {{context_slug}}/
+    │       ├── domain/                               # Invariantes de AggregateRoot, Value Objects y Domain Services
+    │       │   └── test_aggregate.py
+    │       ├── application/                          # Handlers de comandos/queries con repositorios InMemory / Fakes
+    │       │   └── test_handlers.py
+    │       └── support/                              # Artefactos de generación de datos para pruebas unitarias
+    │           ├── builders/                         # Test Data Builders fluidos para estados complejos
+    │           │   └── {{aggregate_slug}}_builder.py
+    │           └── mothers/                          # Object Mothers con instancias válidas/inválidas pre-configuradas
+    │               └── {{aggregate_slug}}_mother.py
+    ├── integration/                                  # Nivel 2: Tests de adaptadores I/O y acuerdos de interfaz
+    │   └── {{context_slug}}/
+    │       ├── contracts/                            # [Pactos de Integración]: Validación de esquemas OpenAPI y CloudEvents
+    │       │   ├── openapi/                          # Validación de retrocompatibilidad JSON Schema y compatibilidad SDK
+    │       │   │   ├── test_schema_compat.py         # Verificación de retrocompatibilidad JSON Schema y breaking changes
+    │       │   │   └── test_sdk_compatibility.py     # Auditoría de tags OpenAPI y compatibilidad con generadores de SDK
+    │       │   └── events/                           # Validación de contratos de eventos del broker
+    │       │       └── test_events_compat.py
+    │       ├── fixtures/                             # Grabaciones de red deterministas y payloads estáticos del contexto
+    │       │   ├── cassettes/                        # Grabaciones VCR de interacciones HTTP con terceros
+    │       │   │   └── {{context_slug}}_sample.yaml
+    │       │   └── payloads/                         # Cuerpos JSON crudos de peticiones y respuestas externas
+    │       │       └── sample_request.json
+    │       ├── repositories/                         # Persistencia contra DB relacional (SAVEPOINT rollback)
+    │       │   └── test_repository.py
+    │       ├── projections/                          # Sincronización y consistencia eventual CQRS
+    │       │   └── test_projection.py
+    │       ├── interfaces/                           # TestClient HTTP, CLIRunner, FastMCP Client, gRPC y Consumer
+    │       │   └── test_interfaces.py
+    │       └── ingest/                               # [Opcional]: Tests de pipelines de ingesta del contexto
+    │           └── test_pipeline.py                  # Prueba extremo a extremo: extracción simulada -> landing -> validación -> comando
+    ├── acceptance/                                   # Nivel 3: Living Documentation BDD (Gherkin ejecutable)
+    │   ├── features/
+    │   │   └── {{context_slug}}.feature              # Escenarios de negocio en lenguaje ubicuo
+    │   └── step_defs/
+    │       ├── environment.py                        # World / Environment Context para compartir estado entre pasos
+    │       └── test_{{context_slug}}.py              # Implementación de pasos Given / When / Then
+    ├── e2e/                                          # [Opcional] Nivel 4: Specs Playwright de flujos críticos del Slice
+    │   └── web/
+    │       ├── pages/                                # Page Object Model (POM) con selectores y acciones de usuario
+    │       │   └── {{context_slug}}_page.ts
+    │       └── specs/
+    │           ├── {{context_slug}}.spec.ts          # Prueba E2E de usuario (UI, navegación y validación funcional)
+    │           └── visual.spec.ts                    # Prueba de regresión visual de la interfaz del contexto
+    └── performance/                                  # [Opcional] Nivel 5: Escenario de carga y saturación del Slice (Locust)
+        └── scenarios/
+            └── {{context_slug}}.py                   # User Journey Model con tareas ponderadas y simulación concurrente

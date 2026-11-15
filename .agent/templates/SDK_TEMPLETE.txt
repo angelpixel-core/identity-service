@@ -1,0 +1,69 @@
+identity-service
+├── sdks
+│   ├── README.md
+│   ├── generator
+│   │   ├── .openapi-generator-ignore
+│   │   ├── README.md
+│   │   ├── generate_sdks.sh
+│   │   └── generator.yaml
+│   ├── python
+│   │   ├── README.md
+│   │   ├── pyproject.toml
+│   │   ├── src
+│   │   │   ├── README.md
+│   │   │   └── scaff_api_client
+│   │   │       ├── README.md
+│   │   │       ├── __init__.py
+│   │   │       ├── auth.py
+│   │   │       ├── client.py
+│   │   │       ├── config.py
+│   │   │       ├── exceptions.py
+│   │   │       ├── models
+│   │   │       │   ├── README.md
+│   │   │       │   ├── __init__.py
+│   │   │       │   ├── common.py
+│   │   │       │   └── orders
+│   │   │       │       ├── README.md
+│   │   │       │       ├── __init__.py
+│   │   │       │       └── models.py
+│   │   │       ├── py.typed
+│   │   │       └── resources
+│   │   │           ├── README.md
+│   │   │           ├── __init__.py
+│   │   │           └── orders
+│   │   │               ├── README.md
+│   │   │               ├── __init__.py
+│   │   │               └── client.py
+│   │   └── tests
+│   │       ├── README.md
+│   │       ├── __init__.py
+│   │       ├── conftest.py
+│   │       ├── test_auth.py
+│   │       ├── test_client.py
+│   │       └── test_error_handling.py
+│   └── typescript
+│       ├── README.md
+│       ├── package.json
+│       ├── src
+│       │   ├── README.md
+│       │   ├── auth.ts
+│       │   ├── client.ts
+│       │   ├── config.ts
+│       │   ├── errors.ts
+│       │   ├── index.ts
+│       │   ├── resources
+│       │   │   ├── README.md
+│       │   │   └── orders
+│       │   │       ├── README.md
+│       │   │       └── resource.ts
+│       │   └── types
+│       │       ├── README.md
+│       │       ├── common.ts
+│       │       ├── index.ts
+│       │       └── orders.ts
+│       ├── tests
+│       │   ├── README.md
+│       │   ├── auth.test.ts
+│       │   ├── client.test.ts
+│       │   └── errors.test.ts
+│       └── tsconfig.json

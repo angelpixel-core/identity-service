@@ -1,0 +1,148 @@
+# ==============================================================================
+# BLUEPRINT ARQUITECTÓNICO DEL PROYECTO: IDENTITY SERVICE
+# Basado en la fuente de la verdad: .agent/templates/BC_SLICE_TEMPLATE.txt
+# Adaptado para Node.js / Express / TypeScript / PostgreSQL / React
+# ==============================================================================
+
+identity-service/
+├── .agent/                                                     # Gobernanza, memoria y plantillas de agente
+│   ├── TREE.txt                                                # Este blueprint técnico
+│   ├── memory/
+│   │   ├── PRD.md                                              # PRD Privado e interno (estrategia y narrativa)
+│   │   └── TRACEABILITY_MATRIX.md                              # Matriz de trazabilidad y cobertura
+│   ├── epics/
+│   │   └── EPIC-01-identity-management/
+│   │       ├── README.md                                       # Definición de la épica + Hoja de ruta (Fases A-D)
+│   │       └── stories/
+│   │           ├── US-01-user-registration.md                  # Write Slice (Command: register_user)
+│   │           └── US-02-tenant-profie-read.md                 # Read Slice (Query: get_user_profile)
+│   ├── rules/
+│   │   ├── ARCHITECTURE_RULES.md                               # Reglas arquitectónicas Hexagonal + Slices
+│   │   └── TESTING_RULES.md                                    # Pirámide de pruebas y criterios de calidad
+│   ├── templates/
+│   │   ├── ADR_TEMPLATE.md
+│   │   ├── BC_SLICE_TEMPLATE.txt                               # Plantilla paramétrica de referencia
+│   │   ├── EPIC_TEMPLATE.md
+│   │   ├── STORY_TEMPLATE.md
+│   │   └── TASK_TEMPLATE.md
+│   └── publications/                                           # Artículos técnicos incrementales
+│
+├── docs/                                                       # Documentación técnica pública
+│   ├── PRD.md                                                  # PRD Público formal
+│   ├── ARCHITECTURE.md                                         # Documento de arquitectura de referencia
+│   └── adr/                                                    # Architectural Decision Records
+│       ├── 0001-record-architecture-decisions.md
+│       ├── 0002-use-vertical-slice-and-hexagonal.md
+│       └── 0003-multi-tenant-isolation-strategy.md
+│
+├── src/
+│   └── contexts/
+│       └── identity/                                           # BOUNDED CONTEXT: IDENTITY
+│           ├── domain/                                         # NÚCLEO DE DOMINIO PURO (Sin dependencias externas)
+│           │   ├── entities/
+│           │   │   └── user/
+│           │   │       └── aggregate.ts                        # User Aggregate Root (invariantes y reglas de negocio)
+│           │   ├── value_objects/
+│           │   │   ├── email/
+│           │   │   │   └── value.ts                            # Value Object Email (RFC 5322)
+│           │   │   └── tenant_id/
+│           │   │       └── value.ts                            # Value Object TenantId
+│           │   └── exceptions/
+│           │       └── user/
+│           │           └── error.ts                            # Excepciones de negocio tipadas (DomainError)
+│           │
+│           ├── application/                                    # CASOS DE USO DE NEGOCIO Y PUERTOS (CQRS)
+│           │   ├── commands/                                   # [C - Mutaciones]: Write Slices
+│           │   │   └── register_user/
+│           │   │       ├── command.ts                          # DTO inmutable con parámetros de registro
+│           │   │       └── handler.ts                          # Command Handler: carga agregado, valida y persiste
+│           │   ├── queries/                                    # [Q - Lecturas]: Read Slices
+│           │   │   └── get_user_profile/
+│           │   │       ├── query.ts                            # DTO inmutable con filtros de búsqueda
+│           │   │       └── handler.ts                          # Query Handler: consulta caché y DB
+│           │   ├── ports/                                      # Interfaces secundarias (SPI)
+│           │   │   ├── user/
+│           │   │   │   └── repository.ts                       # UserRepositoryPort (save, findById, findByEmail)
+│           │   │   ├── security/
+│           │   │   │   ├── hash_provider.ts                    # HashProviderPort (hash, compare)
+│           │   │   │   └── token_provider.ts                   # TokenProviderPort (sign, verify)
+│           │   │   └── cache/
+│           │   │       └── cache_provider.ts                   # CacheProviderPort (get, set)
+│           │   └── dtos/                                       # Contratos limpios de entrada/salida
+│           │       ├── register_user/
+│           │       │   └── dto.ts                              # RegisterUserResponseDTO
+│           │       └── user_profile/
+│           │           └── dto.ts                              # UserProfileDTO (sin contraseñas)
+│           │
+│           └── infrastructure/                                 # ADAPTADORES DRIVEN (I/O Concreta)
+│               ├── persistence/
+│               │   ├── models/
+│               │   │   └── user/
+│               │   │       └── model.ts                        # Modelo SQL / Schema PostgreSQL
+│               │   ├── repositories/
+│               │   │   └── user/
+│               │   │       └── repository.ts                   # PostgresUserRepository
+│               │   └── mappers/
+│               │       └── user/
+│               │           └── mapper.ts                       # UserMapper (SQL Model <-> Domain Aggregate)
+│               ├── cache/
+│               │   └── memory_cache_adapter.ts                 # MemoryCacheAdapter (implementa CacheProviderPort)
+│               └── security/
+│                   ├── bcrypt_adapter.ts                       # BcryptAdapter (implementa HashProviderPort)
+│                   └── jwt_adapter.ts                          # JwtTokenAdapter (implementa TokenProviderPort)
+│
+├── interfaces/                                                 # CANALES CONDUCTORES (DRIVER ADAPTERS)
+│   ├── http/                                                   # Canal de red HTTP / Express
+│   │   ├── server.ts                                           # Express App Configuration & Error Handler
+│   │   ├── middlewares/
+│   │   │   ├── auth_middleware.ts                              # Valida JWT Bearer Token
+│   │   │   └── tenant_context_middleware.ts                    # Inyecta TenantContext en la petición
+│   │   └── rest/
+│   │       └── v1/
+│   │           └── identity/
+│   │               ├── controllers.ts                          # Endpoints Express: POST /register, GET /me
+│   │               └── schemas.ts                              # Schemas de validación de payloads (Zod / Joi)
+│   └── web/                                                    # Canal visual Web / React
+│       └── client/contexts/
+│           └── identity/                                       # SPA React por Bounded Context
+│               ├── domain/
+│               │   └── types.ts                                # Tipos TypeScript inmutables (AuthSession, Profile)
+│               ├── data/
+│               │   ├── api.ts                                  # AuthApiClient (fetch / axios desacoplado)
+│               │   └── queries.ts                              # Custom hooks (useAuth, useUserProfile)
+│               └── ui/
+│                   ├── components/
+│                   │   ├── register_form.tsx                   # Formulario React de Registro
+│                   │   ├── login_form.tsx                      # Formulario React de Login
+│                   │   └── user_profile_card.tsx               # Tarjeta de perfil y tenant
+│                   └── context/
+│                       └── auth_context.tsx                    # AuthContext y AuthProvider
+│
+├── tests/                                                      # PIRÁMIDE DE PRUEBAS
+│   ├── unit/                                                   # Nivel 1: Tests Unitarios en memoria
+│   │   └── identity/
+│   │       ├── domain/
+│   │       │   ├── test_email.ts                               # Validación invariante Email RFC 5322
+│   │       │   └── test_user_aggregate.ts                      # Invariantes del agregado User
+│   │       └── application/
+│   │           ├── test_register_user_handler.ts               # Handler RegisterUser con mocks
+│   │           └── test_get_user_profile_handler.ts            # Handler GetUserProfile con mocks
+│   ├── integration/                                            # Nivel 2: Tests de Adaptadores I/O
+│   │   └── identity/
+│   │       ├── repositories/
+│   │       │   └── test_postgres_repository.ts                 # Persistencia PostgreSQL
+│   │       └── interfaces/
+│   │           ├── test_register_api.ts                        # Supertest POST /api/v1/auth/register
+│   │           └── test_profile_api.ts                         # Supertest GET /api/v1/auth/me
+│   ├── acceptance/                                             # Nivel 3: Living Documentation BDD
+│   │   ├── features/
+│   │   │   └── user_registration.feature                       # Gherkin Feature (Given / When / Then)
+│   │   └── step_defs/
+│   │       └── test_user_registration_steps.ts                 # Implementación de pasos BDD
+│   └── e2e/                                                    # Nivel 4: End-to-End
+│       └── web/
+│           ├── register_form.spec.tsx                          # Flujo completo formulario de registro
+│           └── user_profile_card.spec.tsx                      # Flujo completo consulta de perfil
+│
+├── package.json
+└── tsconfig.json
