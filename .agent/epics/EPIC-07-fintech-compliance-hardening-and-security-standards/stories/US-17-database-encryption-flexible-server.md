@@ -4,7 +4,7 @@ title: "Database Encryption In-Flight (TLS 1.3/1.2) & At-Rest (CMK) for PostgreS
 epic:
   id: EPIC-07
   name: "Fintech Compliance, Hardening & Security Standards"
-status: in_progress
+status: completed
 priority: P1
 bounded_context: infrastructure
 subdomain: database-security
@@ -35,7 +35,7 @@ tags:
 # US-17: Database Encryption In-Flight (TLS 1.3/1.2) & At-Rest (CMK) for PostgreSQL Flexible Server
 
 **Epic:** [EPIC-07: Fintech Compliance, Hardening & Security Standards](../README.md)  
-**Status:** In Progress (Technical implementation merged to `main` via PR #8 `ff05af1`; pending publication ARTICLE-14 & Guideline 18)  
+**Status:** Completed (Merged to `main` via PR #8 `ff05af1`; GUIDELINE-18 and ARTICLE-14 published)  
 **Domain / Bounded Context:** `infrastructure` / `database-security`  
 **Slice Type:** Cryptographic Hardening & Infrastructure Slice  
 **Regulatory Framework:** PCI-DSS v4.0 (Req 4.1) · SOC 2 Type II (CC6.7)  
@@ -104,5 +104,5 @@ Feature: Cifrado Estricto de Base de Datos en Tránsito y en Reposo
 - [x] Plan de Terraform validado exitosamente en `npm run test:infra`.
 - [x] Parametrización y pruebas de empaquetado Helm (`values.yaml`, `values.schema.json`, `npm run test:helm`).
 - [x] Fusión a `main` y checks de CI aprobados en GitHub Actions (PR #8 `ff05af1`).
-- [ ] Guía interactiva de pruebas (`.agent/guidelines/GUIDELINE-18-database-encryption-flexible-server.md`).
-- [ ] Publicación técnica oficial (`.agent/publications/ARTICLE-14-database-encryption-flexible-server.md`).
+- [x] Guía interactiva de pruebas (`.agent/guidelines/GUIDELINE-18-database-encryption-flexible-server.md`).
+- [x] Publicación técnica oficial (`.agent/publications/ARTICLE-14-database-encryption-flexible-server.md`).
