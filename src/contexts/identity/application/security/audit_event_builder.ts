@@ -5,6 +5,7 @@ import {
   SecurityAuditStatus,
 } from '../ports/security/audit_logger';
 import { sanitizeAuditDetails } from '../../domain/security/audit_sanitizer';
+import { CorrelationContextStorage } from '../../../shared/infrastructure/tracing/correlation_context_storage';
 
 /**
  * Mapeo canónico de eventos legacy en snake_case a tipos bancarios en mayúsculas.
@@ -91,10 +92,17 @@ export function buildCanonicalAuditEvent(raw: SecurityAuditEvent): CanonicalSecu
     ip: raw.actor?.ip ?? raw.ip,
   });
 
-  // 4. Traza
+  // 4. Traza (enriquecida con contexto asíncrono US-20)
+  const activeTrace = CorrelationContextStorage.current();
   const trace = Object.freeze({
-    requestId: raw.trace?.requestId,
-    correlationId: raw.trace?.correlationId,
+    requestId: raw.trace?.requestId ?? activeTrace?.requestId,
+    correlationId:
+      raw.trace?.correlationId ??
+      raw.trace?.requestId ??
+      activeTrace?.requestId,
+    traceId: raw.trace?.traceId ?? activeTrace?.traceId,
+    spanId: raw.trace?.spanId ?? activeTrace?.spanId,
+    traceparent: raw.trace?.traceparent ?? activeTrace?.toTraceparent(),
   });
 
   // 5. Cumplimiento

@@ -43,6 +43,9 @@ export interface SecurityAuditActor {
 export interface SecurityAuditTrace {
   readonly requestId?: string;
   readonly correlationId?: string;
+  readonly traceId?: string;
+  readonly spanId?: string;
+  readonly traceparent?: string;
 }
 
 export interface SecurityAuditCompliance {
