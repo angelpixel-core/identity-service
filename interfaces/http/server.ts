@@ -32,6 +32,10 @@ import { PostgresUserRepository } from '../../src/contexts/identity/infrastructu
 import { User } from '../../src/contexts/identity/domain/entities/user/aggregate';
 import { Email } from '../../src/contexts/identity/domain/value_objects/email/value';
 import { TenantId } from '../../src/contexts/identity/domain/value_objects/tenant_id/value';
+import { MetricsPort } from '../../src/contexts/shared/domain/telemetry/metrics_port';
+import { OpenTelemetryMetricsAdapter } from '../../src/contexts/shared/infrastructure/telemetry/opentelemetry_metrics_adapter';
+import { InMemoryMetricsAdapter } from '../../src/contexts/shared/domain/telemetry/in_memory_metrics_adapter';
+import { createMetricsMiddleware } from '../../src/contexts/shared/infrastructure/telemetry/metrics_middleware';
 import { traceContextMiddleware } from './middlewares/trace_context_middleware';
 import { tenantContextMiddleware } from './middlewares/tenant_context_middleware';
 import { createAuthMiddleware } from './middlewares/auth_middleware';
@@ -124,6 +128,7 @@ export interface AppDependencies {
   secretsMountPath?: string;
   enableSecretWatcher?: boolean;
   sslOptions?: PostgresSslOptions;
+  metricsAdapter?: MetricsPort;
 }
 
 /**
@@ -133,6 +138,13 @@ export interface AppDependencies {
 export function createApp(deps?: AppDependencies): Express {
   const app = express();
 
+  const metricsAdapter: MetricsPort =
+    deps?.metricsAdapter ??
+    (process.env.NODE_ENV === 'test' && !process.env.FORCE_OPENTELEMETRY_METRICS
+      ? new InMemoryMetricsAdapter()
+      : new OpenTelemetryMetricsAdapter());
+  app.locals.metricsAdapter = metricsAdapter;
+
   // Habilitar confianza de proxy inverso (Nginx Ingress) para propagación de X-Forwarded-*
   app.set('trust proxy', true);
 
@@ -141,6 +153,9 @@ export function createApp(deps?: AppDependencies): Express {
 
   // Middleware de correlación distribuida de peticiones y trazabilidad W3C (US-20)
   app.use(traceContextMiddleware);
+
+  // Middleware de métricas estructuradas OpenTelemetry y Golden Signals (US-21)
+  app.use(createMetricsMiddleware(metricsAdapter));
 
   // Middleware ligero para parsing de cookies sin dependencias externas
   app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -257,7 +272,13 @@ export function createApp(deps?: AppDependencies): Express {
   if (!transactionRunner) {
     const activePool = getPool();
     if (activePool && process.env.NODE_ENV !== 'test') {
-      transactionRunner = new TenantAwareTransactionRunner(activePool);
+      transactionRunner = new TenantAwareTransactionRunner(
+        activePool,
+        console,
+        undefined,
+        undefined,
+        metricsAdapter
+      );
     }
   }
 
@@ -386,7 +407,8 @@ export function createApp(deps?: AppDependencies): Express {
     hashProvider,
     tokenProvider,
     auditLogger,
-    3600
+    3600,
+    metricsAdapter
   );
 
   const updateUserProfileHandler = new UpdateUserProfileCommandHandler(userRepository, cacheProvider);
@@ -412,7 +434,8 @@ export function createApp(deps?: AppDependencies): Express {
     asymmetricKeyProvider,
     auditLogger,
     900,
-    process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000'
+    process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000',
+    metricsAdapter
   );
   const rotateRefreshTokenHandler = new RotateRefreshTokenCommandHandler(
     refreshSessionRepository,
@@ -421,7 +444,8 @@ export function createApp(deps?: AppDependencies): Express {
     {
       issuerUrl: process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000',
       tokenLifetimeSeconds: 900,
-    }
+    },
+    metricsAdapter
   );
   const revokeSessionHandler = new RevokeSessionCommandHandler(refreshSessionRepository);
 
@@ -546,6 +570,17 @@ export function createApp(deps?: AppDependencies): Express {
     });
   });
 
+  // Endpoint de Métricas Estructuradas Prometheus / OpenMetrics (US-21)
+  app.get('/metrics', async (_req: Request, res: Response) => {
+    try {
+      const metrics = await metricsAdapter.getMetrics();
+      res.setHeader('Content-Type', metricsAdapter.getMetricsContentType());
+      res.status(200).send(metrics);
+    } catch {
+      res.status(500).send('# Error exporting metrics\n');
+    }
+  });
+
   // Rutas de Descubrimiento OIDC y JWKS (RFC 8414 & RFC 7517)
   app.get('/.well-known/openid-configuration', discoveryController.getOpenIdConfiguration);
   app.get('/.well-known/jwks.json', discoveryController.getJwks);
@@ -661,6 +696,13 @@ if (require.main === module) {
     }
     if (app.locals.poolManager) {
       await app.locals.poolManager.close();
+    }
+    if (app.locals.metricsAdapter) {
+      try {
+        await app.locals.metricsAdapter.shutdown();
+      } catch (err) {
+        console.error('Error shutting down metricsAdapter:', err);
+      }
     }
     server.close(() => {
       console.log('HTTP server closed.');

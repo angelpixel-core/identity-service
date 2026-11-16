@@ -10,6 +10,7 @@ import { DomainValidationError } from '../../../domain/exceptions/user/error';
 import { OAuth2AuthenticationError } from '../../../domain/exceptions/oauth2/error';
 import { AuthenticateClientM2MCommand } from './command';
 import { OAuth2TokenResponseDTO } from '../../dtos/oauth2_token/dto';
+import { MetricsPort } from '../../../../shared/domain/telemetry/metrics_port';
 
 export interface AuthenticateClientM2MConfig {
   defaultExpiresInSeconds?: number;
@@ -30,7 +31,8 @@ export class AuthenticateClientM2MCommandHandler {
     private readonly hashProvider: HashProviderPort,
     private readonly tokenProvider: TokenProviderPort,
     private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger(),
-    optionsOrExpiresIn: number | AuthenticateClientM2MConfig = 3600
+    optionsOrExpiresIn: number | AuthenticateClientM2MConfig = 3600,
+    private readonly metricsPort?: MetricsPort
   ) {
     if (typeof optionsOrExpiresIn === 'number') {
       this.defaultExpiresInSeconds = optionsOrExpiresIn;
@@ -155,6 +157,16 @@ export class AuthenticateClientM2MCommandHandler {
         },
       });
 
+      this.metricsPort?.recordAuthAttempt({
+        method: 'client_credentials',
+        result: 'success',
+      });
+
+      this.metricsPort?.recordTokensIssued({
+        grantType: 'client_credentials',
+        tokenType: 'access',
+      });
+
       return {
         access_token,
         token_type: 'Bearer',
@@ -162,6 +174,11 @@ export class AuthenticateClientM2MCommandHandler {
         ...(grantedScope ? { scope: grantedScope } : {}),
       };
     } catch (err: unknown) {
+      this.metricsPort?.recordAuthAttempt({
+        method: 'client_credentials',
+        result: 'failure',
+      });
+
       const reason =
         err instanceof OAuth2AuthenticationError
           ? `${err.errorCode}: ${err.errorDescription}`

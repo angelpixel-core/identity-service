@@ -91,6 +91,23 @@
     "podLabels": {
       "type": "object"
     },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "annotations": {
+          "type": "object"
+        }
+      }
+    },
     "podSecurityContext": {
       "type": "object",
       "properties": {
