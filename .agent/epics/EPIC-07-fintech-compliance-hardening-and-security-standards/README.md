@@ -2,7 +2,7 @@
 
 * **ID:** EPIC-07
 * **Bounded Context:** `security` / `compliance` / `infrastructure` / `platform`
-* **Estado:** Ready for Implementation
+* **Estado:** Completed
 * **Arquitectura:** Zero Trust Network Segmentation / In-Flight & At-Rest Cryptography / Automated Key Rotation / Immutable Audit Logging
 * **Topología de Referencia:** [`.agent/TREE.txt`](../../TREE.txt)
 * **Plataforma de Ejecución:** Microsoft Azure / Kubernetes (AKS) / Floci ARM Emulator
@@ -40,10 +40,10 @@ La **EPIC-07** establece una suite rigurosa de controles técnicos estructurados
 
 | Historia | Archivo de Especificación | Alcance y Entregable Técnico | Control Normativo | Estado |
 | :--- | :--- | :--- | :--- | :--- |
-| **US-16** | [`US-16-key-vault-csi-secret-rotation.md`](stories/US-16-key-vault-csi-secret-rotation.md) | Rotación inyectada de credenciales de PostgreSQL y claves JWT en memoria mediante Azure Key Vault CSI Driver (`rotationPollInterval: 2m`) con observador de archivos en proceso (*Zero-Downtime*). | **PCI-DSS Req 3.6**<br>**SOC 2 CC6.1** | Ready |
-| **US-17** | [`US-17-database-encryption-flexible-server.md`](stories/US-17-database-encryption-flexible-server.md) | Conexión obligatoria TLS 1.3/1.2 en `node-pg` con verificación estricta de certificado CA (`rejectUnauthorized: true`) y cifrado en reposo con Customer-Managed Key (CMK) en Azure PostgreSQL Flexible Server. | **PCI-DSS Req 4.1**<br>**SOC 2 CC6.7** | Ready |
-| **US-18** | [`US-18-k8s-zero-trust-network-policies.md`](stories/US-18-k8s-zero-trust-network-policies.md) | Aislamiento de red mediante Kubernetes NetworkPolicies modulares en Helm con política `Default-Deny` y listas blancas granulares para Ingress, App, Database, Redis y CoreDNS. | **ISO 27001 A.13.1**<br>**SOC 2 CC6.6** | Ready |
-| **US-19** | [`US-19-immutable-audit-log-analytics.md`](stories/US-19-immutable-audit-log-analytics.md) | Emisión de bitácoras de auditoría estructuradas (12-Factor stdout NDJSON) y reenvío inmutable hacia Azure Log Analytics Workspace con políticas de retención de cumplimiento. | **PCI-DSS Req 10.2/10.5**<br>**SOC 2 CC7.2** | Ready |
+| **US-16** | [`US-16-key-vault-csi-secret-rotation.md`](stories/US-16-key-vault-csi-secret-rotation.md) | Rotación inyectada de credenciales de PostgreSQL y claves JWT en memoria mediante Azure Key Vault CSI Driver (`rotationPollInterval: 2m`) con observador de archivos en proceso (*Zero-Downtime*). | **PCI-DSS Req 3.6**<br>**SOC 2 CC6.1** | Completed |
+| **US-17** | [`US-17-database-encryption-flexible-server.md`](stories/US-17-database-encryption-flexible-server.md) | Conexión obligatoria TLS 1.3/1.2 en `node-pg` con verificación estricta de certificado CA (`rejectUnauthorized: true`) y cifrado en reposo con Customer-Managed Key (CMK) en Azure PostgreSQL Flexible Server. | **PCI-DSS Req 4.1**<br>**SOC 2 CC6.7** | Completed |
+| **US-18** | [`US-18-k8s-zero-trust-network-policies.md`](stories/US-18-k8s-zero-trust-network-policies.md) | Aislamiento de red mediante Kubernetes NetworkPolicies modulares en Helm con política `Default-Deny` y listas blancas granulares para Ingress, App, Database, Redis y CoreDNS. | **ISO 27001 A.13.1**<br>**SOC 2 CC6.6** | Completed |
+| **US-19** | [`US-19-immutable-audit-log-analytics.md`](stories/US-19-immutable-audit-log-analytics.md) | Emisión de bitácoras de auditoría estructuradas (12-Factor stdout NDJSON) y reenvío inmutable hacia Azure Log Analytics Workspace con políticas de retención de cumplimiento. | **PCI-DSS Req 10.2/10.5**<br>**SOC 2 CC7.2** | Completed |
 
 ---
 
@@ -113,9 +113,9 @@ flowchart TD
 
 ## 5. Definición de Hecho (Definition of Done - DoD)
 
-- [ ] **Rotación de Secretos (US-16):** El observador de archivos detecta la actualización de secretos en `/mnt/secrets-store/` y refresca credenciales en memoria sin reiniciar el proceso ni provocar errores en peticiones activas.
-- [ ] **Cifrado de Base de Datos (US-17):** `node-pg` rechaza conexiones en texto plano o con certificados inválidos (`rejectUnauthorized: true`) y Terraform confirma `ssl_enforcement_enabled` en PostgreSQL.
-- [ ] **Network Policies (US-18):** El clúster bloquea tráfico no autorizado entre Pods y hacia el exterior, permitiendo únicamente los flujos explícitamente autorizados por selector y puerto.
-- [ ] **Bitácoras Inmutables (US-19):** La aplicación emite eventos de auditoría en formato NDJSON estructurado con etiquetas PCI/SOC2, recolectados y persistidos en Log Analytics Workspace.
-- [ ] **Trazabilidad Completa:** Historias registradas y vinculadas en [`TRACEABILITY_MATRIX.md`](../../memory/TRACEABILITY_MATRIX.md).
-- [ ] **Cero Regresiones:** Todas las pruebas unitarias, de integración y de infraestructura pasan al 100%.
+- [x] **Rotación de Secretos (US-16):** El observador de archivos detecta la actualización de secretos en `/mnt/secrets-store/` y refresca credenciales en memoria sin reiniciar el proceso ni provocar errores en peticiones activas.
+- [x] **Cifrado de Base de Datos (US-17):** `node-pg` rechaza conexiones en texto plano o con certificados inválidos (`rejectUnauthorized: true`) y Terraform confirma `ssl_enforcement_enabled` en PostgreSQL.
+- [x] **Network Policies (US-18):** El clúster bloquea tráfico no autorizado entre Pods y hacia el exterior, permitiendo únicamente los flujos explícitamente autorizados por selector y puerto.
+- [x] **Bitácoras Inmutables (US-19):** La aplicación emite eventos de auditoría en formato NDJSON estructurado con etiquetas PCI/SOC2, recolectados y persistidos en Log Analytics Workspace.
+- [x] **Trazabilidad Completa:** Historias registradas y vinculadas en [`TRACEABILITY_MATRIX.md`](../../memory/TRACEABILITY_MATRIX.md).
+- [x] **Cero Regresiones:** Todas las pruebas unitarias, de integración y de infraestructura pasan al 100%.
