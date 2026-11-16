@@ -8,6 +8,7 @@ import { OriginDomain } from '../../../../../src/contexts/identity/domain/value_
 import { AuthenticateClientM2MCommand } from '../../../../../src/contexts/identity/application/commands/authenticate_client_m2m/command';
 import { AuthenticateClientM2MCommandHandler } from '../../../../../src/contexts/identity/application/commands/authenticate_client_m2m/handler';
 import { OAuth2TokenResponseDTO } from '../../../../../src/contexts/identity/application/dtos/oauth2_token/dto';
+import { InMemoryMetricsAdapter } from '../../../../../src/contexts/shared/domain/telemetry/in_memory_metrics_adapter';
 
 describe('Application Command Handler: AuthenticateClientM2MCommandHandler (RFC 6749 Client Credentials & RFC 7519 JWT)', () => {
   let clientRepository: jest.Mocked<ClientApplicationRepositoryPort>;
@@ -380,6 +381,77 @@ describe('Application Command Handler: AuthenticateClientM2MCommandHandler (RFC 
           reason: expect.stringContaining('invalid_client'),
         })
       );
+    });
+  });
+
+  describe('Structured Metrics Telemetry (US-21 Golden Signals)', () => {
+    it('should record auth_attempts_total and auth_tokens_issued_total on successful authentication', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const authSpy = jest.spyOn(metricsAdapter, 'recordAuthAttempt');
+      const tokenSpy = jest.spyOn(metricsAdapter, 'recordTokensIssued');
+
+      const instrumentedHandler = new AuthenticateClientM2MCommandHandler(
+        clientRepository,
+        hashProvider,
+        tokenProvider,
+        auditLogger,
+        3600,
+        metricsAdapter
+      );
+
+      clientRepository.findByClientId.mockResolvedValueOnce(activeConfidentialClient);
+      hashProvider.compare.mockResolvedValueOnce(true);
+      tokenProvider.generateToken.mockResolvedValueOnce('signed.jwt.access_token');
+
+      const command: AuthenticateClientM2MCommand = {
+        grantType: 'client_credentials',
+        clientId: 'order-service',
+        clientSecret: validSecret,
+      };
+
+      await instrumentedHandler.execute(command);
+
+      expect(authSpy).toHaveBeenCalledTimes(1);
+      expect(authSpy).toHaveBeenCalledWith({
+        method: 'client_credentials',
+        result: 'success',
+      });
+
+      expect(tokenSpy).toHaveBeenCalledTimes(1);
+      expect(tokenSpy).toHaveBeenCalledWith({
+        grantType: 'client_credentials',
+        tokenType: 'access',
+      });
+    });
+
+    it('should record auth_attempts_total with result=failure when authentication fails', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const authSpy = jest.spyOn(metricsAdapter, 'recordAuthAttempt');
+
+      const instrumentedHandler = new AuthenticateClientM2MCommandHandler(
+        clientRepository,
+        hashProvider,
+        tokenProvider,
+        auditLogger,
+        3600,
+        metricsAdapter
+      );
+
+      clientRepository.findByClientId.mockResolvedValueOnce(null);
+
+      const command: AuthenticateClientM2MCommand = {
+        grantType: 'client_credentials',
+        clientId: 'unknown-client',
+        clientSecret: validSecret,
+      };
+
+      await expect(instrumentedHandler.execute(command)).rejects.toThrow();
+
+      expect(authSpy).toHaveBeenCalledTimes(1);
+      expect(authSpy).toHaveBeenCalledWith({
+        method: 'client_credentials',
+        result: 'failure',
+      });
     });
   });
 });

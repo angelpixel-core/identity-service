@@ -8,6 +8,7 @@ import { AuthorizationCode } from '../../../../../src/contexts/identity/domain/e
 import { ClientApplication } from '../../../../../src/contexts/identity/domain/entities/client_application/aggregate';
 import { ClientId } from '../../../../../src/contexts/identity/domain/value_objects/client_id/value';
 import { OriginDomain } from '../../../../../src/contexts/identity/domain/value_objects/origin_domain/value';
+import { InMemoryMetricsAdapter } from '../../../../../src/contexts/shared/domain/telemetry/in_memory_metrics_adapter';
 
 describe('Application Command: ExchangeAuthorizationCodeCommandHandler (RFC 6749 & RFC 7636)', () => {
   let clientRepository: InMemoryClientApplicationRepository;
@@ -257,5 +258,92 @@ describe('Application Command: ExchangeAuthorizationCodeCommandHandler (RFC 6749
     } catch (err: any) {
       expect(err.errorCode).toBe('invalid_grant');
     }
+  });
+
+  describe('Structured Metrics Telemetry (US-21 Golden Signals)', () => {
+    it('should record auth_attempts_total and auth_tokens_issued_total on successful authorization_code exchange', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const authSpy = jest.spyOn(metricsAdapter, 'recordAuthAttempt');
+      const tokenSpy = jest.spyOn(metricsAdapter, 'recordTokensIssued');
+
+      const instrumentedHandler = new ExchangeAuthorizationCodeCommandHandler(
+        clientRepository,
+        authCodeRepository,
+        hashProvider,
+        asymmetricKeyProvider,
+        auditLogger,
+        900,
+        'http://localhost:4000',
+        metricsAdapter
+      );
+
+      const authCode = AuthorizationCode.create({
+        clientId: 'e-commerce-spa',
+        userId: 'usr-123',
+        tenantId: 'tenant-metrics',
+        redirectUri: 'https://shop.local/callback',
+        scope: 'openid profile',
+        codeChallenge: expectedChallenge,
+        codeChallengeMethod: 'S256',
+        ttlSeconds: 60,
+      });
+      await authCodeRepository.save(authCode);
+
+      await instrumentedHandler.execute({
+        grantType: 'authorization_code',
+        clientId: 'e-commerce-spa',
+        code: authCode.getCode(),
+        redirectUri: 'https://shop.local/callback',
+        codeVerifier: validVerifier,
+      });
+
+      expect(authSpy).toHaveBeenCalledWith({
+        method: 'authorization_code',
+        result: 'success',
+        tenantId: 'tenant-metrics',
+      });
+
+      expect(tokenSpy).toHaveBeenCalledWith({
+        grantType: 'authorization_code',
+        tokenType: 'access',
+        tenantId: 'tenant-metrics',
+      });
+
+      expect(tokenSpy).toHaveBeenCalledWith({
+        grantType: 'authorization_code',
+        tokenType: 'id',
+        tenantId: 'tenant-metrics',
+      });
+    });
+
+    it('should record auth_attempts_total with result=failure when exchange fails', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const authSpy = jest.spyOn(metricsAdapter, 'recordAuthAttempt');
+
+      const instrumentedHandler = new ExchangeAuthorizationCodeCommandHandler(
+        clientRepository,
+        authCodeRepository,
+        hashProvider,
+        asymmetricKeyProvider,
+        auditLogger,
+        900,
+        'http://localhost:4000',
+        metricsAdapter
+      );
+
+      await expect(
+        instrumentedHandler.execute({
+          grantType: 'authorization_code',
+          clientId: 'unknown-client',
+          code: 'nonexistent-code',
+          redirectUri: 'https://shop.local/callback',
+        })
+      ).rejects.toThrow();
+
+      expect(authSpy).toHaveBeenCalledWith({
+        method: 'authorization_code',
+        result: 'failure',
+      });
+    });
   });
 });

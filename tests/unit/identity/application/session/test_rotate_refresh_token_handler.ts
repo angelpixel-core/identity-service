@@ -3,6 +3,7 @@ import { InMemoryRefreshSessionRepository } from '../../../../../src/contexts/id
 import { InMemorySecurityAuditLogger } from '../../../../../src/contexts/identity/infrastructure/logging/memory_security_audit_logger';
 import { RsaKeyAdapter } from '../../../../../src/contexts/identity/infrastructure/security/rsa_key_adapter';
 import { RefreshSession } from '../../../../../src/contexts/identity/domain/entities/refresh_session/aggregate';
+import { InMemoryMetricsAdapter } from '../../../../../src/contexts/shared/domain/telemetry/in_memory_metrics_adapter';
 
 describe('Application Command: RotateRefreshTokenCommandHandler (US-09)', () => {
   let sessionRepository: InMemoryRefreshSessionRepository;
@@ -157,6 +158,79 @@ describe('Application Command: RotateRefreshTokenCommandHandler (US-09)', () => 
     ).rejects.toMatchObject({
       errorCode: 'invalid_grant',
       statusCode: 401,
+    });
+  });
+
+  describe('Structured Metrics Telemetry (US-21 Golden Signals)', () => {
+    it('should record auth_attempts_total and auth_tokens_issued_total on successful token rotation', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const authSpy = jest.spyOn(metricsAdapter, 'recordAuthAttempt');
+      const tokenSpy = jest.spyOn(metricsAdapter, 'recordTokensIssued');
+
+      const instrumentedHandler = new RotateRefreshTokenCommandHandler(
+        sessionRepository,
+        asymmetricKeyProvider,
+        auditLogger,
+        {
+          issuerUrl: 'https://auth.test.local',
+          tokenLifetimeSeconds: 900,
+        },
+        metricsAdapter
+      );
+
+      const { session, plainToken } = RefreshSession.create({
+        familyId: 'fam-metrics-1',
+        userId: 'usr-metrics',
+        tenantId: 'tenant-metrics-org',
+        clientId: 'e-commerce-spa',
+      });
+      await sessionRepository.save(session);
+
+      await instrumentedHandler.execute({
+        refreshToken: plainToken,
+      });
+
+      expect(authSpy).toHaveBeenCalledWith({
+        method: 'refresh_token',
+        result: 'success',
+        tenantId: 'tenant-metrics-org',
+      });
+
+      expect(tokenSpy).toHaveBeenCalledWith({
+        grantType: 'refresh_token',
+        tokenType: 'access',
+        tenantId: 'tenant-metrics-org',
+      });
+
+      expect(tokenSpy).toHaveBeenCalledWith({
+        grantType: 'refresh_token',
+        tokenType: 'refresh',
+        tenantId: 'tenant-metrics-org',
+      });
+    });
+
+    it('should record auth_attempts_total with result=failure when token rotation fails', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const authSpy = jest.spyOn(metricsAdapter, 'recordAuthAttempt');
+
+      const instrumentedHandler = new RotateRefreshTokenCommandHandler(
+        sessionRepository,
+        asymmetricKeyProvider,
+        auditLogger,
+        {},
+        metricsAdapter
+      );
+
+      await expect(
+        instrumentedHandler.execute({
+          refreshToken: 'invalid_refresh_token',
+        })
+      ).rejects.toThrow();
+
+      expect(authSpy).toHaveBeenCalledWith({
+        method: 'refresh_token',
+        result: 'failure',
+      });
     });
   });
 });
