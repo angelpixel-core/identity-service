@@ -4,14 +4,21 @@
  * Cumplimiento normativo: PCI-DSS v4.0 (Req 3.4 & 10.5) y SOC 2 Type II (CC7.2).
  */
 
-const BENIGN_EXCLUSIONS = [/status[_-]?code/i, /zip[_-]?code/i, /country[_-]?code/i];
+const BENIGN_EXCLUSIONS = [
+  /status[_-]?code/i,
+  /zip[_-]?code/i,
+  /country[_-]?code/i,
+  /token[_-]?type/i,
+  /token[_-]?tenant/i,
+];
 
 const SENSITIVE_KEY_PATTERNS: RegExp[] = [
   /pass(?:word)?/i,
   /secret/i,
-  /token/i,
+  /(?:^|[a-z0-9_-])(?:access[_-]?|refresh[_-]?|id[_-]?|session[_-]?|auth[_-]?|secret[_-]?)?tokens?(?:[_-]?(?:value|secret|hash))?$/i,
   /(?:^|_|-|auth(?:orization)?)code/i, // 'code', 'auth_code', 'authorizationCode'
   /private[_-]?key/i,
+  /secret[_-]?key/i,
   /api[_-]?key/i,
   /(?:^|_|-)pan(?:$|_|-)/i,
   /card[_-]?number/i,
