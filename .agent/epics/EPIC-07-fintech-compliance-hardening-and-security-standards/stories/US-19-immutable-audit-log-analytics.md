@@ -4,7 +4,7 @@ title: "Structured Security Audit Logging (12-Factor stdout NDJSON) & Azure Log 
 epic:
   id: EPIC-07
   name: "Fintech Compliance, Hardening & Security Standards"
-status: ready
+status: completed
 priority: P1
 bounded_context: security
 subdomain: audit-and-observability
@@ -20,7 +20,7 @@ traceability:
   guidelines:
     - .agent/guidelines/GUIDELINE-20-immutable-audit-log-analytics.md
   publications:
-    - .agent/publications/ARTICLE-13-fintech-compliance-hardening.md
+    - .agent/publications/ARTICLE-16-immutable-audit-log-analytics.md
 tags:
   - audit-logging
   - 12-factor
@@ -34,7 +34,7 @@ tags:
 # US-19: Structured Security Audit Logging (12-Factor stdout NDJSON) & Azure Log Analytics Ingestion
 
 **Epic:** [EPIC-07: Fintech Compliance, Hardening & Security Standards](../README.md)  
-**Status:** Ready  
+**Status:** Completed  
 **Domain / Bounded Context:** `security` / `audit-and-observability`  
 **Slice Type:** Audit Trail & Platform Ingestion Slice  
 **Regulatory Framework:** PCI-DSS v4.0 (Req 10.2 & 10.5) · SOC 2 Type II (CC7.2)  
@@ -120,7 +120,7 @@ Feature: Emisión Estructurada y Preservación de Bitácoras de Seguridad
 
 ## 4. Definición de Hecho (Definition of Done)
 
-- [ ] Adaptador `ConsoleSecurityAuditLogger` implementado con formato NDJSON bancario y sanitización de datos confidenciales.
-- [ ] Enriquecimiento automático con `tenantId`, `userId`, `requestId` y tags regulatorios.
-- [ ] Pruebas unitarias verificando la estructura de eventos y la ausencia de datos sensibles.
-- [ ] Módulo Terraform `modules/log_analytics` validado con retención de 365 días en `npm run test:infra`.
+- [x] Adaptador `ConsoleSecurityAuditLogger` implementado con formato NDJSON bancario y sanitización de datos confidenciales.
+- [x] Enriquecimiento automático con `tenantId`, `userId`, `requestId` y tags regulatorios.
+- [x] Pruebas unitarias verificando la estructura de eventos y la ausencia de datos sensibles.
+- [x] Módulo Terraform `modules/log_analytics` validado con retención de 365 días en `npm run test:infra`.
