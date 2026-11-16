@@ -12,6 +12,7 @@ export interface TraceContextProps {
   spanId: string;
   traceFlags?: string;
   requestId?: string;
+  correlationId?: string;
   parentSpanId?: string;
 }
 
@@ -31,6 +32,7 @@ export class TraceContext {
   public readonly spanId: string;
   public readonly traceFlags: string;
   public readonly requestId: string;
+  public readonly correlationId: string;
   public readonly parentSpanId?: string;
 
   private constructor(props: {
@@ -39,6 +41,7 @@ export class TraceContext {
     spanId: string;
     traceFlags: string;
     requestId: string;
+    correlationId: string;
     parentSpanId?: string;
   }) {
     this.version = props.version;
@@ -46,6 +49,7 @@ export class TraceContext {
     this.spanId = props.spanId;
     this.traceFlags = props.traceFlags;
     this.requestId = props.requestId;
+    this.correlationId = props.correlationId;
     this.parentSpanId = props.parentSpanId;
 
     Object.freeze(this);
@@ -59,6 +63,7 @@ export class TraceContext {
     const spanId = props.spanId ? props.spanId.toLowerCase().trim() : '';
     const traceFlags = (props.traceFlags || DEFAULT_FLAGS).toLowerCase().trim();
     const requestId = props.requestId ? props.requestId.trim() : randomUUID();
+    const correlationId = props.correlationId ? props.correlationId.trim() : requestId;
     const parentSpanId = props.parentSpanId ? props.parentSpanId.toLowerCase().trim() : undefined;
 
     TraceContext.validateTraceId(traceId);
@@ -75,6 +80,7 @@ export class TraceContext {
       spanId,
       traceFlags,
       requestId,
+      correlationId,
       parentSpanId,
     });
   }
@@ -82,10 +88,11 @@ export class TraceContext {
   /**
    * Generates a completely new root trace context with secure random identifiers.
    */
-  public static createNew(requestId?: string): TraceContext {
+  public static createNew(requestId?: string, correlationId?: string): TraceContext {
     const traceId = randomBytes(16).toString('hex');
     const spanId = randomBytes(8).toString('hex');
     const activeRequestId = requestId ? requestId.trim() : randomUUID();
+    const activeCorrelationId = correlationId ? correlationId.trim() : activeRequestId;
 
     return new TraceContext({
       version: DEFAULT_VERSION,
@@ -93,13 +100,14 @@ export class TraceContext {
       spanId,
       traceFlags: DEFAULT_FLAGS,
       requestId: activeRequestId,
+      correlationId: activeCorrelationId,
     });
   }
 
   /**
    * Parses an incoming W3C traceparent header and derives a child span for this service hop.
    */
-  public static fromW3C(traceparent: string, requestId?: string): TraceContext {
+  public static fromW3C(traceparent: string, requestId?: string, correlationId?: string): TraceContext {
     if (!traceparent || typeof traceparent !== 'string') {
       throw new InvalidTraceContextError('Traceparent header must be a non-empty string');
     }
@@ -132,6 +140,7 @@ export class TraceContext {
     // Microservice hop: derive a fresh unique spanId for this service while recording parentSpanId
     const localSpanId = randomBytes(8).toString('hex');
     const activeRequestId = requestId ? requestId.trim() : randomUUID();
+    const activeCorrelationId = correlationId ? correlationId.trim() : activeRequestId;
 
     return new TraceContext({
       version: DEFAULT_VERSION,
@@ -139,6 +148,7 @@ export class TraceContext {
       spanId: localSpanId,
       traceFlags,
       requestId: activeRequestId,
+      correlationId: activeCorrelationId,
       parentSpanId: incomingParentSpanId,
     });
   }
@@ -187,6 +197,7 @@ export class TraceContext {
       spanId: childSpanId,
       traceFlags: this.traceFlags,
       requestId: this.requestId,
+      correlationId: this.correlationId,
       parentSpanId: this.spanId,
     });
   }
@@ -205,6 +216,7 @@ export class TraceContext {
       this.spanId === other.spanId &&
       this.traceFlags === other.traceFlags &&
       this.requestId === other.requestId &&
+      this.correlationId === other.correlationId &&
       this.parentSpanId === other.parentSpanId
     );
   }

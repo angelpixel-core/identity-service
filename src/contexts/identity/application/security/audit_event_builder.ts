@@ -98,6 +98,7 @@ export function buildCanonicalAuditEvent(raw: SecurityAuditEvent): CanonicalSecu
     requestId: raw.trace?.requestId ?? activeTrace?.requestId,
     correlationId:
       raw.trace?.correlationId ??
+      activeTrace?.correlationId ??
       raw.trace?.requestId ??
       activeTrace?.requestId,
     traceId: raw.trace?.traceId ?? activeTrace?.traceId,

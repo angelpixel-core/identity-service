@@ -43,6 +43,13 @@ export class CorrelationContextStorage {
   }
 
   /**
+   * Retrieves the active correlation ID, or undefined if outside context.
+   */
+  public static getCorrelationId(): string | undefined {
+    return this.current()?.correlationId ?? this.current()?.requestId;
+  }
+
+  /**
    * Retrieves the active trace ID, or undefined if outside context.
    */
   public static getTraceId(): string | undefined {

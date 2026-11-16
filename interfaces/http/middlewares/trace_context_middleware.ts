@@ -24,37 +24,40 @@ export function traceContextMiddleware(req: Request, res: Response, next: NextFu
     undefined;
 
   const incomingRequestId =
-    (req.headers['x-request-id'] as string) ||
-    (req.headers['x-correlation-id'] as string) ||
-    undefined;
+    typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim().length > 0
+      ? req.headers['x-request-id'].trim()
+      : undefined;
 
-  const requestId =
-    typeof incomingRequestId === 'string' && incomingRequestId.trim().length > 0
-      ? incomingRequestId.trim()
-      : randomUUID();
+  const incomingCorrelationId =
+    typeof req.headers['x-correlation-id'] === 'string' && req.headers['x-correlation-id'].trim().length > 0
+      ? req.headers['x-correlation-id'].trim()
+      : undefined;
+
+  const requestId = incomingRequestId || randomUUID();
+  const correlationId = incomingCorrelationId || requestId;
 
   let traceContext: TraceContext;
 
   if (incomingTraceparent && TraceContext.isValidW3C(incomingTraceparent)) {
     try {
-      traceContext = TraceContext.fromW3C(incomingTraceparent, requestId);
+      traceContext = TraceContext.fromW3C(incomingTraceparent, requestId, correlationId);
     } catch {
       // Defensive fallback if parsing fails unexpectedly
-      traceContext = TraceContext.createNew(requestId);
+      traceContext = TraceContext.createNew(requestId, correlationId);
     }
   } else {
     // Generate fresh root trace context
-    traceContext = TraceContext.createNew(requestId);
+    traceContext = TraceContext.createNew(requestId, correlationId);
   }
 
   // Decorate Request
   req.traceContext = traceContext;
-  req.headers['x-request-id'] = traceContext.requestId;
-  req.headers['x-correlation-id'] = traceContext.requestId;
+  req.headers['x-request-id'] = requestId;
+  req.headers['x-correlation-id'] = correlationId;
 
   // Decorate Response Headers
-  res.setHeader('X-Request-ID', traceContext.requestId);
-  res.setHeader('X-Correlation-ID', traceContext.requestId);
+  res.setHeader('X-Request-ID', requestId);
+  res.setHeader('X-Correlation-ID', correlationId);
   res.setHeader('traceparent', traceContext.toTraceparent());
 
   // Execute downstream inside AsyncLocalStorage
