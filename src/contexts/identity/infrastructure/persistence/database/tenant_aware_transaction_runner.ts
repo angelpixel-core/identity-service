@@ -3,6 +3,7 @@ import { TenantId } from '../../../domain/value_objects/tenant_id/value';
 import { TenantSessionContext } from '../../../domain/value_objects/tenant_session_context/value';
 import { DatabaseClient } from '../repositories/user/repository';
 import { CorrelationContextStorage } from '../../../../shared/infrastructure/tracing/correlation_context_storage';
+import { MetricsPort } from '../../../../shared/domain/telemetry/metrics_port';
 
 /**
  * Contrato de cliente de conexión obtenido del pool que incluye método de liberación.
@@ -49,14 +50,15 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
     private readonly pool: ConnectionPool,
     private readonly logger: TransactionLogger = console,
     private readonly boundClient?: DatabaseClient,
-    private readonly boundSession?: TenantSessionContext
+    private readonly boundSession?: TenantSessionContext,
+    private readonly metricsPort?: MetricsPort
   ) {}
 
   /**
    * Crea una instancia del runner vinculada a un cliente transaccional y contexto de sesión específicos.
    */
   public withClient(client: DatabaseClient, session: TenantSessionContext): TenantAwareTransactionRunner {
-    return new TenantAwareTransactionRunner(this.pool, this.logger, client, session);
+    return new TenantAwareTransactionRunner(this.pool, this.logger, client, session, this.metricsPort);
   }
 
   /**
@@ -82,6 +84,7 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
     }
 
     // Flujo raíz: adquisición de conexión desde el pool y apertura de transacción BEGIN
+    const startTime = process.hrtime.bigint();
     const client = await this.pool.connect();
     let hasError = false;
 
@@ -139,6 +142,15 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
       hasError = true;
       throw rootError;
     } finally {
+      if (this.metricsPort) {
+        const diffNs = process.hrtime.bigint() - startTime;
+        const durationSeconds = Number(diffNs) / 1_000_000_000;
+        this.metricsPort.recordDatabaseQuery(durationSeconds, {
+          operation: 'transaction',
+          table: 'all',
+          tenantId: targetSession.getTenantIdValue(),
+        });
+      }
       TenantAwareTransactionRunner.activeSessions.delete(client);
       if (typeof client.release === 'function') {
         client.release(hasError);
@@ -154,6 +166,7 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
     targetSession: TenantSessionContext,
     operation: (client: DatabaseClient, session: TenantSessionContext) => Promise<T>
   ): Promise<T> {
+    const startTime = process.hrtime.bigint();
     const activeSession = this.boundSession || TenantAwareTransactionRunner.activeSessions.get(client);
 
     // Invariante de seguridad: si hay una sesión activa en la conexión, debe coincidir estrictamente
@@ -179,6 +192,16 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
         );
       }
       throw err;
+    } finally {
+      if (this.metricsPort) {
+        const diffNs = process.hrtime.bigint() - startTime;
+        const durationSeconds = Number(diffNs) / 1_000_000_000;
+        this.metricsPort.recordDatabaseQuery(durationSeconds, {
+          operation: 'savepoint',
+          table: 'all',
+          tenantId: targetSession.getTenantIdValue(),
+        });
+      }
     }
   }
 

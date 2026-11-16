@@ -5,6 +5,7 @@ import { CrossTenantContextViolationError } from '../../../../../src/contexts/id
 import { DatabaseClient } from '../../../../../src/contexts/identity/infrastructure/persistence/repositories/user/repository';
 import { TraceContext } from '../../../../../src/contexts/shared/domain/tracing/trace_context';
 import { CorrelationContextStorage } from '../../../../../src/contexts/shared/infrastructure/tracing/correlation_context_storage';
+import { InMemoryMetricsAdapter } from '../../../../../src/contexts/shared/domain/telemetry/in_memory_metrics_adapter';
 
 interface MockPoolClient extends DatabaseClient {
   query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }>;
@@ -484,6 +485,103 @@ describe('Unit: TenantAwareTransactionRunner', () => {
       expect(mockClient.query).not.toHaveBeenCalledWith(
         expect.stringContaining('app.request_id'),
         expect.anything()
+      );
+    });
+  });
+
+  describe('Telemetry: Database Latency Metrics (US-21)', () => {
+    it('should record transaction duration in db_query_duration_seconds when metricsPort is provided', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const recordSpy = jest.spyOn(metricsAdapter, 'recordDatabaseQuery');
+      const runner = new TenantAwareTransactionRunner(
+        mockPool as any,
+        console,
+        undefined,
+        undefined,
+        metricsAdapter
+      );
+
+      const result = await runner.runInTenantContext('tenant-metrics-org', async () => 'done');
+      expect(result).toBe('done');
+
+      expect(recordSpy).toHaveBeenCalledTimes(1);
+      expect(recordSpy).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.objectContaining({
+          operation: 'transaction',
+          table: 'all',
+          tenantId: 'tenant-metrics-org',
+        })
+      );
+
+      const metrics = await metricsAdapter.getMetrics();
+      expect(metrics).toContain('# HELP db_query_duration_seconds Database query or transaction duration.');
+      expect(metrics).toContain('db_query_duration_seconds_count{operation="transaction",table="all",tenant_id="tenant-metrics-org"} 1');
+    });
+
+    it('should record transaction metric even if the operation throws an error', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const recordSpy = jest.spyOn(metricsAdapter, 'recordDatabaseQuery');
+      const runner = new TenantAwareTransactionRunner(
+        mockPool as any,
+        console,
+        undefined,
+        undefined,
+        metricsAdapter
+      );
+
+      await expect(
+        runner.runInTenantContext('tenant-metrics-err', async () => {
+          throw new Error('Database operational failure');
+        })
+      ).rejects.toThrow('Database operational failure');
+
+      expect(recordSpy).toHaveBeenCalledTimes(1);
+      expect(recordSpy).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.objectContaining({
+          operation: 'transaction',
+          table: 'all',
+          tenantId: 'tenant-metrics-err',
+        })
+      );
+    });
+
+    it('should record savepoint duration when executing nested savepoint with metricsPort', async () => {
+      const metricsAdapter = new InMemoryMetricsAdapter();
+      const recordSpy = jest.spyOn(metricsAdapter, 'recordDatabaseQuery');
+      const baseRunner = new TenantAwareTransactionRunner(
+        mockPool as any,
+        console,
+        undefined,
+        undefined,
+        metricsAdapter
+      );
+
+      await baseRunner.runInTenantContext('tenant-savepoint-org', async (client, session) => {
+        const nestedRunner = baseRunner.withClient(client, session);
+        await nestedRunner.runInTenantContext('tenant-savepoint-org', async () => 'nested-ok');
+      });
+
+      // 1 from nested savepoint, 1 from root transaction
+      expect(recordSpy).toHaveBeenCalledTimes(2);
+      expect(recordSpy).toHaveBeenNthCalledWith(
+        1,
+        expect.any(Number),
+        expect.objectContaining({
+          operation: 'savepoint',
+          table: 'all',
+          tenantId: 'tenant-savepoint-org',
+        })
+      );
+      expect(recordSpy).toHaveBeenNthCalledWith(
+        2,
+        expect.any(Number),
+        expect.objectContaining({
+          operation: 'transaction',
+          table: 'all',
+          tenantId: 'tenant-savepoint-org',
+        })
       );
     });
   });
