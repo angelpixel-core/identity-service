@@ -272,7 +272,13 @@ export function createApp(deps?: AppDependencies): Express {
   if (!transactionRunner) {
     const activePool = getPool();
     if (activePool && process.env.NODE_ENV !== 'test') {
-      transactionRunner = new TenantAwareTransactionRunner(activePool);
+      transactionRunner = new TenantAwareTransactionRunner(
+        activePool,
+        console,
+        undefined,
+        undefined,
+        metricsAdapter
+      );
     }
   }
 
@@ -401,7 +407,8 @@ export function createApp(deps?: AppDependencies): Express {
     hashProvider,
     tokenProvider,
     auditLogger,
-    3600
+    3600,
+    metricsAdapter
   );
 
   const updateUserProfileHandler = new UpdateUserProfileCommandHandler(userRepository, cacheProvider);
@@ -427,7 +434,8 @@ export function createApp(deps?: AppDependencies): Express {
     asymmetricKeyProvider,
     auditLogger,
     900,
-    process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000'
+    process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000',
+    metricsAdapter
   );
   const rotateRefreshTokenHandler = new RotateRefreshTokenCommandHandler(
     refreshSessionRepository,
@@ -436,7 +444,8 @@ export function createApp(deps?: AppDependencies): Express {
     {
       issuerUrl: process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000',
       tokenLifetimeSeconds: 900,
-    }
+    },
+    metricsAdapter
   );
   const revokeSessionHandler = new RevokeSessionCommandHandler(refreshSessionRepository);
 

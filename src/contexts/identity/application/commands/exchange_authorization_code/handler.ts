@@ -7,6 +7,7 @@ import { ClientId } from '../../../domain/value_objects/client_id/value';
 import { OAuth2AuthenticationError } from '../../../domain/exceptions/oauth2/error';
 import { ExchangeAuthorizationCodeCommand } from './command';
 import { ExchangeAuthorizationCodeResultDto } from './dto';
+import { MetricsPort } from '../../../../shared/domain/telemetry/metrics_port';
 
 /**
  * Caso de Uso (Command Slice): ExchangeAuthorizationCodeCommandHandler
@@ -20,11 +21,13 @@ export class ExchangeAuthorizationCodeCommandHandler {
     private readonly asymmetricKeyProvider: AsymmetricKeyProviderPort,
     private readonly auditLogger?: SecurityAuditLoggerPort,
     private readonly tokenLifetimeSeconds: number = 900,
-    private readonly issuerUrl: string = 'http://localhost:4000'
+    private readonly issuerUrl: string = 'http://localhost:4000',
+    private readonly metricsPort?: MetricsPort
   ) {}
 
   public async execute(command: ExchangeAuthorizationCodeCommand): Promise<ExchangeAuthorizationCodeResultDto> {
-    if (command.grantType !== 'authorization_code') {
+    try {
+      if (command.grantType !== 'authorization_code') {
       throw new OAuth2AuthenticationError(
         'unsupported_grant_type',
         `Unsupported grant_type: "${command.grantType}". Expected "authorization_code".`,
@@ -182,6 +185,24 @@ export class ExchangeAuthorizationCodeCommandHandler {
       expiresIn: this.tokenLifetimeSeconds,
     });
 
+    this.metricsPort?.recordAuthAttempt({
+      method: 'authorization_code',
+      result: 'success',
+      tenantId: authCode.getTenantId().getValue(),
+    });
+
+    this.metricsPort?.recordTokensIssued({
+      grantType: 'authorization_code',
+      tokenType: 'access',
+      tenantId: authCode.getTenantId().getValue(),
+    });
+
+    this.metricsPort?.recordTokensIssued({
+      grantType: 'authorization_code',
+      tokenType: 'id',
+      tenantId: authCode.getTenantId().getValue(),
+    });
+
     return {
       access_token: accessToken,
       token_type: 'Bearer',
@@ -189,5 +210,12 @@ export class ExchangeAuthorizationCodeCommandHandler {
       id_token: idToken,
       scope: authCode.getScope(),
     };
+    } catch (err: unknown) {
+      this.metricsPort?.recordAuthAttempt({
+        method: 'authorization_code',
+        result: 'failure',
+      });
+      throw err;
+    }
   }
 }

@@ -5,6 +5,7 @@ import { AsymmetricKeyProviderPort } from '../../../domain/ports/crypto/asymmetr
 import { SecurityAuditLoggerPort } from '../../ports/security/audit_logger';
 import { RefreshSession } from '../../../domain/entities/refresh_session/aggregate';
 import { OAuth2AuthenticationError } from '../../../domain/exceptions/oauth2/error';
+import { MetricsPort } from '../../../../shared/domain/telemetry/metrics_port';
 
 export interface RotateRefreshTokenHandlerOptions {
   readonly issuerUrl?: string;
@@ -23,14 +24,16 @@ export class RotateRefreshTokenCommandHandler {
     private readonly sessionRepository: RefreshSessionRepositoryPort,
     private readonly asymmetricKeyProvider: AsymmetricKeyProviderPort,
     private readonly auditLogger: SecurityAuditLoggerPort,
-    options: RotateRefreshTokenHandlerOptions = {}
+    options: RotateRefreshTokenHandlerOptions = {},
+    private readonly metricsPort?: MetricsPort
   ) {
     this.issuerUrl = options.issuerUrl || 'https://auth.angelpixel.local';
     this.tokenLifetimeSeconds = options.tokenLifetimeSeconds || 3600;
   }
 
   public async execute(command: RotateRefreshTokenCommand): Promise<RotateRefreshTokenResultDto> {
-    if (!command.refreshToken || typeof command.refreshToken !== 'string' || command.refreshToken.trim().length === 0) {
+    try {
+      if (!command.refreshToken || typeof command.refreshToken !== 'string' || command.refreshToken.trim().length === 0) {
       throw new OAuth2AuthenticationError('invalid_request', 'Missing or empty refresh_token', 400);
     }
 
@@ -118,6 +121,24 @@ export class RotateRefreshTokenCommandHandler {
       expiresIn: this.tokenLifetimeSeconds,
     });
 
+    this.metricsPort?.recordAuthAttempt({
+      method: 'refresh_token',
+      result: 'success',
+      tenantId: session.getTenantId().getValue(),
+    });
+
+    this.metricsPort?.recordTokensIssued({
+      grantType: 'refresh_token',
+      tokenType: 'access',
+      tenantId: session.getTenantId().getValue(),
+    });
+
+    this.metricsPort?.recordTokensIssued({
+      grantType: 'refresh_token',
+      tokenType: 'refresh',
+      tenantId: session.getTenantId().getValue(),
+    });
+
     return {
       access_token: accessToken,
       token_type: 'Bearer',
@@ -128,6 +149,13 @@ export class RotateRefreshTokenCommandHandler {
       user_id: session.getUserId(),
       tenant_id: session.getTenantId().getValue(),
     };
+    } catch (err: unknown) {
+      this.metricsPort?.recordAuthAttempt({
+        method: 'refresh_token',
+        result: 'failure',
+      });
+      throw err;
+    }
   }
 }
 
