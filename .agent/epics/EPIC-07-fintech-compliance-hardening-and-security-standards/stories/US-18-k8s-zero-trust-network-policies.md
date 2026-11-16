@@ -4,7 +4,7 @@ title: "Kubernetes Zero-Trust NetworkPolicies & Micro-Segmentation in Helm"
 epic:
   id: EPIC-07
   name: "Fintech Compliance, Hardening & Security Standards"
-status: ready
+status: completed
 priority: P1
 bounded_context: infrastructure
 subdomain: network-security
@@ -14,13 +14,14 @@ regulatory_standards:
   - "SOC 2 Type II CC6.6 (Logical Perimeter Segmentation & Boundary Protection)"
 timestamps:
   created_at: "2026-11-13T13:30:00-03:00"
+  completed_at: "2026-11-16T00:00:00-03:00"
 traceability:
   adrs:
     - docs/adr/0007-cloud-infrastructure-topology.md
   guidelines:
     - .agent/guidelines/GUIDELINE-19-k8s-zero-trust-network-policies.md
   publications:
-    - .agent/publications/ARTICLE-13-fintech-compliance-hardening.md
+    - .agent/publications/ARTICLE-15-k8s-zero-trust-network-policies.md
 tags:
   - network-policies
   - zero-trust
@@ -99,7 +100,7 @@ Feature: Microsegmentación Zero-Trust con Kubernetes NetworkPolicies
 
 ## 4. Definición de Hecho (Definition of Done)
 
-- [ ] Plantilla `templates/networkpolicy.yaml` implementada con políticas `Default-Deny` e Ingress/Egress whitelists.
-- [ ] Variables y esquema `networkPolicy` incorporados en `values.yaml` y `values.schema.json`.
-- [ ] Suite `scripts/test-helm-chart.sh` extendida para auditar el manifiesto `NetworkPolicy` renderizado.
-- [ ] Verificación de conectividad permitida y bloqueo de tráfico no autorizado en pruebas locales.
+- [x] Plantilla `templates/networkpolicy.yaml` implementada con políticas `Default-Deny` e Ingress/Egress whitelists.
+- [x] Variables y esquema `networkPolicy` incorporados en `values.yaml` y `values.schema.json`.
+- [x] Suite `scripts/test-helm-chart.sh` extendida para auditar el manifiesto `NetworkPolicy` renderizado.
+- [x] Verificación de conectividad permitida y bloqueo de tráfico no autorizado en pruebas locales.
