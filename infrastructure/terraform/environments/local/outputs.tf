@@ -59,6 +59,11 @@ output "postgres_ssl_min_protocol_version" {
   value       = module.postgres.ssl_min_protocol_version
 }
 
+output "log_analytics_retention_in_days" {
+  description = "Data retention period in days configured for the Log Analytics workspace"
+  value       = module.log_analytics.retention_in_days
+}
+
 output "postgres_customer_managed_key_id" {
   description = "Customer-managed key ID used for PostgreSQL encryption at rest"
   value       = module.postgres.customer_managed_key_id

@@ -20,8 +20,11 @@ module "log_analytics" {
   workspace_name      = "${var.prefix}-law"
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
-  retention_in_days   = 30
-  tags                = local.common_tags
+  retention_in_days   = 365
+  tags = merge(local.common_tags, {
+    Compliance = "PCI-DSS-10.5/SOC2-CC7.2"
+    Retention  = "Immutable-365d"
+  })
 }
 
 module "storage" {

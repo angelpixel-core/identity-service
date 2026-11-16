@@ -13,3 +13,8 @@ output "primary_shared_key" {
   value       = azurerm_log_analytics_workspace.this.primary_shared_key
   sensitive   = true
 }
+
+output "retention_in_days" {
+  description = "The data retention period configured for the Log Analytics workspace in days"
+  value       = azurerm_log_analytics_workspace.this.retention_in_days
+}

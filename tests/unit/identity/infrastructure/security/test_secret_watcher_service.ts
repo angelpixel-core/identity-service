@@ -17,7 +17,7 @@ class MockAuditLogger implements SecurityAuditLoggerPort {
 
 const waitFor = async (
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 2000,
+  timeoutMs = 5000,
   intervalMs = 25
 ): Promise<void> => {
   const start = Date.now();

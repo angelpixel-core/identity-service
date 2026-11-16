@@ -46,7 +46,28 @@ export function createAuthMiddleware(
         if (auditLogger) {
           await auditLogger.logEvent({
             eventType: 'cross_tenant_violation',
+            severity: 'ALERT',
+            status: 'DENIED',
             timestamp: new Date(),
+            tenantId: claims.tenantId,
+            actor: {
+              userId: claims.userId,
+              type: 'USER',
+              ip: req.ip,
+            },
+            trace: {
+              requestId:
+                (req.headers && (req.headers['x-request-id'] as string)) ||
+                (req as any).id,
+              correlationId:
+                req.headers && (req.headers['x-correlation-id'] as string),
+            },
+            compliance: {
+              pciRequirement: '10.2.5',
+              soc2Criteria: 'CC7.2',
+              retentionCategory: 'AUDIT_IMMUTABLE',
+            },
+            action: 'cross_tenant_access_denied',
             ip: req.ip,
             reason: 'CROSS_TENANT_VIOLATION',
             metadata: {

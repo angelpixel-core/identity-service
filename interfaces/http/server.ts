@@ -27,6 +27,7 @@ import { CacheProviderPort } from '../../src/contexts/identity/application/ports
 import { BcryptAdapter } from '../../src/contexts/identity/infrastructure/security/bcrypt_adapter';
 import { JwtTokenAdapter } from '../../src/contexts/identity/infrastructure/security/jwt_adapter';
 import { InMemorySecurityAuditLogger } from '../../src/contexts/identity/infrastructure/logging/memory_security_audit_logger';
+import { ConsoleSecurityAuditLogger } from '../../src/contexts/identity/infrastructure/logging/console_security_audit_logger';
 import { MemoryCacheAdapter } from '../../src/contexts/identity/infrastructure/cache/memory_cache_adapter';
 import { PostgresUserRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/user/repository';
 import { User } from '../../src/contexts/identity/domain/entities/user/aggregate';
@@ -169,7 +170,11 @@ export function createApp(deps?: AppDependencies): Express {
     next();
   });
 
-  const auditLogger = deps?.auditLogger ?? new InMemorySecurityAuditLogger();
+  const auditLogger =
+    deps?.auditLogger ??
+    (process.env.NODE_ENV === 'test' && !process.env.FORCE_CONSOLE_AUDIT_LOGS
+      ? new InMemorySecurityAuditLogger()
+      : new ConsoleSecurityAuditLogger());
   app.locals.auditLogger = auditLogger;
 
   // Detección y configuración del observador de secretos CSI (US-16)

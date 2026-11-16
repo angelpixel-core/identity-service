@@ -14,9 +14,14 @@ variable "resource_group_name" {
 }
 
 variable "retention_in_days" {
-  description = "Data retention period in days"
+  description = "Data retention period in days (Mandatory 365 days for PCI-DSS v4.0 Req 10.5 / SOC 2 CC7.2 audit log compliance)"
   type        = number
-  default     = 30
+  default     = 365
+
+  validation {
+    condition     = var.retention_in_days >= 365
+    error_message = "Fintech Compliance Violation: retention_in_days must be at least 365 days to satisfy PCI-DSS v4.0 Req 10.5 and SOC 2 CC7.2 audit trail immutability requirements."
+  }
 }
 
 variable "sku" {
