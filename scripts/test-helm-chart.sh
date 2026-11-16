@@ -43,7 +43,7 @@ echo -e "${GREEN}✓ Helm lint (values-local.yaml) aprobado con 0 errores y 0 ad
 echo -e "\n${BLUE}=== [3/6] Renderizando Plantillas Kubernetes (helm template) ===${NC}"
 RENDERED_LOCAL=$(run_helm template identity-service "${CHART_REL_PATH}" -f "${CHART_REL_PATH}/values-local.yaml")
 
-for kind in "ServiceAccount" "SecretProviderClass" "Service" "Deployment" "PodDisruptionBudget" "Ingress"; do
+for kind in "ServiceAccount" "SecretProviderClass" "Service" "Deployment" "PodDisruptionBudget" "Ingress" "NetworkPolicy"; do
   if echo "${RENDERED_LOCAL}" | grep -q "^kind: ${kind}$"; then
     echo -e "${GREEN}✓ Manifiesto ${kind} renderizado correctamente.${NC}"
   else
@@ -153,11 +153,48 @@ if (!ing || ing.spec.ingressClassName !== "nginx") {
   throw new Error("Invalid Ingress manifest");
 }
 
+const netPols = docs.filter((d) => d.kind === "NetworkPolicy");
+if (netPols.length !== 2) {
+  throw new Error(`Expected 2 NetworkPolicy manifests, got ${netPols.length}`);
+}
+
+const defaultDeny = netPols.find((p) => p.metadata.name === "identity-service-default-deny-all");
+if (!defaultDeny) throw new Error("Missing identity-service-default-deny-all NetworkPolicy");
+if (Object.keys(defaultDeny.spec.podSelector).length !== 0) {
+  throw new Error("default-deny-all podSelector must be empty {}");
+}
+if (!defaultDeny.spec.policyTypes.includes("Ingress") || !defaultDeny.spec.policyTypes.includes("Egress")) {
+  throw new Error("default-deny-all must enforce both Ingress and Egress policyTypes");
+}
+
+const appNetPol = netPols.find((p) => p.metadata.name === "identity-service");
+if (!appNetPol) throw new Error("Missing identity-service NetworkPolicy");
+if (appNetPol.spec.podSelector.matchLabels["app.kubernetes.io/name"] !== "identity-service") {
+  throw new Error("Invalid podSelector on identity-service NetworkPolicy");
+}
+
+const ingRule = appNetPol.spec.ingress[0];
+if (
+  ingRule.from[0].namespaceSelector.matchLabels["app.kubernetes.io/name"] !== "ingress-nginx" ||
+  ingRule.from[0].podSelector.matchLabels["app.kubernetes.io/name"] !== "ingress-nginx" ||
+  ingRule.ports[0].port !== 4000
+) {
+  throw new Error("Invalid Ingress whitelist rule on NetworkPolicy");
+}
+
+const egressPorts = appNetPol.spec.egress.flatMap((e) => (e.ports || []).map((p) => p.port));
+for (const expectedPort of [53, 5432, 6379, 443, 4577, 4578]) {
+  if (!egressPorts.includes(expectedPort)) {
+    throw new Error(`Missing expected egress port ${expectedPort} in NetworkPolicy`);
+  }
+}
+
 console.log("✓ Invariantes de Deployment (RollingUpdate 25%/0, 2 réplicas, recursos 100m/128Mi -> 500m/512Mi) verificadas.");
 console.log("✓ Contexto de seguridad no-root (runAsNonRoot: true, allowPrivilegeEscalation: false, drop: ALL) verificado.");
 console.log("✓ Probes /health/live y /health/ready verificadas.");
 console.log("✓ SecretProviderClass (Azure Key Vault CSI: id-local-kv, rotationPollInterval: 2m) y proyección de DATABASE_URL, JWT_SECRET y REDIS_URL verificados.");
 console.log("✓ Invariantes de SSL/TLS (DATABASE_SSL_ENABLED: true, DATABASE_SSL_MIN_VERSION: TLSv1.2, DATABASE_SSL_CA_PATH: /mnt/secrets-store/ca.crt) verificadas.");
+console.log("✓ NetworkPolicies Zero-Trust (default-deny-all, Ingress :4000 desde ingress-nginx y Egress :53, :5432, :6379, :443, :4577/:4578) verificadas.");
 console.log("✓ PodDisruptionBudget (minAvailable: 1), Service (ClusterIP:4000) e Ingress (nginx TLS) verificados.");
 '
 
@@ -204,7 +241,9 @@ assert_lint_failure "livenessProbe.httpGet.path sin barra inicial (pattern ^/)" 
 assert_lint_failure "keyVaultCSI.rotationPollInterval con formato inválido (sin unidad m/s/h)" "rotationPollInterval.*pattern" --set keyVaultCSI.rotationPollInterval=invalid
 assert_lint_failure "database.ssl.minVersion no permitido (debe ser TLSv1.2 o TLSv1.3)" "database/ssl/minVersion.*value must be one of" --set database.ssl.minVersion=TLSv1.0
 assert_lint_failure "database.ssl.enabled tipo no booleano" "database/ssl/enabled.*got string, want boolean" --set database.ssl.enabled=invalid
+assert_lint_failure "networkPolicy.enabled tipo no booleano" "networkPolicy/enabled.*got string, want boolean" --set networkPolicy.enabled=invalid
+assert_lint_failure "networkPolicy.ingress.port fuera de rango IANA (> 65535)" "networkPolicy/ingress/port.*maximum" --set networkPolicy.ingress.port=70000
 
 echo -e "\n${GREEN}================================================================${NC}"
-echo -e "${GREEN}✓ Todas las pruebas de empaquetado Helm (US-14, US-16 & US-17) pasaron con éxito.${NC}"
+echo -e "${GREEN}✓ Todas las pruebas de empaquetado Helm (US-14, US-16, US-17 & US-18) pasaron con éxito.${NC}"
 echo -e "${GREEN}================================================================${NC}"

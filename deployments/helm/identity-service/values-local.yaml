@@ -66,3 +66,39 @@ database:
     enabled: true
     minVersion: "TLSv1.2"
     caPath: "/mnt/secrets-store/ca.crt"
+
+# Kubernetes NetworkPolicies for Zero-Trust micro-segmentation (US-18)
+networkPolicy:
+  enabled: true
+  defaultDeny:
+    enabled: true
+  ingress:
+    fromIngressController: true
+    controllerNamespaceSelector:
+      app.kubernetes.io/name: ingress-nginx
+    controllerPodSelector:
+      app.kubernetes.io/name: ingress-nginx
+    port: 4000
+  egress:
+    dns:
+      enabled: true
+      port: 53
+      namespace: kube-system
+      selector:
+        k8s-app: kube-dns
+    postgres:
+      enabled: true
+      port: 5432
+    redis:
+      enabled: true
+      port: 6379
+    azureHTTPS:
+      enabled: true
+      port: 443
+    customEgress:
+      # Ports for local Floci Azure ARM emulator (4577: Resource Manager, 4578: Key Vault)
+      - ports:
+          - port: 4577
+            protocol: TCP
+          - port: 4578
+            protocol: TCP

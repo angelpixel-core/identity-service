@@ -1,0 +1,75 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- if .Values.networkPolicy.defaultDeny.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "identity-service.fullname" . }}-default-deny-all
+  labels:
+    {{- include "identity-service.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "identity-service.fullname" . }}
+  labels:
+    {{- include "identity-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "identity-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  {{- if .Values.networkPolicy.ingress.fromIngressController }}
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingress.controllerNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingress.controllerPodSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.ingress.port | default .Values.service.targetPort }}
+  {{- end }}
+  egress:
+    {{- if .Values.networkPolicy.egress.dns.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.egress.dns.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.egress.dns.selector | nindent 14 }}
+      ports:
+        - protocol: UDP
+          port: {{ .Values.networkPolicy.egress.dns.port }}
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.egress.dns.port }}
+    {{- end }}
+    {{- if .Values.networkPolicy.egress.postgres.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.egress.postgres.port }}
+    {{- end }}
+    {{- if .Values.networkPolicy.egress.redis.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.egress.redis.port }}
+    {{- end }}
+    {{- if .Values.networkPolicy.egress.azureHTTPS.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.egress.azureHTTPS.port }}
+    {{- end }}
+    {{- with .Values.networkPolicy.egress.customEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
