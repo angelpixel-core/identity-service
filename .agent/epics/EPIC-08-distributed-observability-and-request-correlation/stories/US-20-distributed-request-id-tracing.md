@@ -4,7 +4,7 @@ title: "Distributed Request-ID & W3C Traceparent Tracing"
 epic:
   id: EPIC-08
   name: "Distributed Observability & Request Correlation"
-status: ready
+status: completed
 priority: P1
 bounded_context: observability
 subdomain: request-tracing
@@ -15,13 +15,16 @@ regulatory_standards:
   - "OpenTelemetry Semantic Conventions"
 timestamps:
   created_at: "2026-11-16T04:40:00-03:00"
+  closed_at: "2026-11-16T14:30:00-03:00"
 traceability:
   adrs:
     - docs/adr/0007-cloud-infrastructure-topology.md
   guidelines:
-    - .agent/guidelines/GUIDELINE-21-distributed-request-id-tracing.md
+    - .agent/guidelines/GUIDELINE-21-distributed-request-tracing.md
   publications:
-    - .agent/publications/ARTICLE-17-distributed-request-id-tracing.md
+    - .agent/publications/ARTICLE-17-distributed-request-tracing.md
+  pull_requests:
+    - https://github.com/angelpixel-core/identity-service/pull/11
 tags:
   - distributed-tracing
   - w3c-trace-context
@@ -34,7 +37,7 @@ tags:
 # US-20: Distributed Request-ID & W3C Traceparent Tracing
 
 **Epic:** [EPIC-08: Distributed Observability & Request Correlation](../README.md)  
-**Status:** Ready  
+**Status:** Completed  
 **Domain / Bounded Context:** `observability` / `request-tracing`  
 **Slice Type:** Distributed Tracing & Correlation Slice  
 **Regulatory Framework:** W3C Trace Context · OpenTelemetry · RFC 7230/7231  
@@ -108,10 +111,25 @@ Feature: Trazabilidad Distribuida y Propagación de Contexto W3C Traceparent
 
 ## 4. Definición de Hecho (Definition of Done)
 
-- [ ] Value Object `TraceContext` implementado en `src/contexts/shared/domain/tracing/` con validación W3C estricta.
-- [ ] Adaptador `CorrelationContextStorage` implementado con Node.js `AsyncLocalStorage`.
-- [ ] `TraceContextMiddleware` integrado en `interfaces/http/server.ts` reemplazando el middleware inline anterior.
-- [ ] `TenantAwareTransactionRunner` enriquecido con `SET LOCAL app.traceparent` y `app.request_id`.
-- [ ] Pruebas unitarias para `TraceContext` y `TraceContextMiddleware` pasando al 100%.
-- [ ] Pruebas de integración verificando la propagación a PostgreSQL y eventos de auditoría.
-- [ ] Escenarios BDD Cucumber certificados y en verde.
+- [x] Value Object `TraceContext` implementado en `src/contexts/shared/domain/tracing/` con validación W3C estricta.
+- [x] Adaptador `CorrelationContextStorage` implementado con Node.js `AsyncLocalStorage`.
+- [x] `TraceContextMiddleware` integrado en `interfaces/http/server.ts` reemplazando el middleware inline anterior.
+- [x] `TenantAwareTransactionRunner` enriquecido con `SET LOCAL app.traceparent` y `app.request_id`.
+- [x] Pruebas unitarias para `TraceContext` y `TraceContextMiddleware` pasando al 100%.
+- [x] Pruebas de integración verificando la propagación a PostgreSQL y eventos de auditoría.
+- [x] Escenarios BDD Cucumber certificados y en verde (4/4 escenarios en `distributed_request_tracing.feature`).
+- [x] Helm Chart actualizado (`deployments/helm/identity-service/values.yaml`) con snippets de proxy NGINX Ingress.
+- [x] Guía canónica de ingeniería elaborada en `.agent/guidelines/GUIDELINE-21-distributed-request-tracing.md`.
+- [x] Publicación técnica especializada redactada en `.agent/publications/ARTICLE-17-distributed-request-tracing.md`.
+- [x] Integración Trunk-Based completada vía Pull Request #11 (`commit 0d5c086`) con cero regresiones en los 623 tests de la plataforma.
+
+---
+
+## 5. Cierre Formal y Pull Request
+
+* **Pull Request:** [#11 - feat(observability): distributed request-id & W3C traceparent tracing (US-20)](https://github.com/angelpixel-core/identity-service/pull/11)
+* **Commit de Integración (Squash & Merge a `main`):** `0d5c086`
+* **Commit de Sincronización a `development`:** `a84c941`
+* **Rama de Trabajo Preservada:** `feat/us-20-distributed-request-id-tracing`
+* **Fecha de Cierre:** 16 de Noviembre de 2026
+* **Certificación Global:** 623/623 tests aprobados (444 unitarios, 136 integración, 43 aceptación BDD), Helm lint/template 6/6 etapas, Docker 161MB.
