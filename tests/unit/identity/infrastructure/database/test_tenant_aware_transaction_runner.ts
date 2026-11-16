@@ -3,6 +3,8 @@ import { TenantId } from '../../../../../src/contexts/identity/domain/value_obje
 import { TenantSessionContext } from '../../../../../src/contexts/identity/domain/value_objects/tenant_session_context/value';
 import { CrossTenantContextViolationError } from '../../../../../src/contexts/identity/domain/exceptions/security/error';
 import { DatabaseClient } from '../../../../../src/contexts/identity/infrastructure/persistence/repositories/user/repository';
+import { TraceContext } from '../../../../../src/contexts/shared/domain/tracing/trace_context';
+import { CorrelationContextStorage } from '../../../../../src/contexts/shared/infrastructure/tracing/correlation_context_storage';
 
 interface MockPoolClient extends DatabaseClient {
   query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }>;
@@ -423,6 +425,66 @@ describe('Unit: TenantAwareTransactionRunner', () => {
       // No pool connect or client release in bound runner
       expect(mockPool.connect).not.toHaveBeenCalled();
       expect(mockClient.release).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Distributed Tracing PostgreSQL Session Propagation (US-20)', () => {
+    it('should inject app.traceparent and app.request_id via set_config when running within CorrelationContextStorage', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+      const sampleTraceId = '4bf92f3577b34da6a3ce929d0e0e4736';
+      const sampleSpanId = '00f067aa0ba902b7';
+      const sampleRequestId = 'req-pg-trace-789';
+
+      const traceContext = TraceContext.create({
+        traceId: sampleTraceId,
+        spanId: sampleSpanId,
+        traceFlags: '01',
+        requestId: sampleRequestId,
+      });
+
+      await CorrelationContextStorage.run(traceContext, async () => {
+        const result = await runner.runInTenantContext('tenant-trace-corp', async () => 'tx-traced');
+        expect(result).toBe('tx-traced');
+      });
+
+      // Verify app.current_tenant_id was set
+      expect(mockClient.query).toHaveBeenCalledWith(
+        "SELECT set_config('app.current_tenant_id', $1, true)",
+        ['tenant-trace-corp', true]
+      );
+
+      // Verify app.traceparent was set
+      expect(mockClient.query).toHaveBeenCalledWith(
+        "SELECT set_config('app.traceparent', $1, true)",
+        [traceContext.toTraceparent(), true]
+      );
+
+      // Verify app.request_id was set
+      expect(mockClient.query).toHaveBeenCalledWith(
+        "SELECT set_config('app.request_id', $1, true)",
+        [sampleRequestId, true]
+      );
+    });
+
+    it('should NOT inject app.traceparent or app.request_id when running outside CorrelationContextStorage', async () => {
+      const runner = new TenantAwareTransactionRunner(mockPool as any);
+
+      await runner.runInTenantContext('tenant-untraced-corp', async () => 'tx-untraced');
+
+      expect(mockClient.query).toHaveBeenCalledWith(
+        "SELECT set_config('app.current_tenant_id', $1, true)",
+        ['tenant-untraced-corp', true]
+      );
+
+      expect(mockClient.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('app.traceparent'),
+        expect.anything()
+      );
+
+      expect(mockClient.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('app.request_id'),
+        expect.anything()
+      );
     });
   });
 });

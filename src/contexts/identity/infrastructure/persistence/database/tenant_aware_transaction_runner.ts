@@ -2,6 +2,7 @@ import { TenantTransactionRunnerPort } from '../../../application/ports/database
 import { TenantId } from '../../../domain/value_objects/tenant_id/value';
 import { TenantSessionContext } from '../../../domain/value_objects/tenant_session_context/value';
 import { DatabaseClient } from '../repositories/user/repository';
+import { CorrelationContextStorage } from '../../../../shared/infrastructure/tracing/correlation_context_storage';
 
 /**
  * Contrato de cliente de conexión obtenido del pool que incluye método de liberación.
@@ -98,6 +99,18 @@ export class TenantAwareTransactionRunner implements TenantTransactionRunnerPort
           true,
         ]);
         TenantAwareTransactionRunner.activeSessions.set(client, targetSession);
+
+        const activeTrace = CorrelationContextStorage.current();
+        if (activeTrace) {
+          await client.query("SELECT set_config('app.traceparent', $1, true)", [
+            activeTrace.toTraceparent(),
+            true,
+          ]);
+          await client.query("SELECT set_config('app.request_id', $1, true)", [
+            activeTrace.requestId,
+            true,
+          ]);
+        }
       } catch (err) {
         hasError = true;
         await this.handleRollback(client, err, 'set_config');
