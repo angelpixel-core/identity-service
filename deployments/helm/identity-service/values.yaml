@@ -71,7 +71,9 @@ ingress:
       proxy_set_header X-Forwarded-Proto https;
       proxy_set_header X-Forwarded-Host $host;
       proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Request-ID $request_id;
+      proxy_set_header X-Request-ID $http_x_request_id;
+      proxy_set_header X-Correlation-ID $http_x_correlation_id;
+      proxy_set_header traceparent $http_traceparent;
   hosts:
     - host: auth.angelpixel.local
       paths:

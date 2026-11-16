@@ -5,7 +5,6 @@ if (process.env.NODE_ENV !== 'test') {
 
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import yaml from 'yaml';
@@ -33,6 +32,7 @@ import { PostgresUserRepository } from '../../src/contexts/identity/infrastructu
 import { User } from '../../src/contexts/identity/domain/entities/user/aggregate';
 import { Email } from '../../src/contexts/identity/domain/value_objects/email/value';
 import { TenantId } from '../../src/contexts/identity/domain/value_objects/tenant_id/value';
+import { traceContextMiddleware } from './middlewares/trace_context_middleware';
 import { tenantContextMiddleware } from './middlewares/tenant_context_middleware';
 import { createAuthMiddleware } from './middlewares/auth_middleware';
 import { createCrossTenantGuard } from './middlewares/security_audit_logger';
@@ -139,18 +139,8 @@ export function createApp(deps?: AppDependencies): Express {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Middleware de correlación distribuida de peticiones (X-Request-ID)
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const incomingId = req.headers['x-request-id'];
-    const requestId =
-      typeof incomingId === 'string' && incomingId.trim().length > 0
-        ? incomingId.trim()
-        : crypto.randomUUID();
-
-    req.headers['x-request-id'] = requestId;
-    res.setHeader('X-Request-ID', requestId);
-    next();
-  });
+  // Middleware de correlación distribuida de peticiones y trazabilidad W3C (US-20)
+  app.use(traceContextMiddleware);
 
   // Middleware ligero para parsing de cookies sin dependencias externas
   app.use((req: Request, _res: Response, next: NextFunction) => {

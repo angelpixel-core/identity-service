@@ -1,6 +1,8 @@
 import { buildCanonicalAuditEvent } from '../../../../../src/contexts/identity/application/security/audit_event_builder';
 import { SecurityAuditEvent } from '../../../../../src/contexts/identity/application/ports/security/audit_logger';
 import { REDACTED_VALUE } from '../../../../../src/contexts/identity/domain/security/audit_sanitizer';
+import { TraceContext } from '../../../../../src/contexts/shared/domain/tracing/trace_context';
+import { CorrelationContextStorage } from '../../../../../src/contexts/shared/infrastructure/tracing/correlation_context_storage';
 
 describe('Application Security: AuditEventBuilder (US-19 Phase 1 Component 3)', () => {
   const fixedDate = new Date('2026-11-16T12:30:00.000Z');
@@ -195,6 +197,78 @@ describe('Application Security: AuditEventBuilder (US-19 Phase 1 Component 3)', 
       expect(() => {
         (canonical as any).severity = 'CRITICAL';
       }).toThrow();
+    });
+  });
+
+  describe('Distributed Tracing Context Enrichment (US-20)', () => {
+    const sampleTraceId = '4bf92f3577b34da6a3ce929d0e0e4736';
+    const sampleSpanId = '00f067aa0ba902b7';
+    const sampleRequestId = 'req-trace-enrich-456';
+
+    it('should automatically infer traceId, spanId, traceparent, and requestId from CorrelationContextStorage', () => {
+      const traceContext = TraceContext.create({
+        traceId: sampleTraceId,
+        spanId: sampleSpanId,
+        traceFlags: '01',
+        requestId: sampleRequestId,
+      });
+
+      CorrelationContextStorage.run(traceContext, () => {
+        const raw: SecurityAuditEvent = {
+          eventType: 'AUTH_LOGIN_SUCCESS',
+          timestamp: fixedDate,
+          details: { action: 'test' },
+        };
+
+        const canonical = buildCanonicalAuditEvent(raw);
+
+        expect(canonical.trace.requestId).toBe(sampleRequestId);
+        expect(canonical.trace.correlationId).toBe(sampleRequestId);
+        expect(canonical.trace.traceId).toBe(sampleTraceId);
+        expect(canonical.trace.spanId).toBe(sampleSpanId);
+        expect(canonical.trace.traceparent).toBe(traceContext.toTraceparent());
+      });
+    });
+
+    it('should respect explicitly provided trace fields over CorrelationContextStorage defaults', () => {
+      const traceContext = TraceContext.createNew('req-from-storage');
+
+      CorrelationContextStorage.run(traceContext, () => {
+        const raw: SecurityAuditEvent = {
+          eventType: 'AUTH_LOGIN_SUCCESS',
+          timestamp: fixedDate,
+          trace: {
+            requestId: 'explicit-req-id',
+            correlationId: 'explicit-corr-id',
+            traceId: sampleTraceId,
+            spanId: sampleSpanId,
+            traceparent: `00-${sampleTraceId}-${sampleSpanId}-01`,
+          },
+        };
+
+        const canonical = buildCanonicalAuditEvent(raw);
+
+        expect(canonical.trace.requestId).toBe('explicit-req-id');
+        expect(canonical.trace.correlationId).toBe('explicit-corr-id');
+        expect(canonical.trace.traceId).toBe(sampleTraceId);
+        expect(canonical.trace.spanId).toBe(sampleSpanId);
+        expect(canonical.trace.traceparent).toBe(`00-${sampleTraceId}-${sampleSpanId}-01`);
+      });
+    });
+
+    it('should leave trace fields undefined when running outside CorrelationContextStorage without explicit trace', () => {
+      const raw: SecurityAuditEvent = {
+        eventType: 'AUTH_LOGIN_SUCCESS',
+        timestamp: fixedDate,
+      };
+
+      const canonical = buildCanonicalAuditEvent(raw);
+
+      expect(canonical.trace.requestId).toBeUndefined();
+      expect(canonical.trace.correlationId).toBeUndefined();
+      expect(canonical.trace.traceId).toBeUndefined();
+      expect(canonical.trace.spanId).toBeUndefined();
+      expect(canonical.trace.traceparent).toBeUndefined();
     });
   });
 });
