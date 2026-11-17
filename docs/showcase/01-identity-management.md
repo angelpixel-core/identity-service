@@ -1,3 +1,34 @@
+---
+title: "Epic 01: Multi-Tenant Identity & User Lifecycle"
+description: "Showcase interactivo de registro de usuarios multi-inquilino, hashing Argon2id, perfiles autenticados y aceleración de caché Redis."
+epic_id: "EPIC-01"
+epic_name: "Multi-Tenant Identity & User Lifecycle"
+bounded_context: "identity"
+user_stories:
+  - id: "US-01"
+    name: "Multi-Tenant User Registration & Credential Provisioning"
+    status: "completed"
+  - id: "US-02"
+    name: "Authenticated User Profile & In-Memory Redis Caching"
+    status: "in-progress"
+architecture_pattern: "Vertical Slice + Hexagonal (DDD)"
+security_standards:
+  - "Argon2id (RFC 9106)"
+  - "PostgreSQL 16 RLS"
+  - "Zod Input Validation"
+  - "Redis In-Memory Caching"
+created_at: "2026-11-17"
+updated_at: "2026-11-17"
+tags:
+  - showcase
+  - walkthrough
+  - epic-01
+  - identity
+  - multi-tenancy
+  - argon2id
+  - redis
+---
+
 # 🏢 Epic 01: Multi-Tenant Identity & User Lifecycle
 
 [![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1.0-green.svg)](http://localhost:4000/api/docs/#/Authentication/post_api_v1_auth_register)

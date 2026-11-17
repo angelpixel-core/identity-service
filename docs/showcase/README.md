@@ -1,3 +1,31 @@
+---
+title: "Enterprise Multi-Tenant Identity & Access Management Service (Showcase Hub)"
+description: "Interactive Showcase & Walkthrough de Arquitectura paso a paso por las 22 User Stories y 8 Épicos de Identity Service."
+project: "identity-service"
+version: "1.0.0"
+openapi_version: "3.1.0"
+status: "production-ready"
+total_epics: 8
+total_user_stories: 22
+total_tests_passing: 713
+architecture_stack:
+  backend: "Node.js 20 + TypeScript + Express"
+  database: "PostgreSQL 16 (Row-Level Security RLS)"
+  cache: "Redis 7 In-Memory"
+  frontend: "React SPA + Vite"
+  observability: "OpenTelemetry + Prometheus Metrics + W3C Tracing"
+created_at: "2026-11-17"
+updated_at: "2026-11-17"
+tags:
+  - showcase
+  - architecture
+  - security
+  - identity
+  - multi-tenant
+  - oidc
+  - zero-trust
+---
+
 # 🛡️ Enterprise Multi-Tenant Identity & Access Management Service (Showcase Hub)
 
 [![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1.0-green.svg)](http://localhost:4000/api/docs/)
