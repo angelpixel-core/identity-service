@@ -112,7 +112,18 @@ resources:
     cpu: 100m
     memory: 128Mi
 
-# Liveness Probe: verifies Node.js process vitality
+# Startup Probe: verifies application bootstrap before liveness/readiness take over
+# Prevents liveness restart cascades during heavy cold-starts or migrations
+startupProbe: {}
+  # httpGet:
+  #   path: /health/live
+  #   port: 4000
+  # initialDelaySeconds: 5
+  # periodSeconds: 5
+  # timeoutSeconds: 3
+  # failureThreshold: 12
+
+# Liveness Probe: verifies Node.js process and event loop vitality (isolated, never checks external dependencies)
 livenessProbe:
   httpGet:
     path: /health/live
@@ -122,7 +133,7 @@ livenessProbe:
   timeoutSeconds: 3
   failureThreshold: 3
 
-# Readiness Probe: verifies active connectivity to PostgreSQL and Redis pools
+# Readiness Probe: actively verifies dependencies (PostgreSQL, Redis/Cache, KeyVault) for safe traffic routing
 readinessProbe:
   httpGet:
     path: /health/ready
