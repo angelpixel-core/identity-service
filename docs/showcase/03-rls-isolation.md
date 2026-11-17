@@ -10,13 +10,15 @@ user_stories:
     status: "completed"
   - id: "US-06"
     name: "Cross-Tenant Zero-Trust Guard & Context Leakage Prevention"
-    status: "in-progress"
+    status: "completed"
 architecture_pattern: "Vertical Slice + Hexagonal (DDD) + ADR-0005"
 security_standards:
   - "PostgreSQL 16 Row-Level Security (FORCE RLS)"
   - "Defense in Depth (Kernel-Level Isolation)"
   - "Fail-Closed Database Defaults"
   - "Zero-Trust Architecture"
+  - "Anti-Enumeration Defense"
+  - "PCI-DSS v4.0 Req 10.2.5 & SOC 2 CC7.2"
 created_at: "2026-11-17"
 updated_at: "2026-11-17"
 tags:
@@ -34,11 +36,12 @@ tags:
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16%20RLS-336791.svg)](#)
 [![Security Standard](https://img.shields.io/badge/Security-Fail--Closed%20Engine-red.svg)](#)
 [![Isolation](https://img.shields.io/badge/Isolation-Row--Level%20(ADR--0005)-blue.svg)](#)
-[![Status](https://img.shields.io/badge/Status-In%20Progress-yellow.svg)](#)
+[![Zero-Trust](https://img.shields.io/badge/Zero--Trust-Anti--Enumeration%20Guard-orange.svg)](#)
+[![Status](https://img.shields.io/badge/Status-Completed-success.svg)](#)
 
 Este capítulo documenta y demuestra el núcleo del modelo de seguridad del sistema: **El Aislamiento Multi-Inquilino de Grado Bancario**. En arquitecturas SaaS empresariales con bases de datos compartidas (*Shared Database, Shared Schema*), el aislamiento de datos jamás debe depender exclusivamente de la disciplina del desarrollador al escribir cláusulas `WHERE tenant_id = ?`.
 
-El servicio delega la barrera de contención final directamente al motor de base de datos mediante **PostgreSQL 16 Row-Level Security (RLS)** y transacciones delimitadas con `SET LOCAL app.current_tenant_id`.
+El servicio delega la barrera de contención final directamente al motor de base de datos mediante **PostgreSQL 16 Row-Level Security (RLS)** y transacciones delimitadas con `SET LOCAL app.current_tenant_id`, complementado por una guardia de borde **Zero-Trust** que intercepta cualquier discrepancia antes de invocar la capa de persistencia.
 
 ---
 
@@ -47,7 +50,7 @@ El servicio delega la barrera de contención final directamente al motor de base
 | Historia | Descripción | Estado |
 | :--- | :--- | :---: |
 | **US-05** | Aislamiento a Nivel de Fila con PostgreSQL 16 Row-Level Security (RLS) | ✅ En Producción |
-| **US-06** | Guardia Cross-Tenant Zero-Trust y Prevención de Fugas de Contexto | 🔄 Próximo Paso |
+| **US-06** | Guardia Cross-Tenant Zero-Trust y Prevención de Fugas de Contexto | ✅ En Producción |
 
 ---
 
@@ -195,6 +198,165 @@ npx jest tests/integration/security/test_rls_policies.ts tests/integration/secur
 - **Validación INSERT (WITH CHECK):** Verifica que inserciones cruzadas arrojan excepción 42501.
 - **Aislamiento UPDATE & DELETE:** Asegura que mutaciones solo afecten registros del inquilino activo.
 - **Ciclo de Vida de Conexión:** Valida `acquire -> begin -> set local -> execute -> commit -> release` con rollback automático ante excepciones.
+
+---
+
+## 🛡️ US-06: Guardia Cross-Tenant Zero-Trust & Prevención de Fugas
+
+### 1. Arquitectura de Defensa en Profundidad (Defense in Depth)
+
+Mientras que PostgreSQL RLS (US-05) constituye la última línea de defensa en la capa de persistencia, la **US-06** implementa una barrera perimetral proactiva en el middleware Express (`crossTenantGuard`) y en los Value Objects del dominio:
+
+1. **Defensa Anti-Enumeración de Usuarios:** Si un usuario de `acme-corp` intenta consultar o mutar un recurso cuyo `userId` pertenece a `beta-corp`, la API responde con **`HTTP 404 Not Found`** en lugar de `403 Forbidden`. Esto impide que atacantes determinen la existencia de cuentas ajenas mediante escaneo de IDs.
+2. **Consistencia Criptográfica Token-to-Header:** Se exige coincidencia bit a bit entre el claim inmutable `tenantId` embebido en el JWT y la cabecera `X-Tenant-ID`. Si difieren, la petición se bloquea con **`HTTP 403 Forbidden`**.
+3. **Inmunidad a SQL Injection en Parámetros de Tenant:** La cabecera `X-Tenant-ID` es validada por el Value Object inmutable `TenantId` (expresión regular estricta `^[a-z0-9-_]+$`). Payloads que contengan comillas, caracteres de escape o sentencias SQL son rechazados de inmediato con **`HTTP 400 Bad Request`** antes de llegar al pool de base de datos.
+4. **Registro de Auditoría Forense Inmutable:** Cada intento de acceso trans-inquilino emite un evento estructurado NDJSON clasificado como `CROSS_TENANT_VIOLATION` con severidad `ALERT` para análisis en SIEM / SOC.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Attacker as Atacante / Tenant A
+    participant Gateway as Express API Gateway
+    participant Guard as crossTenantGuard
+    participant Audit as Security Audit Logger
+    participant Domain as Domain Aggregate / Query Slice
+    participant DB as PostgreSQL 16 (Tenant Pool)
+
+    Attacker->>Gateway: GET /api/v1/users/:foreignUserId (Token Tenant A, Header: Tenant A)
+    Gateway->>Guard: Interceptar Petición
+    Guard->>Guard: Validar Token Tenant == Header Tenant (OK)
+    Guard->>Domain: findById(foreignUserId, tenantA)
+    Domain->>DB: SELECT * FROM users WHERE id = :foreignUserId (Bajo RLS Tenant A)
+    DB-->>Domain: 0 rows (Filtrado por RLS)
+    Domain-->>Guard: null (Usuario inexistente en Tenant A)
+    Guard-->>Attacker: 404 Not Found (User not found)
+    Note over Attacker,Guard: Atacante no puede saber si el ID existe en otro inquilino
+```
+
+---
+
+### 2. Recetas Interactivas cURL Paso a Paso
+
+Puedes reproducir los tres vectores de ataque directamente contra el entorno en vivo:
+
+#### Vector 1: Prevención de Enumeración de Usuarios (HTTP 404 Not Found)
+
+Un usuario legítimo del inquilino `acme-corp` intenta actualizar o consultar un ID de usuario que pertenece al inquilino `beta-corp`:
+
+```bash
+# Token emitido para acme-corp consultando un ID ajeno
+curl -i -X PATCH http://localhost:4000/api/v1/users/4476ffac-2423-444b-8342-efbfe4dbaeba \
+  -H "Authorization: Bearer $TOKEN_ACME" \
+  -H "X-Tenant-ID: acme-corp" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Intento de Mutacion Ajena"}'
+```
+
+##### Respuesta Real Obtenida:
+```http
+HTTP/1.1 404 Not Found
+Content-Type: application/json; charset=utf-8
+
+{"error":"User not found"}
+```
+
+---
+
+#### Vector 2: Intento de Suplantación de Inquilino / Token Divergence (HTTP 403 Forbidden)
+
+Un usuario autenticado de `acme-corp` presenta su token pero declara en la cabecera `X-Tenant-ID: beta-corp`:
+
+```bash
+curl -i -X GET http://localhost:4000/api/v1/auth/me \
+  -H "Authorization: Bearer $TOKEN_ACME" \
+  -H "X-Tenant-ID: beta-corp"
+```
+
+##### Respuesta de Seguridad Obtenida:
+```http
+HTTP/1.1 403 Forbidden
+Content-Type: application/json; charset=utf-8
+
+{"error":"Forbidden: Token does not belong to the requested tenant context"}
+```
+
+---
+
+#### Vector 3: Inyección SQL en Cabecera de Inquilino (HTTP 400 Bad Request)
+
+Un atacante intenta inyectar sentencias SQL para eludir el aislamiento en `X-Tenant-ID`:
+
+```bash
+curl -i -X GET http://localhost:4000/api/v1/auth/me \
+  -H "Authorization: Bearer $TOKEN_ACME" \
+  -H "X-Tenant-ID: alpha-corp'; DROP TABLE users; --"
+```
+
+##### Respuesta de Validación Obtenida:
+```http
+HTTP/1.1 400 Bad Request
+Content-Type: application/json; charset=utf-8
+
+{"error":"Invalid tenantId format in x-tenant-id header"}
+```
+
+---
+
+### 3. Registro Forense de Auditoría Emitido (PCI-DSS & SOC 2)
+
+Ante la detección de una anomalía o discrepancia cross-tenant, el sistema emite el siguiente log NDJSON estructurado:
+
+```json
+{
+  "timestamp": "2026-11-17T17:31:07.926Z",
+  "logType": "SECURITY_AUDIT",
+  "eventType": "CROSS_TENANT_VIOLATION",
+  "severity": "ALERT",
+  "tenantId": "acme-corp",
+  "actor": {
+    "userId": "6e26511e-3a74-4b6b-9212-c1789efc53a3",
+    "type": "USER",
+    "ip": "127.0.0.1"
+  },
+  "trace": {
+    "requestId": "878fb245-d0f0-41d0-97e0-d7768937c1e1",
+    "correlationId": "878fb245-d0f0-41d0-97e0-d7768937c1e1",
+    "traceId": "d194a4f6a10d26e9a36f7784ed318543",
+    "spanId": "2eac577ec93cadd9",
+    "traceparent": "00-d194a4f6a10d26e9a36f7784ed318543-2eac577ec93cadd9-01"
+  },
+  "compliance": {
+    "pciRequirement": "10.2.5",
+    "soc2Criteria": "CC7.2",
+    "retentionCategory": "AUDIT_IMMUTABLE"
+  },
+  "action": "cross_tenant_access_denied",
+  "status": "DENIED",
+  "details": {
+    "reason": "CROSS_TENANT_VIOLATION",
+    "activeTenantId": "acme-corp",
+    "attemptedTenantId": "beta-corp",
+    "path": "/api/v1/auth/me",
+    "method": "GET"
+  }
+}
+```
+
+---
+
+### 4. Cobertura de Pruebas Automatizadas
+
+La suite de penetración y pruebas de estrés valida los 5 vectores de ataque:
+
+```bash
+npx jest tests/integration/security/test_cross_tenant_penetration.ts
+```
+
+- **Vector 1 (User Enumeration):** Verifica que consultas a usuarios ajenos retornan `404 Not Found`.
+- **Vector 2 (Mutation Blocking):** Bloquea actualizaciones cruzadas con `403 Forbidden` y log de alerta.
+- **Vector 3 (Header Spoofing):** Detecta divergencia entre JWT claims y `X-Tenant-ID`.
+- **Vector 4 (SQL Injection):** Rechaza payloads maliciosos (`UNION SELECT`, subconsultas, `DROP TABLE`, `../path`).
+- **Vector 5 (Domain Assertions):** Valida que el agregado de dominio arroja `CrossTenantContextViolationError`.
 
 ---
 
