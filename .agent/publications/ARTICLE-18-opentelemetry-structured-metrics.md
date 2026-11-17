@@ -515,3 +515,191 @@ expect(metrics.getCounterValue('auth_attempts_total', {
 })).to.equal(1);
 ```
 sin necesidad de inicializar el recolector de OpenTelemetry ni abrir puertos de red.
+
+
+---
+
+## 3. Implementación de Infraestructura con OpenTelemetry SDK v3.x
+
+### 3.1 Configuración de Vistas de Histograma Explícitas en OpenTelemetry SDK v3.x
+
+La transición hacia OpenTelemetry SDK v3.x introdujo una transformación fundamental en la forma en que se configuran los histogramas de agregación. En versiones preliminares del SDK, los cubos de latencia solían especificarse como argumentos directos al crear un instrumento (`meter.createHistogram('name', { boundaries: [...] })`). Sin embargo, la especificación canónica de OpenTelemetry trasladó la responsabilidad de la agregación desde la API de instrumentación hacia la capa de configuración del **`MeterProvider`** mediante **Vistas (`Views`)**.
+
+Este cambio arquitectónico es sumamente beneficioso para microservicios de misión crítica: desacopla por completo la definición del instrumento (la cual simplemente declara que mide una duración en segundos) de la estrategia matemática de muestreo elegida por el operador de plataforma.
+
+En `OpenTelemetryMetricsAdapter`, registramos una vista explícita que intercepta cualquier instrumento cuyo nombre coincida con el patrón comodín `*duration_seconds`:
+
+```typescript
+// src/contexts/shared/infrastructure/telemetry/opentelemetry_metrics_adapter.ts
+
+import {
+  MeterProvider,
+  ViewOptions,
+  AggregationType,
+  InstrumentType,
+} from '@opentelemetry/sdk-metrics';
+import { PrometheusExporter, PrometheusSerializer } from '@opentelemetry/exporter-prometheus';
+import { MetricsPort } from '../../domain/telemetry/metrics_port';
+import { DEFAULT_LATENCY_BUCKETS } from '../../domain/telemetry/metric_types';
+
+export class OpenTelemetryMetricsAdapter implements MetricsPort {
+  private readonly provider: MeterProvider;
+  private readonly exporter: PrometheusExporter;
+  private readonly serializer: PrometheusSerializer;
+
+  constructor() {
+    // 1. Instanciación del exportador de Prometheus en modo pasivo
+    this.exporter = new PrometheusExporter({ preventServerStart: true });
+    this.serializer = new PrometheusSerializer();
+
+    // 2. Definición de la vista de agregación explícita para histogramas de latencia
+    const latencyView: ViewOptions = {
+      instrumentName: '*duration_seconds',
+      aggregation: {
+        type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+        options: {
+          boundaries: DEFAULT_LATENCY_BUCKETS,
+        },
+      },
+    };
+
+    // 3. Inicialización del MeterProvider con la vista registrada
+    this.provider = new MeterProvider({
+      views: [latencyView],
+    });
+
+    // 4. Conexión del lector de métricas del exportador
+    this.provider.addMetricReader(this.exporter);
+    
+    // 5. Inicialización de instrumentos y monitores de runtime
+    this.initializeInstruments();
+    this.startRuntimeMetricsCollection();
+  }
+}
+```
+
+Gracias al patrón comodín `*duration_seconds`, tanto el histograma de latencia HTTP (`http_request_duration_seconds`) como el de persistencia en PostgreSQL (`db_query_duration_seconds`) adoptan automáticamente los 11 cubos exponenciales calibrados (`DEFAULT_LATENCY_BUCKETS`), garantizando coherencia matemática en los cálculos de percentiles en Grafana.
+
+---
+
+### 3.2 Prevención de Servidores HTTP Redundantes (`preventServerStart: true`) y Serialización OpenMetrics
+
+Por diseño original, `PrometheusExporter` intenta iniciar un servidor HTTP independiente basado en el módulo nativo `http` de Node.js en el puerto predeterminado `9464`. En entornos contenerizados sobre Kubernetes, este comportamiento introduce un **antipatrón de arquitectura de red**:
+
+1. **Ruptura de Principios de Contenedor Unificado:** Fuerza al Pod a escuchar en múltiples puertos desarticulados (`3000` para la aplicación y `9464` para telemetría), complicando los manifiestos de Kubernetes (`Service`, `ContainerPort` y `NetworkPolicy`).
+2. **Pérdida de Controles Transversales:** El servidor embebido en el puerto 9464 elude los middlewares globales de Express (control de concurrencia, compresión gzip, auditoría de acceso y cabeceras de seguridad Helmet).
+3. **Complejidad en el Ciclo de Vida:** La coexistencia de dos servidores HTTP independientes genera condiciones de carrera durante la recepción de señales del sistema operativo (`SIGTERM` / `SIGINT`), dificultando una terminación elegante y el drenado seguro de conexiones activas.
+
+Para erradicar este riesgo, configuramos el exportador con la directiva **`preventServerStart: true`**. De este modo, el exportador opera exclusivamente como un lector de memoria en búfer (*pull-based collector*). La exposición hacia Prometheus se delega al servidor principal de Express, integrando el serializador oficial **`PrometheusSerializer`**:
+
+```typescript
+// Implementación de los métodos de recolección y serialización en OpenTelemetryMetricsAdapter
+
+public getMetricsContentType(): string {
+  // Encabezado estándar para OpenMetrics / Prometheus v0.0.4
+  return 'text/plain; version=0.0.4; charset=utf-8';
+}
+
+public async getMetrics(): Promise<string> {
+  // 1. Forzar recolección en memoria de todos los lectores registrados
+  const { resourceMetrics, errors } = await this.exporter.collect();
+  
+  if (errors && errors.length > 0) {
+    // Registro defensivo en stderr sin interrumpir la serialización de métricas sanas
+    console.error('[OpenTelemetryMetricsAdapter] Errores durante la recolección:', errors);
+  }
+
+  // 2. Serialización estricta al formato de texto plano OpenMetrics
+  return this.serializer.serialize(resourceMetrics);
+}
+```
+
+Esta técnica permite exponer las métricas en la ruta canónica `GET /metrics` de Express en el puerto estándar `:3000`, reutilizando la misma infraestructura de red, TLS e Ingress que el resto de los endpoints de la API.
+
+---
+
+### 3.3 Monitoreo Continuo de Saturación de Runtime en Node.js
+
+En la directriz de Google SRE, la **Saturación** es la señal dorada más preventiva: indica qué tan lleno está el sistema antes de que comience a rechazar solicitudes o a degradar severamente su latencia. En aplicaciones basadas en el bucle de eventos monohilo de Node.js, la saturación no se manifiesta únicamente como consumo de memoria; el factor más determinante es el **retraso del Event Loop (*Event Loop Lag*)**.
+
+Si una tarea intensiva en CPU (como la generación síncrona de firmas criptográficas, derivación de claves con algoritmos pesados o serialización de payloads JSON gigantescos) monopoliza el hilo de ejecución, todas las solicitudes concurrentes quedan congeladas en la cola de microtareas, disparando la latencia global del pod.
+
+Para monitorear la salud interna del proceso en tiempo real, `OpenTelemetryMetricsAdapter` implementa un recolector periódico autónomo:
+
+```typescript
+// src/contexts/shared/infrastructure/telemetry/opentelemetry_metrics_adapter.ts
+
+import { monitorEventLoopDelay } from 'perf_hooks';
+
+export class OpenTelemetryMetricsAdapter implements MetricsPort {
+  private eventLoopMonitor?: ReturnType<typeof monitorEventLoopDelay>;
+  private runtimeMetricsInterval?: NodeJS.Timeout;
+
+  private startRuntimeMetricsCollection(): void {
+    // 1. Inicialización del monitor de retardo del Event Loop con resolución de 20ms
+    this.eventLoopMonitor = monitorEventLoopDelay({ resolution: 20 });
+    this.eventLoopMonitor.enable();
+
+    // 2. Muestreo periódico cada 10 segundos
+    this.runtimeMetricsInterval = setInterval(() => {
+      // 2.1 Medición del lag del Event Loop: conversión de nanosegundos a segundos
+      if (this.eventLoopMonitor) {
+        const lagSeconds = this.eventLoopMonitor.mean / 1e9;
+        this.setGauge('nodejs_eventloop_lag_seconds', lagSeconds);
+        // Reseteo del histograma interno para registrar el comportamiento del intervalo actual
+        this.eventLoopMonitor.reset();
+      }
+
+      // 2.2 Medición del consumo de memoria Heap del proceso Node.js
+      const mem = process.memoryUsage();
+      this.setGauge('process_memory_heap_bytes', mem.heapUsed, { type: 'used' });
+      this.setGauge('process_memory_heap_bytes', mem.heapTotal, { type: 'total' });
+      this.setGauge('process_memory_heap_bytes', mem.rss, { type: 'rss' });
+    }, 10000);
+
+    // Evitar que el temporizador impida que el proceso Node.js finalice de forma natural
+    this.runtimeMetricsInterval.unref();
+  }
+
+  public async shutdown(): Promise<void> {
+    // Limpieza ordenada de recursos para prevenir fugas de memoria en recargas
+    if (this.runtimeMetricsInterval) {
+      clearInterval(this.runtimeMetricsInterval);
+    }
+    if (this.eventLoopMonitor) {
+      this.eventLoopMonitor.disable();
+    }
+    await this.provider.shutdown();
+  }
+}
+```
+
+#### Anatomía del Monitoreo de Saturación
+
+```
++---------------------------------------------------------------------------------------------------------+
+| ARQUITECTURA DE MONITOREO DE SATURACIÓN DE RUNTIME                                                      |
+|                                                                                                         |
+|  [NODE.JS RUNTIME PROCESS]                                                                              |
+|                                                                                                         |
+|  1. EVENT LOOP DELAY MONITOR                                                                            |
+|     - Módulo nativo: perf_hooks.monitorEventLoopDelay({ resolution: 20 })                              |
+|     - Mide el retardo real entre la programación y la ejecución de callbacks en el bucle libuv.         |
+|     - Métrica emitida: nodejs_eventloop_lag_seconds (Gauge en segundos)                                 |
+|     - Alerta SRE: Si lag > 0.1s (100ms) durante más de 1 minuto -> Detección de código bloqueante.       |
+|                                                                                                         |
+|  2. V8 ENGINE HEAP MONITOR                                                                              |
+|     - Módulo nativo: process.memoryUsage()                                                              |
+|     - heapUsed: Memoria real consumida por objetos de aplicación activos.                               |
+|     - heapTotal: Memoria asignada por V8 para el espacio del heap.                                      |
+|     - rss: Resident Set Size (memoria física total ocupada por el proceso).                             |
+|     - Métrica emitida: process_memory_heap_bytes{type="used|total|rss"} (Gauge en bytes)                |
+|     - Alerta SRE: Si heapUsed / heapTotal > 85% sostenido -> Riesgo inminente de fallo OOM.             |
+|                                                                                                         |
+|  3. CICLO DE VIDA Y LIMPIEZA DETERMINISTA                                                               |
+|     - unref() en el timer evita bloquear el cierre del proceso.                                         |
+|     - shutdown() apaga el monitor de hooks, cancela el intervalo y vacía búferes del SDK.               |
++---------------------------------------------------------------------------------------------------------+
+```
+
+Con esta instrumentación, el clúster de Prometheus recibe de forma nativa e ininterrumpida las métricas vitales del motor de ejecución de la aplicación, permitiendo configurar reglas de alerta proactivas en Grafana y Alertmanager antes de que un evento de saturación afecte el tráfico de producción.
