@@ -20,8 +20,12 @@ export class ConsoleSecurityAuditLogger implements SecurityAuditLoggerPort {
   constructor(options?: ConsoleSecurityAuditLoggerOptions) {
     this.outputStream = options?.outputStream ?? process.stdout;
 
-    // Salvaguarda fail-safe: prevenir crashes no controlados por EPIPE o errores de stream
-    if (typeof (this.outputStream as any).on === 'function') {
+    // Salvaguarda fail-safe: prevenir crashes no controlados por EPIPE o errores de stream (máximo 1 listener por stream)
+    if (
+      typeof (this.outputStream as any).on === 'function' &&
+      (typeof (this.outputStream as any).listenerCount !== 'function' ||
+        (this.outputStream as any).listenerCount('error') === 0)
+    ) {
       (this.outputStream as any).on('error', (err: unknown) => {
         try {
           process.stderr.write(
