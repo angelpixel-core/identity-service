@@ -185,7 +185,8 @@ function printGeneralHelp() {
 Uso: identity <recurso> <accion> [banderas]
 
 ${colors.bold}Recursos Disponibles:${colors.reset}
-  ${colors.cyan}auth${colors.reset}     Gestión de usuarios y autenticación (register, me)
+  ${colors.cyan}auth${colors.reset}       Gestión de usuarios y autenticación (register, me)
+  ${colors.cyan}client${colors.reset}     Gobernanza y validación de clientes OAuth2 (validate)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -196,6 +197,7 @@ ${colors.bold}Opciones Globales:${colors.reset}
 ${colors.bold}Ejemplos:${colors.reset}
   identity auth register --tenant acme-corp --email user@acme.com --password "Secret2026!"
   identity auth me --tenant acme-corp --token "$TOKEN"
+  identity client validate --client-id portal-web --origin https://portal.angelpixel.io
 `);
 }
 
@@ -291,6 +293,60 @@ async function handleAuthDomain(action, flags, baseUrl, rawJson) {
   process.exit(1);
 }
 
+function printClientHelp() {
+  console.log(`${colors.bold}Uso: identity client <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones:${colors.reset}
+  ${colors.cyan}validate${colors.reset}    Valida que una aplicación cliente exista, esté activa y tenga autorizado el origen web (CORS)
+              Banderas:
+                -c, --client-id <id>     ID de la aplicación cliente (Requerido)
+                -o, --origin <url>       Origen HTTP que realiza la solicitud (Requerido)
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity client validate --client-id portal-web --origin https://portal.angelpixel.io
+  identity client validate -c m2m-service-app -o https://m2m.worker.local
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO CLIENT ---
+async function handleClientDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printClientHelp();
+    return;
+  }
+
+  if (action === 'validate') {
+    const clientId = flags['client-id'] || flags.c;
+    const origin = flags.origin || flags.o;
+
+    if (!clientId) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --client-id (-c) es obligatoria para validar un cliente.`);
+      process.exit(1);
+    }
+    if (!origin) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --origin (-o) es obligatoria para validar el origen del cliente.`);
+      process.exit(1);
+    }
+
+    const res = await requestHttp('POST', '/api/v1/oauth2/clients/validate', {
+      baseUrl,
+      headers: {
+        Origin: String(origin),
+        'X-Client-ID': String(clientId),
+      },
+      body: {
+        clientId: String(clientId),
+      },
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso client. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
+}
+
 // --- FUNCIÓN PRINCIPAL (ENTRYPOINT) ---
 async function main() {
   const parsed = parseArgs(process.argv.slice(2));
@@ -310,6 +366,10 @@ async function main() {
   switch (parsed.resource) {
     case 'auth':
       await handleAuthDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    case 'client':
+      await handleClientDomain(parsed.action, parsed.flags, baseUrl, rawJson);
       break;
 
     default:
