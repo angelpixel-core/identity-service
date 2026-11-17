@@ -7,7 +7,6 @@
     "identity": "./bin/identity"
   },
   "scripts": {
-    "identity": "./bin/identity",
     "dev:api": "tsx watch interfaces/http/server.ts",
     "dev:web": "vite",
     "build:web": "vite build",
