@@ -703,3 +703,242 @@ export class OpenTelemetryMetricsAdapter implements MetricsPort {
 ```
 
 Con esta instrumentación, el clúster de Prometheus recibe de forma nativa e ininterrumpida las métricas vitales del motor de ejecución de la aplicación, permitiendo configurar reglas de alerta proactivas en Grafana y Alertmanager antes de que un evento de saturación afecte el tráfico de producción.
+
+
+---
+
+## 4. Instrumentación Transversal: Capas HTTP, Persistencia y Comandos OAuth2
+
+### 4.1 Middleware HTTP de Golden Signals (`createMetricsMiddleware`)
+
+La recolección de las señales de **Tráfico**, **Latencia** y **Errores** en la capa de transporte requiere interceptar el ciclo de vida de cada solicitud HTTP entrante sin interferir con la lógica de enrutamiento ni añadir sobrecarga detectable al hilo de ejecución.
+
+Históricamente, muchos middlewares de métricas calculaban la duración utilizando `Date.now()`, lo que presenta dos debilidades severas:
+1. **Precisión Insuficiente:** `Date.now()` devuelve una marca de tiempo en milisegundos con resolución limitada y sujeta a sincronizaciones de reloj NTP del sistema operativo (*clock drift* o saltos temporales).
+2. **Degradación por Garbage Collection:** Instanciar objetos `new Date()` en cada solicitud somete al recolector de basura de V8 a una presión innecesaria bajo cargas elevadas.
+
+Para superar esto, `createMetricsMiddleware` se apoya en **`process.hrtime.bigint()`**, un temporizador monotónico respaldado por hardware que mide el paso del tiempo en nanosegundos puros sin asignar memoria en el heap:
+
+```typescript
+// src/contexts/shared/infrastructure/telemetry/metrics_middleware.ts
+
+import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { MetricsPort } from '../../domain/telemetry/metrics_port';
+import { RouteNormalizer } from '../../domain/telemetry/metric_types';
+
+export function createMetricsMiddleware(metrics: MetricsPort): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // 1. Filtrado preventivo de sondas de salud y scraping de métricas
+    if (req.path === '/metrics' || req.path === '/health' || req.path === '/ready') {
+      return next();
+    }
+
+    // 2. Captura del instante inicial en nanosegundos monotónicos
+    const startHrTime = process.hrtime.bigint();
+
+    // 3. Suscripción al evento de finalización del socket de respuesta
+    res.on('finish', () => {
+      // 3.1 Cálculo de la duración exacta en segundos con precisión decimal
+      const elapsedNanoseconds = process.hrtime.bigint() - startHrTime;
+      const durationSeconds = Number(elapsedNanoseconds) / 1e9;
+
+      // 3.2 Resolución de la ruta canónica normalizada
+      const route = req.route
+        ? `${req.baseUrl || ''}${req.route.path}`
+        : RouteNormalizer.normalize(req.originalUrl || req.url);
+
+      const statusCode = res.statusCode;
+
+      // 3.3 Registro del Tráfico y Latencia (Golden Signals 1 & 2)
+      metrics.recordHttpRequest(req.method, route, statusCode, durationSeconds);
+
+      // 3.4 Registro y Clasificación de Errores (Golden Signal 3)
+      if (statusCode >= 400) {
+        const errorType = statusCode >= 500 ? 'server_error' : 'client_error';
+        metrics.recordHttpError(req.method, route, errorType);
+      }
+    });
+
+    next();
+  };
+}
+```
+
+#### Decisiones de Diseño Críticas en el Middleware
+- **Evento `finish` vs `close`:** La suscripción a `res.on('finish')` asegura que el código de estado (`res.statusCode`) ya ha sido asignado definitivamente por los controladores y que los encabezados de respuesta han sido transmitidos al cliente.
+- **Normalización Dinámica Inteligente:** Si Express resolvió la ruta a través de su enrutador (`req.route`), se preserva la plantilla de parámetros (ej. `/api/v1/tenants/:tenantId`). Si la solicitud falló antes de alcanzar el router (ej. error 404 en una URL inexistente), `RouteNormalizer.normalize` aplica las reglas heurísticas para sanitizar UUIDs e IDs numéricos, previniendo la contaminación de la base de datos de Prometheus.
+- **Exclusión Estricta de Probes:** Al ignorar `/health`, `/ready` y `/metrics`, evitamos que los sondeos periódicos de liveness y readiness de Kubernetes (ejecutados cada pocos segundos) distorsionen las métricas de tráfico y latencia de negocio.
+
+---
+
+### 4.2 Instrumentación de la Capa de Persistencia Multitenant (`TenantAwareTransactionRunner`)
+
+En microservicios financieros con aislamiento estricto multi-inquilino, las consultas a base de datos son el principal candidato a degradación de rendimiento. Bajo el modelo de **Row-Level Security (RLS)** de PostgreSQL ([ARTICLE-05](ARTICLE-05-tenant-session-rls-migration.md)), cada transacción requiere configurar variables de sesión seguras (`SELECT set_config('app.current_tenant_id', $1, true)`) y aplicar políticas de filtrado en tiempo de ejecución.
+
+Si una consulta compleja experimenta contención de bloqueos (*row locks*), un plan de ejecución ineficiente o un cuello de botella en el pool de conexiones, la degradación debe ser visible de forma granular sin necesidad de activar el logueo exhaustivo de sentencias SQL en el motor de base de datos.
+
+`TenantAwareTransactionRunner` incorpora `MetricsPort` de forma completamente desacoplada y no intrusiva:
+
+```typescript
+// src/contexts/shared/infrastructure/database/tenant_aware_transaction_runner.ts
+
+import { Pool, PoolClient } from 'pg';
+import { MetricsPort } from '../../domain/telemetry/metrics_port';
+
+export class TenantAwareTransactionRunner {
+  constructor(
+    private readonly pool: Pool,
+    private readonly metrics?: MetricsPort
+  ) {}
+
+  public async run<T>(
+    tenantId: string,
+    callback: (client: PoolClient) => Promise<T>
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    const startHrTime = process.hrtime.bigint();
+
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId]);
+
+      const result = await callback(client);
+
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      // Garantía de medición tanto en éxito como en fallo o rollback
+      const durationSeconds = Number(process.hrtime.bigint() - startHrTime) / 1e9;
+      this.metrics?.recordDbQuery('transaction', 'multi_tenant_tx', durationSeconds);
+      client.release();
+    }
+  }
+
+  public async runWithSavepoint<T>(
+    client: PoolClient,
+    savepointName: string,
+    callback: () => Promise<T>
+  ): Promise<T> {
+    const startHrTime = process.hrtime.bigint();
+    try {
+      await client.query(`SAVEPOINT ${savepointName}`);
+      const result = await callback();
+      await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+      return result;
+    } catch (error) {
+      await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+      throw error;
+    } finally {
+      const durationSeconds = Number(process.hrtime.bigint() - startHrTime) / 1e9;
+      this.metrics?.recordDbQuery('savepoint', savepointName, durationSeconds);
+    }
+  }
+}
+```
+
+#### Puntos Clave de la Instrumentación de Persistencia
+1. **Garantía Incondicional en el Bloque `finally`:** La duración se calcula y registra independientemente de si la transacción culminó en `COMMIT` o fue abortada por un `ROLLBACK`. Esto permite a los SREs identificar transacciones que fallan por agotar el timeout de la base de datos.
+2. **Diferenciación Semántica de Operaciones:** Mediante la etiqueta `operation: 'transaction' | 'savepoint'`, los tableros de Prometheus pueden distinguir la sobrecarga de una transacción completa frente a la ejecución atómica de un savepoint anidado.
+
+---
+
+### 4.3 Instrumentación de Seguridad y Auditoría en Comandos OAuth2 / OIDC
+
+El estándar **PCI-DSS v4.0 (Requerimiento 10.2)** exige que las organizaciones financieras supervisen continuamente todos los intentos de acceso y eventos de autenticación, detectando patrones anómalos de fuerza bruta, abuso de credenciales robadas o ataques de denegación de servicio contra los endpoints de emisión de tokens.
+
+Para cumplir con este requisito a nivel de telemetría, se instrumentaron los tres casos de uso canónicos de autorización y autenticación de `identity-service`:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Cliente as Cliente OAuth2
+    participant Handler as AuthenticateClientM2MCommandHandler
+    participant Repo as ClientRepository
+    participant Hasher as PasswordHasher
+    participant TokenGen as TokenGenerator
+    participant Metrics as MetricsPort (OpenTelemetry)
+
+    Cliente->>Handler: handle(command)
+    Handler->>Repo: findById(command.clientId)
+    
+    alt Cliente No Existe
+        Repo-->>Handler: null
+        Handler->>Metrics: recordAuthAttempt(clientId, 'client_credentials', 'failure')
+        Handler-->>Cliente: throw InvalidClientCredentialsError
+    else Cliente Existe
+        Repo-->>Handler: ClientEntity
+        Handler->>Hasher: verify(secret, hash)
+        alt Secreto Inválido
+            Hasher-->>Handler: false
+            Handler->>Metrics: recordAuthAttempt(clientId, 'client_credentials', 'failure')
+            Handler-->>Cliente: throw InvalidClientCredentialsError
+        else Secreto Válido
+            Hasher-->>Handler: true
+            Handler->>TokenGen: generateAccessToken(claims)
+            TokenGen-->>Handler: AccessToken
+            
+            Handler->>Metrics: recordAuthAttempt(clientId, 'client_credentials', 'success')
+            Handler->>Metrics: recordTokenIssued('client_credentials')
+            Handler-->>Cliente: Return AuthTokenDTO
+        end
+    end
+```
+
+#### 1. Autenticación M2M (Client Credentials Grant)
+En `AuthenticateClientM2MCommandHandler`, cada intento de validación de credenciales se registra con su resultado explícito:
+
+```typescript
+// src/contexts/identity/application/commands/authenticate_client_m2m/handler.ts
+
+export class AuthenticateClientM2MCommandHandler {
+  constructor(
+    private readonly clientRepository: ClientRepository,
+    private readonly passwordHasher: PasswordHasher,
+    private readonly tokenGenerator: TokenGenerator,
+    private readonly metrics?: MetricsPort
+  ) {}
+
+  public async handle(command: AuthenticateClientM2MCommand): Promise<AuthTokenDTO> {
+    const client = await this.clientRepository.findById(command.clientId);
+    if (!client) {
+      this.metrics?.recordAuthAttempt(command.clientId, 'client_credentials', 'failure');
+      throw new InvalidClientCredentialsError();
+    }
+
+    const isValid = await this.passwordHasher.verify(command.clientSecret, client.getClientSecretHash());
+    if (!isValid) {
+      this.metrics?.recordAuthAttempt(command.clientId, 'client_credentials', 'failure');
+      throw new InvalidClientCredentialsError();
+    }
+
+    const token = await this.tokenGenerator.generateM2MToken(client);
+
+    // Auditoría métrica exitosa
+    this.metrics?.recordAuthAttempt(command.clientId, 'client_credentials', 'success');
+    this.metrics?.recordTokenIssued('client_credentials');
+
+    return token;
+  }
+}
+```
+
+#### 2. Intercambio de Código de Autorización con PKCE
+En `ExchangeAuthorizationCodeCommandHandler`, se audita la validación del `code_verifier` frente al `code_challenge`:
+- Ante códigos expirados, ya utilizados o con verificación criptográfica SHA-256 fallida:
+  `this.metrics?.recordAuthAttempt(command.clientId, 'authorization_code', 'failure');`
+- Tras la emisión exitosa del par Access Token / Refresh Token:
+  `this.metrics?.recordAuthAttempt(command.clientId, 'authorization_code', 'success');`
+  `this.metrics?.recordTokenIssued('authorization_code', tenantId);`
+
+#### 3. Rotación de Refresh Tokens (Family Revocation Detection)
+En `RotateRefreshTokenCommandHandler`, se monitorea el ciclo de vida de la sesión:
+- Si se detecta un intento de reutilización de un refresh token previamente rotado (indicador crítico de ataque de robo de token):
+  `this.metrics?.recordAuthAttempt(command.clientId, 'refresh_token', 'failure');`
+- En una rotación legítima:
+  `this.metrics?.recordAuthAttempt(command.clientId, 'refresh_token', 'success');`
+  `this.metrics?.recordTokenIssued('refresh_token', tenantId);`
+
+Esta instrumentación en la capa de aplicación garantiza que cualquier intento de ataque automatizado (como fuerza bruta sobre credenciales o reutilización masiva de tokens) genere una señal inmediata de incremento en las tasas de fallo de `auth_attempts_total`, permitiendo a los sistemas SIEM y a Alertmanager activar bloqueos automatizados en cuestión de segundos.
