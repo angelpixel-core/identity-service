@@ -108,23 +108,24 @@ sequenceDiagram
 | **`Cache` (Redis 7 Cache Engine)** | `participant` | Capa en memoria de respuesta ultrarrápida. Almacena tuplas validadas bajo la clave `client_origin:{clientId}:{origin}` con un TTL de 300 segundos para absorber ráfagas de tráfico CORS. |
 | **`DB` (PostgreSQL 16 Client Registry)** | `participant` | Registro persistente y fuente de verdad donde residen las entidades `ClientApplication`, sus dominios permitidos (`allowed_origins`) y su estado (`is_active`). |
 
-#### B. Desglose Secuencial del Flujo (Pasos 1 al 12)
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 13)
 
 1. **Paso 1 (`Browser -> Gateway`):** La SPA realiza una solicitud previa de validación de cliente y origen hacia `/api/v1/oauth2/clients/validate`.
 2. **Paso 2 (`Gateway -> Middleware`):** La pasarela transfiere la petición al middleware de autorización de clientes.
-3. **Paso 3 (`Middleware -> Middleware`):** Se extraen y sanitizan los parámetros `clientId` y la cabecera `Origin`.
+3. **Paso 3 (`Middleware -> Middleware`):** Se extraen y sanitizan internamente los parámetros `clientId` y la cabecera `Origin`.
 4. **Paso 4 (`Middleware -> Cache`):** Se realiza una consulta rápida a Redis bajo la clave `client_origin:{clientId}:{origin}`.
    - **Escenario Cache HIT (Paso 5):**
-     5. **Paso 5 (`Cache -> Middleware`):** Redis devuelve el resultado de validación pre-computado (`ClientValidationResult`), ahorrando el acceso a la base de datos.
+     5. **Paso 5 (`Cache -->> Middleware`):** Redis devuelve el resultado de validación pre-computado (`ClientValidationResult`), ahorrando el acceso a la base de datos.
    - **Escenario Cache MISS (Pasos 6 al 9):**
      6. **Paso 6 (`Middleware -> DB`):** Si no existe en memoria, se consulta a PostgreSQL por el identificador del cliente (`findByClientId`).
-     7. **Paso 7 (`DB -> Middleware`):** La base de datos devuelve el agregado `ClientApplication`.
+     7. **Paso 7 (`DB -->> Middleware`):** La base de datos devuelve el agregado `ClientApplication`.
      8. **Paso 8 (`Middleware -> Middleware`):** Se evalúan las reglas de negocio del dominio: que el cliente esté activo (`isActive === true`) y que el origen pertenezca a la lista blanca (`allowedOrigins.includes(origin)`).
      9. **Paso 9 (`Middleware -> Cache`):** El resultado de la validación se almacena en Redis con un TTL de 300 segundos (`SETEX`).
-   - **Bifurcaciones de Decisión y Respuesta (Pasos 10 al 12):**
-     10. **Paso 10 (Validación Aprobada):** Si el origen y el estado son válidos, el middleware invoca `next()` y el Gateway responde `HTTP 200 OK` con metadatos del cliente (`authorized: true`, `clientName`, `scopes`).
-     11. **Paso 11 (Origen No Autorizado):** Si el origen no figura en la lista permitida, se corta la petición retornando de inmediato `HTTP 403 Forbidden` (`unauthorized_client_origin`).
-     12. **Paso 12 (Cliente Desactivado):** Si el cliente fue suspendido o desactivado administrativamente, se retorna `HTTP 401 Unauthorized` (`client_deactivated`).
+   - **Bifurcaciones de Decisión y Respuesta (Pasos 10 al 13):**
+     10. **Paso 10 (`Middleware -->> Gateway` [Validación Aprobada]):** Con origen válido y cliente activo, el middleware concede el pase al pipeline invocando `next()`.
+     11. **Paso 11 (`Gateway -->> Browser` [Validación Aprobada]):** El Gateway despacha la respuesta `HTTP 200 OK` con los metadatos del cliente (`authorized: true`, `clientName`, `scopes`).
+     12. **Paso 12 (`Middleware -->> Browser` [Origen No Autorizado]):** Si el origen no figura en la lista permitida, se corta inmediatamente la petición con `HTTP 403 Forbidden` (`unauthorized_client_origin`).
+     13. **Paso 13 (`Middleware -->> Browser` [Cliente Desactivado]):** Si el cliente fue suspendido administrativamente, se bloquea la petición con `HTTP 401 Unauthorized` (`client_deactivated`).
 
 ---
 
