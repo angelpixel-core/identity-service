@@ -90,6 +90,29 @@ sequenceDiagram
     Client-->>User: Petición Autorizada (0 llamadas de red al IdP)
 ```
 
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Client` (Cliente / API Gateway / Microservicio)** | `actor` | Consumidor downstream de identidades (por ejemplo, Kong, Envoy o un microservicio interno). Requiere validar tokens sin acoplarse a la base de datos del IdP. |
+| **`Discovery` (`GET /.well-known/openid-configuration`)** | `participant` | Endpoint público RFC 8414 expuesto por `identity-service`. Provee metadatos de configuración autodescriptivos para autoconfiguración de clientes OIDC. |
+| **`JWKS` (`GET /.well-known/jwks.json`)** | `participant` | Endpoint público RFC 7517 que expone el conjunto de claves públicas activas en formato JSON Web Key Set (JWKS), excluyendo parámetros privados. |
+| **`IdP` (Identity Service IdP Core)** | `participant` | Núcleo de identidad responsable de generar pares de claves RSA 2048-bit, custodiar la clave privada (`[REDACTED]`) y firmar los tokens en RS256. |
+| **`LocalMemory` (Cache Local de Claves)** | `participant` | Almacenamiento en memoria volátil en el cliente o API Gateway con TTL configurable (1 hora) que evita la sobrecarga de consultas de red al IdP. |
+| **`User` (Usuario Autenticado)** | `actor` | Usuario o sistema que presenta un JWT firmado para acceder a recursos protegidos en el ecosistema. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 9)
+
+1. **Paso 1 (`Client -> Discovery`):** El cliente o API Gateway consulta `GET /.well-known/openid-configuration` para inicializar el cliente OIDC de forma dinámica.
+2. **Paso 2 (`Discovery -> Client`):** El IdP responde con los metadatos RFC 8414, informando el emisor (`issuer`), endpoints de autorización y token, y la URL canónica del catálogo de claves (`jwks_uri`).
+3. **Paso 3 (`Client -> JWKS`):** El cliente realiza una petición HTTP `GET` a la dirección `jwks_uri` descubierta (`/.well-known/jwks.json`).
+4. **Paso 4 (`JWKS -> Client`):** El IdP devuelve el documento RFC 7517 que contiene el array `keys` con la clave pública RS256 activa (`kty: "RSA"`, `use: "sig"`, `alg: "RS256"`, `kid`, `n`, `e`).
+5. **Paso 5 (`Client -> LocalMemory`):** El cliente almacena la clave pública en su caché en memoria local, indexada por su identificador único `kid`, configurando un tiempo de expiración acorde a las cabeceras `Cache-Control` (3600 segundos).
+6. **Paso 6 (`User -> Client`):** Un usuario autenticado envía una petición HTTP hacia el cliente o API Gateway incluyendo el encabezado `Authorization: Bearer <JWT>`. La cabecera JOSE del token indica `alg: "RS256"` y el `kid` correspondiente.
+7. **Paso 7 (`Client -> LocalMemory`):** El API Gateway extrae el `kid` del token recibido y consulta su caché en memoria local para recuperar los parámetros de la clave pública (`n`, `e`).
+8. **Paso 8 (`Client -> Client`):** El cliente calcula y verifica matemáticamente la firma digital RS256 en tiempo constante, validando la integridad del payload y la vigencia del token (`exp`, `nbf`, `iss`, `aud`) de forma completamente autónoma.
+9. **Paso 9 (`Client -> User`):** Confirmada la validez criptográfica sin haber realizado ninguna llamada de red al IdP ni al pool de base de datos (*stateless non-repudiation*), se autoriza el procesamiento de la solicitud.
+
 ---
 
 ### 2. Evidencia Visual del Portal de Descubrimiento

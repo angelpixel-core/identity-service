@@ -98,6 +98,34 @@ sequenceDiagram
     end
 ```
 
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Browser` (Frontend SPA)** | `actor` | Navegador web que ejecuta la aplicación cliente (e.g. `portal.angelpixel.io`) e inicia la validación preliminar de origen antes de habilitar los flujos de login. |
+| **`Gateway` (Express API Gateway)** | `participant` | Punto de entrada perimetral que recibe la solicitud `POST /api/v1/oauth2/clients/validate` y coordina la ejecución de middlewares. |
+| **`Middleware` (clientAuthorizationMiddleware)** | `participant` | Filtro perimetral de gobernanza de clientes. Inspecciona las cabeceras `Origin` y `X-Client-ID`, consultando la caché o la base de datos para determinar los permisos de origen. |
+| **`Cache` (Redis 7 Cache Engine)** | `participant` | Capa en memoria de respuesta ultrarrápida. Almacena tuplas validadas bajo la clave `client_origin:{clientId}:{origin}` con un TTL de 300 segundos para absorber ráfagas de tráfico CORS. |
+| **`DB` (PostgreSQL 16 Client Registry)** | `participant` | Registro persistente y fuente de verdad donde residen las entidades `ClientApplication`, sus dominios permitidos (`allowed_origins`) y su estado (`is_active`). |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 12)
+
+1. **Paso 1 (`Browser -> Gateway`):** La SPA realiza una solicitud previa de validación de cliente y origen hacia `/api/v1/oauth2/clients/validate`.
+2. **Paso 2 (`Gateway -> Middleware`):** La pasarela transfiere la petición al middleware de autorización de clientes.
+3. **Paso 3 (`Middleware -> Middleware`):** Se extraen y sanitizan los parámetros `clientId` y la cabecera `Origin`.
+4. **Paso 4 (`Middleware -> Cache`):** Se realiza una consulta rápida a Redis bajo la clave `client_origin:{clientId}:{origin}`.
+   - **Escenario Cache HIT (Paso 5):**
+     5. **Paso 5 (`Cache -> Middleware`):** Redis devuelve el resultado de validación pre-computado (`ClientValidationResult`), ahorrando el acceso a la base de datos.
+   - **Escenario Cache MISS (Pasos 6 al 9):**
+     6. **Paso 6 (`Middleware -> DB`):** Si no existe en memoria, se consulta a PostgreSQL por el identificador del cliente (`findByClientId`).
+     7. **Paso 7 (`DB -> Middleware`):** La base de datos devuelve el agregado `ClientApplication`.
+     8. **Paso 8 (`Middleware -> Middleware`):** Se evalúan las reglas de negocio del dominio: que el cliente esté activo (`isActive === true`) y que el origen pertenezca a la lista blanca (`allowedOrigins.includes(origin)`).
+     9. **Paso 9 (`Middleware -> Cache`):** El resultado de la validación se almacena en Redis con un TTL de 300 segundos (`SETEX`).
+   - **Bifurcaciones de Decisión y Respuesta (Pasos 10 al 12):**
+     10. **Paso 10 (Validación Aprobada):** Si el origen y el estado son válidos, el middleware invoca `next()` y el Gateway responde `HTTP 200 OK` con metadatos del cliente (`authorized: true`, `clientName`, `scopes`).
+     11. **Paso 11 (Origen No Autorizado):** Si el origen no figura en la lista permitida, se corta la petición retornando de inmediato `HTTP 403 Forbidden` (`unauthorized_client_origin`).
+     12. **Paso 12 (Cliente Desactivado):** Si el cliente fue suspendido o desactivado administrativamente, se retorna `HTTP 401 Unauthorized` (`client_deactivated`).
+
 ---
 
 ### 2. Recetas Interactivas cURL Paso a Paso
@@ -258,6 +286,37 @@ sequenceDiagram
     AuthHandler-->>Gateway: 200 OK (access_token, Bearer, 3600, scopes)
     Gateway-->>Daemon: JSON Response (Cache-Control: no-store)
 ```
+
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Daemon` (Microservicio Satélite / Backend Daemon)** | `actor` | Proceso automatizado o servicio backend consumidor que requiere autenticarse máquina a máquina (M2M) sin presencia de usuario. |
+| **`Gateway` (Express Gateway)** | `participant` | Punto de entrada perimetral que recibe peticiones en `/api/v1/oauth2/token` tanto con cabeceras `Authorization: Basic` como con cuerpo JSON. |
+| **`AuthHandler` (AuthenticateClientM2MCommandHandler)** | `participant` | Caso de uso de aplicación que orquesta la autenticación M2M, aplicando las invariantes del estándar RFC 6749 Sección 4.4. |
+| **`Repo` (ClientApplicationRepository)** | `participant` | Repositorio de dominio encargado de recuperar la entidad del cliente y su hash de secreto correspondiente. |
+| **`Hash` (Bcrypt HashProvider)** | `participant` | Adaptador criptográfico que ejecuta comparaciones seguras de tiempo constante para verificar el secreto plano provisto contra el hash almacenado. |
+| **`Token` (TokenProvider JWT Engine)** | `participant` | Motor de generación de tokens que emite y firma criptográficamente el JWT con los scopes autorizados y tiempo de expiración (3600s). |
+| **`Audit` (Structured Security Audit Logger)** | `participant` | Sistema de auditoría forense que emite eventos inmutables en formato NDJSON cumpliendo normativas PCI-DSS v4.0 (Req 10.2.4) y SOC 2 (CC7.2). |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 13)
+
+1. **Paso 1 (`Daemon -> Gateway`):** El microservicio envía `POST /api/v1/oauth2/token` con `grant_type=client_credentials` y sus credenciales (vía HTTP Basic Auth o JSON body).
+2. **Paso 2 (`Gateway -> AuthHandler`):** El Gateway invoca el comando de autenticación pasando `clientId`, `clientSecret`, `grantType` y `requestedScope`.
+3. **Paso 3 (`AuthHandler -> Repo`):** Se busca en la persistencia la ficha de registro del cliente por su identificador.
+4. **Paso 4 (`Repo -> AuthHandler`):** El repositorio retorna el agregado `ClientApplication` (o `null` si no existe).
+5. **Paso 5 (`AuthHandler -> Hash`):** Se ejecuta la verificación criptográfica del secreto plano frente al hash Bcrypt almacenado.
+   - **Bifurcación Negativa: Credenciales Inválidas o Cliente Inactivo (Pasos 6 y 7):**
+     6. **Paso 6 (`AuthHandler -> Audit`):** Se emite un evento de auditoría de severidad `WARNING` (`M2M_AUTH_FAILED`) asegurando que el secreto permanezca redactado como `[REDACTED]`.
+     7. **Paso 7 (`AuthHandler -> Daemon`):** Se devuelve de inmediato `HTTP 401 Unauthorized` con el error estándar `invalid_client`.
+   - **Bifurcación Negativa: Scope No Autorizado (Paso 8):**
+     8. **Paso 8 (`AuthHandler -> Daemon`):** Si el cliente solicitó scopes que exceden su perfil registrado, se rechaza la petición con `HTTP 400 Bad Request` (`invalid_scope`).
+   - **Flujo Exitoso (Pasos 9 al 13):**
+     9. **Paso 9 (`AuthHandler -> Token`):** Se solicita la emisión del Access Token especificando los scopes autorizados y un tiempo de expiración estándar (3600 segundos).
+     10. **Paso 10 (`Token -> AuthHandler`):** El motor criptográfico devuelve la cadena del token JWT firmada digitalmente.
+     11. **Paso 11 (`AuthHandler -> Audit`):** Se registra un evento de auditoría de severidad `INFO` certificando la emisión exitosa del token (`M2M_AUTH_SUCCESS`).
+     12. **Paso 12 (`AuthHandler -> Gateway`):** Se retorna el DTO de respuesta con el `access_token`, `token_type: "Bearer"` y `expires_in: 3600`.
+     13. **Paso 13 (`Gateway -> Daemon`):** La pasarela despacha la respuesta JSON con la cabecera obligatoria de seguridad `Cache-Control: no-store`.
 
 ---
 

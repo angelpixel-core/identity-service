@@ -103,6 +103,34 @@ sequenceDiagram
     Runner-->>Request: Retornar resultado aislado
 ```
 
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Request` (Petición HTTP Tenant Context)** | `actor` | Petición entrante asociada a un inquilino específico (e.g. `acme-corp`) autenticada por el gateway. |
+| **`Runner` (TenantAwareTransactionRunner)** | `participant` | Orquestador transaccional en la capa de infraestructura. Garantiza que toda operación de base de datos se ejecute dentro de una sesión delimitada con `SET LOCAL`. |
+| **`Pool` (PostgreSQL Connection Pool)** | `participant` | Gestor del pool de conexiones físicas (`pg.Pool`). Reutiliza conexiones y exige la limpieza absoluta del estado de sesión al liberarlas. |
+| **`PG` (PostgreSQL 16 Kernel RLS Engine)** | `participant` | Motor interno de PostgreSQL encargado de forzar las políticas declarativas de seguridad a nivel de fila (`FORCE ROW LEVEL SECURITY`). |
+| **`Disk` (Storage: Shared Table `users`)** | `participant` | Almacenamiento en disco físico con esquema compartido (*Shared Database, Shared Schema*) donde coexisten datos de múltiples inquilinos. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 15)
+
+1. **Paso 1 (`Request -> Runner`):** El caso de uso invoca `runInTenantContext('acme-corp', callback)` para iniciar la transacción delimitada.
+2. **Paso 2 (`Runner -> Pool`):** Se solicita una conexión dedicada del pool de PostgreSQL.
+3. **Paso 3 (`Pool -> Runner`):** El pool asigna un cliente de conexión limpio (`pg.Client`).
+4. **Paso 4 (`Runner -> PG`):** Se emite la sentencia `BEGIN` para abrir formalmente una transacción.
+5. **Paso 5 (`Runner -> PG`):** Se ejecuta la directiva `SET LOCAL app.current_tenant_id = 'acme-corp'`. El modificador `LOCAL` asegura que la variable solo viva durante la transacción activa.
+6. **Paso 6 (`PG -> Runner`):** El motor confirma la fijación del contexto de sesión en el kernel de la base de datos.
+7. **Paso 7 (`Runner -> PG`):** Se ejecuta la consulta de negocio (e.g., `SELECT * FROM users`), intencionalmente redactada sin cláusulas `WHERE tenant_id = 'acme-corp'`.
+8. **Paso 8 (`PG -> PG`):** El planificador y ejecutor del motor PostgreSQL reescribe internamente la consulta aplicando la política RLS: `USING (tenant_id = current_setting('app.current_tenant_id', true)::text)`.
+9. **Paso 9 (`PG -> Disk`):** El motor lee los bloques de datos desde almacenamiento.
+10. **Paso 10 (`Disk -> PG`):** El motor descarta automáticamente cualquier registro cuyo `tenant_id` no sea `'acme-corp'`.
+11. **Paso 11 (`PG -> Runner`):** Se devuelven exclusivamente las filas que superaron la política de seguridad a nivel de kernel.
+12. **Paso 12 (`Runner -> PG`):** Se emite `COMMIT` para cerrar la transacción.
+13. **Paso 13 (`PG -> Runner`):** Al finalizar la transacción, PostgreSQL descarta automáticamente el valor de `app.current_tenant_id`, evitando fuga de contexto en conexiones reutilizadas.
+14. **Paso 14 (`Runner -> Pool`):** Se devuelve la conexión limpia al pool común.
+15. **Paso 15 (`Runner -> Request`):** Se entrega el resultado aislado al flujo de la aplicación.
+
 ---
 
 ### 2. Evidencia Forense en Vivo: Terminal SQL de PostgreSQL 16
@@ -232,6 +260,28 @@ sequenceDiagram
     Guard-->>Attacker: 404 Not Found (User not found)
     Note over Attacker,Guard: Atacante no puede saber si el ID existe en otro inquilino
 ```
+
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Attacker` (Atacante / Tenant A)** | `actor` | Usuario legítimo de un inquilino (Tenant A) que intenta adivinar o acceder a identificadores de recursos pertenecientes a un inquilino ajeno (Tenant B). |
+| **`Gateway` (Express API Gateway)** | `participant` | Entrada HTTP perimetral que recibe la solicitud con credenciales y cabeceras contextuales. |
+| **`Guard` (crossTenantGuard)** | `participant` | Middleware perimetral de inspección profunda. Comprueba la coincidencia estricta entre el claim `tenantId` del JWT y la cabecera `X-Tenant-ID`, rechazando discrepancias antes de tocar la base de datos. |
+| **`Audit` (Security Audit Logger)** | `participant` | Logger estructurado que emite eventos NDJSON clasificados como `CROSS_TENANT_VIOLATION` con severidad `ALERT` para SIEM / SOC. |
+| **`Domain` (Domain Aggregate / Query Slice)** | `participant` | Capa de dominio y casos de uso. Ejecuta las consultas delimitando estrictamente el contexto del inquilino autenticado. |
+| **`DB` (PostgreSQL 16 Tenant Pool)** | `participant` | Base de datos con Row-Level Security activo bajo el inquilino autenticado (Tenant A), haciendo invisible cualquier dato ajeno. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 8)
+
+1. **Paso 1 (`Attacker -> Gateway`):** El usuario de Tenant A realiza una consulta (`GET /api/v1/users/:foreignUserId`) enviando su token válido de Tenant A y la cabecera `X-Tenant-ID: tenant-a`.
+2. **Paso 2 (`Gateway -> Guard`):** El Gateway transfiere la petición a la guardia perimetral `crossTenantGuard`.
+3. **Paso 3 (`Guard -> Guard`):** La guardia verifica la coherencia entre el token y la cabecera (ambos pertenecen a Tenant A, por lo que la petición perimetral es admitida).
+4. **Paso 4 (`Guard -> Domain`):** Se invoca el caso de uso `findById(foreignUserId, tenantA)` vinculando explícitamente la consulta al contexto de Tenant A.
+5. **Paso 5 (`Domain -> DB`):** Se lanza la consulta a PostgreSQL bajo la sesión aislada de Tenant A (`SET LOCAL app.current_tenant_id = 'tenant-a'`).
+6. **Paso 6 (`DB -> Domain`):** El motor RLS filtra a nivel de kernel las filas del Tenant B. La base de datos responde con `0 rows`, exactamente igual que si el ID no existiera en ningún sitio.
+7. **Paso 7 (`Domain -> Guard`):** La capa de dominio concluye que el recurso es inexistente (`null`) para ese contexto de inquilino.
+8. **Paso 8 (`Guard -> Attacker`):** Se responde con **`HTTP 404 Not Found`** (`{"error":"User not found"}`) en lugar de `403 Forbidden`. De este modo, el atacante no puede discernir si el ID consultado pertenece a otra empresa o si es un UUID ficticio, neutralizando vectores de ataque por fuerza bruta o escaneo de usuarios.
 
 ---
 

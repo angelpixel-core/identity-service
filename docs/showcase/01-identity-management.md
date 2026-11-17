@@ -80,6 +80,30 @@ sequenceDiagram
     Gateway-->>User: 201 Created (userId, email, tenantId, accessToken)
 ```
 
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`User` (Cliente / Frontend SPA)** | `actor` | Usuario final o interfaz gráfica React que inicia el proceso de registro remitiendo credenciales e identificador de organización. |
+| **`Gateway` (Express API Gateway)** | `participant` | Punto de entrada perimetral HTTP/REST. Aplica middlewares de auditoría, trazabilidad W3C y enrutamiento hacia los controladores. |
+| **`Zod` (Zod Schema Validator)** | `participant` | Capa de validación sintáctica y tipado estricto. Aplica esquemas declarativos (`RegisterUserSchema`), rechazando payloads anómalos antes de tocar el dominio. |
+| **`AuthSvc` (AuthenticationService)** | `participant` | Servicio de aplicación orquestador (`RegisterUserCommandHandler`). Coordina la política de contraseñas, hashing, persistencia y emisión de tokens. |
+| **`Argon` (Argon2id Engine RFC 9106)** | `participant` | Motor criptográfico de derivación de claves optimizado contra ataques por hardware masivo (GPU/FPGA/ASIC), con 64MB de memoria y 4 hilos de paralelismo. |
+| **`DB` (PostgreSQL 16 Tenant Pool)** | `participant` | Base de datos relacional con aislamiento multi-inquilino activado por Row-Level Security (RLS). |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 9)
+
+1. **Paso 1 (`User -> Gateway`):** El cliente envía `POST /api/v1/auth/register` con la cabecera `X-Tenant-ID` y el cuerpo JSON (`email`, `password`, `name`).
+2. **Paso 2 (`Gateway -> Zod`):** El gateway delega el payload en el middleware de validación `Zod.parse`.
+   - *Bifurcación Condicional (Payload Inválido):* Si los campos no cumplen las restricciones (e.g. contraseña débil o email inválido), se interrumpe el flujo y se retorna `400 Bad Request` con el detalle RFC 7807 sin procesar lógica de dominio.
+3. **Paso 3 (`Zod -> AuthSvc`):** Superada la validación estructural, se invoca el comando de registro con el contexto tipado del inquilino.
+4. **Paso 4 (`AuthSvc -> Argon`):** Se delega la contraseña plana al motor Argon2id configurado según los estándares RFC 9106 (`memoryCost: 65536 KiB`, `timeCost: 3`, `parallelism: 4`).
+5. **Paso 5 (`Argon -> AuthSvc`):** El motor genera la cadena de hash estructurada e irreversible (`$argon2id$v=19$m=65536...`).
+6. **Paso 6 (`AuthSvc -> DB`):** Se ejecuta la inserción parametrizada en la tabla `users` asociando el registro al `tenant_id` contextual.
+7. **Paso 7 (`DB -> AuthSvc`):** La base de datos confirma la creación del registro asegurando unicidad del correo por inquilino.
+8. **Paso 8 (`AuthSvc -> Gateway`):** Se construye el agregado de dominio con el hash de contraseña estrictamente omitido (`Sanitized User DTO`) y se genera el token JWT de acceso.
+9. **Paso 9 (`Gateway -> User`):** Se responde con `HTTP 201 Created` retornando `userId`, `email`, `tenantId` y `accessToken`.
+
 ---
 
 ### 2. Evidencia Visual: Portal Web de Registro
@@ -179,6 +203,34 @@ sequenceDiagram
         Handler-->>Client: 200 OK (Sanitized Profile)
     end
 ```
+
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Client` (Cliente / React SPA)** | `actor` | Navegador web que ejecuta la aplicación de usuario y requiere consultar el perfil activo de la sesión. |
+| **`Gateway` (Express Gateway)** | `participant` | Pasarela perimetral que recibe la petición HTTP con la cabecera `Authorization: Bearer <JWT>`. |
+| **`Guard` (Tenant & JWT Auth Guard)** | `participant` | Middleware de autenticación y frontera Zero-Trust. Verifica la firma criptográfica del JWT y comprueba que el claim `tenantId` coincida bit a bit con `X-Tenant-ID`. |
+| **`Handler` (GetUserProfileQueryHandler)** | `participant` | Caso de uso de lectura (*Query Slice* en CQRS). Orquesta la lectura de baja latencia aplicando el patrón Cache-Aside. |
+| **`Redis` (Redis 7 Cache Engine)** | `participant` | Base de datos clave-valor en memoria con claves prefijadas por inquilino (`user_profile:{tenantId}:{userId}`) y TTL de 300 segundos. |
+| **`DB` (PostgreSQL 16 Tenant Pool)** | `participant` | Repositorio de datos relacional primario consultado exclusivamente en caso de Cache Miss. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 11)
+
+1. **Paso 1 (`Client -> Gateway`):** La SPA solicita el perfil autenticado mediante `GET /api/v1/auth/me` con la cabecera `Authorization: Bearer <JWT>` y `X-Tenant-ID`.
+2. **Paso 2 (`Gateway -> Guard`):** El Gateway transfiere el control a la guardia de seguridad para la validación criptográfica y contextual.
+   - *Bifurcación Condicional (Token Inválido o Tenant Mismatch):* Si el JWT expiró, fue firmado por un emisor ilegítimo, o el claim `tenantId` no coincide con la cabecera, se aborta la petición con `401 Unauthorized` o `403 Forbidden`.
+3. **Paso 3 (`Guard -> Handler`):** Superado el filtro de seguridad, se ejecuta el query handler con los identificadores inmutables de usuario e inquilino.
+4. **Paso 4 (`Handler -> Redis`):** El handler consulta Redis para verificar si existe una copia en caché del perfil bajo la clave particionada `user_profile:{tenantId}:{userId}`.
+   - **Escenario Cache HIT (Pasos 5 y 6):**
+     5. **Paso 5 (`Redis -> Handler`):** Redis devuelve el `UserProfileDTO` serializado en JSON.
+     6. **Paso 6 (`Handler -> Client`):** Se devuelve la respuesta inmediata `HTTP 200 OK` con una latencia típica inferior a 2 milisegundos, sin tocar la base de datos relacional.
+   - **Escenario Cache MISS (Pasos 7 al 11):**
+     7. **Paso 7 (`Redis -> Handler`):** Redis retorna `null` al no encontrar la clave o haberse vencido el TTL.
+     8. **Paso 8 (`Handler -> DB`):** Se realiza la consulta a la base de datos PostgreSQL filtrando por `userId` y `tenantId`.
+     9. **Paso 9 (`DB -> Handler`):** PostgreSQL devuelve el agregado `User` desde almacenamiento persistente.
+     10. **Paso 10 (`Handler -> Redis`):** El handler almacena el DTO sanitizado en Redis mediante la instrucción `SETEX` con un tiempo de vida (TTL) de 300 segundos.
+     11. **Paso 11 (`Handler -> Client`):** Se entrega la respuesta `HTTP 200 OK` al cliente con el perfil sanitizado.
 
 ---
 
