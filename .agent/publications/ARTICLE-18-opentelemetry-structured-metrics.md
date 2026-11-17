@@ -205,3 +205,313 @@ sequenceDiagram
     Port-->>Express: Texto formateado con contadores, histogramas y gauges
     Express-->>Prometheus: HTTP 200 (text/plain; version=0.0.4)
 ```
+
+
+---
+
+## 2. Arquitectura de Dominio y Contratos Hexagonales
+
+### 2.1 Principio de Inversión de Dependencias y Desacoplamiento de Vendors
+
+Uno de los errores más costosos en la evolución de sistemas distribuidos es el acoplamiento prematuro del código de negocio a SDKs de telemetría de terceros. La historia de las bibliotecas de métricas en Node.js está marcada por la rotura frecuente de interfaces: desde las primeras versiones de `statsd`, pasando por `prom-client` con cambios de API en v12/v14, hasta la rápida transición de OpenTelemetry Metrics desde v1.x a v3.x.
+
+Siguiendo rigurosamente el **Principio de Inversión de Dependencias (DIP)** de Clean Architecture y la **Arquitectura Hexagonal (Puertos y Adaptadores)**, el dominio de `identity-service` trata a la telemetría como un puerto secundario de infraestructura. Ni la capa de dominio (`domain`), ni la capa de aplicación (`application`), ni los middlewares de transporte dependen directamente de `@opentelemetry/api` o `@opentelemetry/sdk-metrics`.
+
+Toda interacción se canaliza a través de la interfaz canónica **`MetricsPort`**:
+
+```typescript
+// src/contexts/shared/domain/telemetry/metrics_port.ts
+
+import { MetricName, MetricLabels } from './metric_types';
+
+export interface MetricsPort {
+  // Instrumentos primitivos de propósito general
+  incrementCounter(name: MetricName, value?: number, labels?: MetricLabels): void;
+  recordHistogram(name: MetricName, value: number, labels?: MetricLabels): void;
+  setGauge(name: MetricName, value: number, labels?: MetricLabels): void;
+
+  // Métodos semánticos de alto nivel (Domain / Infrastructure Specific)
+  recordHttpRequest(method: string, route: string, statusCode: number, durationSeconds: number): void;
+  recordHttpError(method: string, route: string, errorType: string): void;
+  recordDbQuery(operation: string, table: string, durationSeconds: number): void;
+  recordAuthAttempt(clientId: string, flowType: string, outcome: 'success' | 'failure'): void;
+  recordTokenIssued(grantType: string, tenantId?: string): void;
+
+  // Ciclo de vida y serialización del transporte
+  getMetricsContentType(): string;
+  getMetrics(): Promise<string>;
+  shutdown(): Promise<void>;
+}
+```
+
+```mermaid
+classDiagram
+    direction TB
+    
+    class MetricsPort {
+        <<interface>>
+        +incrementCounter(name, value, labels)
+        +recordHistogram(name, value, labels)
+        +setGauge(name, value, labels)
+        +recordHttpRequest(method, route, statusCode, duration)
+        +recordHttpError(method, route, errorType)
+        +recordDbQuery(operation, table, duration)
+        +recordAuthAttempt(clientId, flowType, outcome)
+        +recordTokenIssued(grantType, tenantId)
+        +getMetrics() Promise~string~
+        +shutdown() Promise~void~
+    }
+
+    class InMemoryMetricsAdapter {
+        -counters: Map~string, number~
+        -histograms: Map~string, number[]~
+        -gauges: Map~string, number~
+        +getCounterValue(name, labels) number
+        +getHistogramObservations(name, labels) number[]
+        +getGaugeValue(name, labels) number
+        +clear() void
+    }
+
+    class OpenTelemetryMetricsAdapter {
+        -provider: MeterProvider
+        -exporter: PrometheusExporter
+        -serializer: PrometheusSerializer
+        -eventLoopMonitor: IntervalHistogram
+        -runtimeMetricsInterval: NodeJS.Timeout
+        +getMetrics() Promise~string~
+        +shutdown() Promise~void~
+    }
+
+    class MetricsMiddleware {
+        +createMetricsMiddleware(metrics: MetricsPort)
+    }
+
+    class TenantAwareTransactionRunner {
+        -metrics: MetricsPort
+        +executeUnderTenant(client, tenantId, callback)
+    }
+
+    class AuthenticateClientM2MCommandHandler {
+        -metrics: MetricsPort
+        +handle(command)
+    }
+
+    MetricsPort <|.. InMemoryMetricsAdapter : implements (Testing)
+    MetricsPort <|.. OpenTelemetryMetricsAdapter : implements (Production)
+    MetricsMiddleware --> MetricsPort : uses
+    TenantAwareTransactionRunner --> MetricsPort : uses
+    AuthenticateClientM2MCommandHandler --> MetricsPort : uses
+```
+
+Este desacoplamiento proporciona ventajas arquitectónicas determinantes:
+1. **Sustituibilidad de Infraestructura:** El adaptador de producción (`OpenTelemetryMetricsAdapter`) puede ser reemplazado por un exportador OTLP gRPC o Datadog sin alterar una sola línea de código en los controladores ni en los casos de uso.
+2. **Testabilidad Aislada y Determinista:** En las pruebas unitarias y de integración rápida, se inyecta `InMemoryMetricsAdapter`, lo que elimina los temporizadores en segundo plano del SDK y permite aserciones instantáneas sobre estructuras de datos locales.
+3. **Contrato Semántico Enriquecido:** La inclusión de métodos semánticos como `recordAuthAttempt` y `recordDbQuery` asegura que los nombres de métricas y las etiquetas requeridas sean homogéneas a través de todo el codebase.
+
+---
+
+### 2.2 Modelado de Dominio de Métricas (`metric_types.ts`)
+
+Para erradicar el uso de strings arbitrarios y garantizar la alineación con las especificaciones OpenMetrics, el archivo `metric_types.ts` centraliza todas las definiciones formales del subsistema de telemetría:
+
+```typescript
+// src/contexts/shared/domain/telemetry/metric_types.ts
+
+export type MetricName =
+  | 'http_requests_total'
+  | 'http_request_duration_seconds'
+  | 'http_requests_errors_total'
+  | 'db_query_duration_seconds'
+  | 'auth_attempts_total'
+  | 'auth_tokens_issued_total'
+  | 'process_memory_heap_bytes'
+  | 'nodejs_eventloop_lag_seconds';
+
+export type MetricLabels = Record<string, string | number | boolean>;
+
+export interface HttpRequestLabels {
+  method: string;
+  route: string;
+  statusCode: number;
+}
+
+export interface HttpErrorLabels {
+  method: string;
+  route: string;
+  errorType: string;
+}
+
+export interface DbQueryLabels {
+  operation: string;
+  table: string;
+}
+
+export interface AuthAttemptLabels {
+  clientId: string;
+  flowType: string;
+  outcome: 'success' | 'failure';
+}
+
+export interface TokenIssuedLabels {
+  grantType: string;
+  tenantId?: string;
+}
+```
+
+#### Límites de Histogramas Explícitos (Default Latency Buckets)
+En el cálculo de percentiles con Prometheus (`histogram_quantile`), la elección de los límites de cubos (*bucket boundaries*) determina directamente el error de aproximación. Unos cubos con paso lineal o demasiado espaciados distorsionan por completo las mediciones en los extremos:
+- Si los cubos comienzan en $100\,\text{ms}$, cualquier operación de $10\,\text{ms}$ se clasifica en el mismo cubo que una de $95\,\text{ms}$, ocultando degradaciones críticas.
+- Si los cubos terminan en $1\,\text{segundo}$, un timeout bancario de $5\,\text{segundos}$ queda subsumido en el cubo infinito (`+Inf`), impidiendo evaluar el impacto de caídas severas.
+
+Para equilibrar precisión sub-milisegundo y contención de series temporales, se definieron 11 cubos exponenciales calibrados específicamente para microservicios de identidad:
+
+```typescript
+export const DEFAULT_LATENCY_BUCKETS = [
+  0.005, // 5ms  - Respuestas en caché y endpoints ultrarápidos (/health)
+  0.01,  // 10ms - Validaciones simples de tokens en memoria
+  0.025, // 25ms - Consultas de clave única en PostgreSQL (RLS activo)
+  0.05,  // 50ms - Umbral objetivo para llamadas típicas de API
+  0.1,   // 100ms - Emisión completa de tokens JWT y firma asimétrica
+  0.25,  // 250ms - Verificación PKCE e intercambios federados OIDC
+  0.5,   // 500ms - Límite de advertencia (alerta de SLO)
+  1.0,   // 1s   - Degradación severa
+  2.5,   // 2.5s - Umbral de saturación de red o reintentos de base de datos
+  5.0,   // 5s   - Retardo crítico en llamadas a proveedores externos
+  10.0,  // 10s  - Límite de timeout HTTP upstream
+];
+```
+
+---
+
+### 2.3 Estrategia Defensiva Anti-Cardinalidad (`RouteNormalizer`)
+
+La cardinalidad en un sistema de métricas define el número total de series temporales distintas que deben persistirse en el almacenamiento TSDB. Matemáticamente, el número de series temporales generadas por una métrica HTTP responde al producto cartesiano de sus dimensiones de etiquetas:
+
+$$\text{Series Totales} = \lvert\text{Métodos}\rvert \times \lvert\text{Rutas}\rvert \times \lvert\text{Códigos Estado}\rvert$$
+
+Si la dimensión $\lvert\text{Rutas}\rvert$ es finita y controlada (por ejemplo, 25 endpoints parametrizados), el número total de series es ínfimo:
+$$4\,\text{métodos} \times 25\,\text{rutas} \times 5\,\text{códigos} = 500\,\text{series}$$
+
+Sin embargo, si se registra la URL cruda que contiene identificadores de entidades, la dimensión de rutas se vuelve infinita:
+$$4 \times 1{,}000{,}000\,\text{usuarios} \times 5 = 20{,}000{,}000\,\text{series}$$
+
+Veinte millones de series temporales colapsan de inmediato el asignador de memoria de Prometheus, consumiendo decenas de gigabytes de RAM y provocando la expulsión de datos históricos.
+
+Para blindar al sistema contra este riesgo, se implementó `RouteNormalizer`:
+
+```typescript
+// src/contexts/shared/domain/telemetry/metric_types.ts
+
+export class RouteNormalizer {
+  private static readonly UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+  private static readonly NUMERIC_ID_REGEX = /\/\d+(\/|$)/g;
+  private static readonly HEX_ID_REGEX = /\/[0-9a-f]{24,}(\/|$)/gi;
+
+  public static normalize(path: string): string {
+    if (!path || path === '/') {
+      return '/';
+    }
+
+    // 1. Eliminación de parámetros de consulta (query string stripping)
+    let normalized = path.split('?')[0];
+
+    // 2. Ofuscación de UUIDs canónicos (v1 a v5)
+    normalized = normalized.replace(this.UUID_REGEX, ':id');
+
+    // 3. Ofuscación de identificadores enteros numéricos
+    normalized = normalized.replace(this.NUMERIC_ID_REGEX, '/:id$1');
+
+    // 4. Ofuscación de hashes y slugs hexadecimales largos (> 24 caracteres)
+    normalized = normalized.replace(this.HEX_ID_REGEX, '/:id$1');
+
+    // 5. Normalización de barras finales
+    if (normalized.endsWith('/') && normalized.length > 1) {
+      normalized = normalized.slice(0, -1);
+    }
+
+    return normalized;
+  }
+}
+```
+
+#### Ejemplos de Normalización Anti-Cardinalidad
+
+| URL de Solicitud HTTP Entrante | Ruta Normalizada en Métrica Prometheus | Impacto en Cardinalidad |
+| :--- | :--- | :--- |
+| `/api/v1/users/550e8400-e29b-41d4-a716-446655440000/profile` | `/api/v1/users/:id/profile` | Colapsa 100K usuarios en 1 sola serie |
+| `/api/v1/tenants/98741/credentials?show_secrets=true` | `/api/v1/tenants/:id/credentials` | Oculta query param y normaliza ID entero |
+| `/oauth/v2/tokens/65a123f8901234567890abcd/revoke` | `/oauth/v2/tokens/:id/revoke` | Normaliza identificadores MongoDB / Hex |
+| `/oauth/v2/token` | `/oauth/v2/token` | Preservación exacta de rutas canónicas |
+| `/` o `/health/` | `/` o `/health` | Consistencia estructural en endpoints raíz |
+
+---
+
+### 2.4 Adaptador en Memoria para Pruebas Herméticas (`InMemoryMetricsAdapter`)
+
+Para garantizar que la suite de pruebas unitarias y de integración ejecute en milisegundos y pueda certificar con precisión matemática que cada caso de uso emite exactamente las métricas requeridas, se implementó `InMemoryMetricsAdapter`.
+
+Este componente almacena las observaciones en estructuras de mapas locales, utilizando una función determinista de hash sobre las etiquetas:
+
+```typescript
+// src/contexts/shared/domain/telemetry/in_memory_metrics_adapter.ts
+
+export class InMemoryMetricsAdapter implements MetricsPort {
+  private readonly counters: Map<string, number> = new Map();
+  private readonly histograms: Map<string, number[]> = new Map();
+  private readonly gauges: Map<string, number> = new Map();
+
+  private buildKey(name: string, labels?: MetricLabels): string {
+    if (!labels || Object.keys(labels).length === 0) return name;
+    const sorted = Object.keys(labels).sort().map(k => `${k}="${labels[k]}"`).join(',');
+    return `${name}{${sorted}}`;
+  }
+
+  public incrementCounter(name: MetricName, value = 1, labels?: MetricLabels): void {
+    const key = this.buildKey(name, labels);
+    const current = this.counters.get(key) || 0;
+    this.counters.set(key, current + value);
+  }
+
+  public recordHistogram(name: MetricName, value: number, labels?: MetricLabels): void {
+    const key = this.buildKey(name, labels);
+    const observations = this.histograms.get(key) || [];
+    observations.push(value);
+    this.histograms.set(key, observations);
+  }
+
+  public setGauge(name: MetricName, value: number, labels?: MetricLabels): void {
+    const key = this.buildKey(name, labels);
+    this.gauges.set(key, value);
+  }
+
+  public getCounterValue(name: MetricName, labels?: MetricLabels): number {
+    return this.counters.get(this.buildKey(name, labels)) || 0;
+  }
+
+  public getHistogramObservations(name: MetricName, labels?: MetricLabels): number[] {
+    return this.histograms.get(this.buildKey(name, labels)) || [];
+  }
+
+  public getGaugeValue(name: MetricName, labels?: MetricLabels): number | undefined {
+    return this.gauges.get(this.buildKey(name, labels));
+  }
+
+  public clear(): void {
+    this.counters.clear();
+    this.histograms.clear();
+    this.gauges.clear();
+  }
+
+  // ... Implementaciones semánticas completas y serialización básica ...
+}
+```
+
+Gracias a este adaptador, los tests unitarios verifican afirmaciones de telemetría como:
+```typescript
+expect(metrics.getCounterValue('auth_attempts_total', {
+  client_id: 'client-m2m-1',
+  flow_type: 'client_credentials',
+  outcome: 'success',
+})).to.equal(1);
+```
+sin necesidad de inicializar el recolector de OpenTelemetry ni abrir puertos de red.
