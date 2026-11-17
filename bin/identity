@@ -187,6 +187,7 @@ Uso: identity <recurso> <accion> [banderas]
 ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}auth${colors.reset}       Gestión de usuarios y autenticación (register, me)
   ${colors.cyan}client${colors.reset}     Gobernanza y validación de clientes OAuth2 (validate)
+  ${colors.cyan}token${colors.reset}      Emisión y canje de tokens OAuth2 (m2m, exchange)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -198,6 +199,8 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity auth register --tenant acme-corp --email user@acme.com --password "Secret2026!"
   identity auth me --tenant acme-corp --token "$TOKEN"
   identity client validate --client-id portal-web --origin https://portal.angelpixel.io
+  identity token m2m --client-id m2m-service-app --client-secret "$SECRET"
+  identity token exchange --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback --code "$CODE" --verifier "$VERIFIER"
 `);
 }
 
@@ -347,6 +350,121 @@ async function handleClientDomain(action, flags, baseUrl, rawJson) {
   process.exit(1);
 }
 
+function printTokenHelp() {
+  console.log(`${colors.bold}Uso: identity token <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones:${colors.reset}
+  ${colors.cyan}m2m${colors.reset}         Emite un Access Token para un cliente confidencial M2M (RFC 6749 Secc. 4.4)
+              Banderas:
+                -c, --client-id <id>        ID del cliente confidencial (Requerido)
+                -s, --client-secret <sec>   Secreto del cliente (Requerido)
+                --scope <scopes>            Ámbitos OAuth2 solicitados (Opcional)
+                --auth-mode <basic|json>    Modo de envío de credenciales: json (defecto) o basic
+
+  ${colors.cyan}exchange${colors.reset}    Canjea un código de autorización por tokens OIDC con PKCE (RFC 7636)
+              Banderas:
+                -c, --client-id <id>        ID del cliente público (Requerido)
+                -r, --redirect-uri <uri>    URI de redirección exacta (Requerido)
+                --code <code>               Código de autorización OIDC (Requerido)
+                -v, --verifier <str>        Verificador PKCE de alta entropía (Requerido)
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity token m2m --client-id m2m-service-app --client-secret "ValidSecret123!"
+  identity token m2m -c m2m-service-app -s "ValidSecret123!" --auth-mode basic
+  identity token exchange -c portal-web -r https://portal.angelpixel.io/callback --code auth_code_123 --verifier "dBjftJeZ4C..."
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO TOKEN ---
+async function handleTokenDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printTokenHelp();
+    return;
+  }
+
+  if (action === 'm2m') {
+    const clientId = flags['client-id'] || flags.c;
+    const clientSecret = flags['client-secret'] || flags.s;
+    const scope = flags.scope;
+    const authMode = (flags['auth-mode'] || 'json').toLowerCase();
+
+    if (!clientId) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --client-id (-c) es obligatoria para emitir un token M2M.`);
+      process.exit(1);
+    }
+    if (!clientSecret) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --client-secret (-s) es obligatoria para emitir un token M2M.`);
+      process.exit(1);
+    }
+
+    const headers = {};
+    const body = {
+      grant_type: 'client_credentials',
+    };
+    if (scope) body.scope = String(scope);
+
+    if (authMode === 'basic') {
+      const basicCredentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+      headers.Authorization = `Basic ${basicCredentials}`;
+    } else {
+      body.client_id = String(clientId);
+      body.client_secret = String(clientSecret);
+    }
+
+    const res = await requestHttp('POST', '/api/v1/oauth2/token', {
+      baseUrl,
+      headers,
+      body,
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'exchange') {
+    const clientId = flags['client-id'] || flags.c;
+    const redirectUri = flags['redirect-uri'] || flags.r;
+    const code = flags.code;
+    const verifier = flags.verifier || flags.v;
+
+    if (!clientId) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --client-id (-c) es obligatoria para el canje de código.`);
+      process.exit(1);
+    }
+    if (!redirectUri) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --redirect-uri (-r) es obligatoria para el canje de código.`);
+      process.exit(1);
+    }
+    if (!code) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --code es obligatoria para el canje de código.`);
+      process.exit(1);
+    }
+    if (!verifier) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --verifier (-v) es obligatoria para el canje de código PKCE.`);
+      process.exit(1);
+    }
+
+    const body = {
+      grant_type: 'authorization_code',
+      client_id: String(clientId),
+      redirect_uri: String(redirectUri),
+      code: String(code),
+      code_verifier: String(verifier),
+    };
+
+    const res = await requestHttp('POST', '/api/v1/oauth2/token', {
+      baseUrl,
+      body,
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso token. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
+}
+
 // --- FUNCIÓN PRINCIPAL (ENTRYPOINT) ---
 async function main() {
   const parsed = parseArgs(process.argv.slice(2));
@@ -370,6 +488,10 @@ async function main() {
 
     case 'client':
       await handleClientDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    case 'token':
+      await handleTokenDomain(parsed.action, parsed.flags, baseUrl, rawJson);
       break;
 
     default:
