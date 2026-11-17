@@ -237,7 +237,43 @@ sequenceDiagram
 
 ### 2. Recetas Interactivas cURL Paso a Paso
 
-Puedes reproducir los tres vectores de ataque directamente contra el entorno en vivo:
+Puedes reproducir los tres vectores de ataque directamente contra el entorno en vivo.
+
+#### Paso 0: Obtención del Token de Autenticación para `acme-corp` (`$TOKEN_ACME`)
+
+Para ejecutar los vectores de prueba de seguridad, primero obtenemos un token JWT Bearer emitido legítimamente para un usuario del inquilino `acme-corp`:
+
+```bash
+# 1. Registrar usuario de prueba dinámico en acme-corp y exportar TOKEN_ACME
+export TOKEN_ACME=$(curl -s -X POST http://localhost:4000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: acme-corp" \
+  -d "{
+    \"email\": \"security.tester.$(date +%s)@acme-corp.com\",
+    \"password\": \"EnterprisePassword2026!\"
+  }" | jq -r .accessToken)
+
+# 2. Confirmar que el token se generó correctamente
+echo "TOKEN_ACME=$TOKEN_ACME"
+```
+
+##### Inspección del Payload Criptográfico del JWT:
+Al inspeccionar el JWT emitido, se observa cómo el claim `tenantId` queda fijado criptográficamente en el payload mediante la firma del servidor:
+
+```json
+{
+  "userId": "3e80505f-0375-422d-bd58-4ddc3ea54f49",
+  "email": "security.tester.1794938792@acme-corp.com",
+  "tenantId": "acme-corp",
+  "iat": 1794938793,
+  "exp": 1794942393
+}
+```
+
+> [!TIP]
+> Si abres una nueva ventana o pestaña de terminal para probar los vectores siguientes, asegúrate de ejecutar primero el bloque del **Paso 0** para inicializar la variable de entorno `$TOKEN_ACME`.
+
+---
 
 #### Vector 1: Prevención de Enumeración de Usuarios (HTTP 404 Not Found)
 
