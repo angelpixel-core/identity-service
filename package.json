@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "description": "Enterprise Multi-Tenant Identity & Access Management Service",
   "main": "dist/interfaces/http/server.js",
+  "bin": {
+    "identity": "./bin/identity"
+  },
   "scripts": {
+    "identity": "./bin/identity",
     "dev:api": "tsx watch interfaces/http/server.ts",
     "dev:web": "vite",
     "build:web": "vite build",

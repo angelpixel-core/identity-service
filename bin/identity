@@ -1,0 +1,324 @@
+#!/usr/bin/env node
+
+/**
+ * AngelPixel Identity Service - Unified CLI
+ * Herramienta de línea de comandos HTTP-First para interacción, pruebas y automatización.
+ * No acoplada al backend; realiza llamadas de red HTTP reales contra la API en ejecución.
+ */
+
+import { performance } from 'perf_hooks';
+
+// --- CONFIGURACIÓN Y CONSTANTES ---
+const VERSION = '0.1.0';
+const DEFAULT_BASE_URL = process.env.IDENTITY_API_URL || 'http://localhost:4000';
+
+// --- UTILIDADES DE COLOR ANSI ---
+const colors = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  gray: '\x1b[90m',
+};
+
+// Resaltador de sintaxis JSON ligero
+function highlightJson(jsonStr) {
+  return jsonStr.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    (match) => {
+      let cls = colors.yellow; // números
+      if (/^"/.test(match)) {
+        if (/:$/.test(match)) {
+          cls = colors.cyan; // clave
+        } else {
+          cls = colors.green; // string
+        }
+      } else if (/true|false/.test(match)) {
+        cls = colors.magenta; // boolean
+      } else if (/null/.test(match)) {
+        cls = colors.gray; // null
+      }
+      return `${cls}${match}${colors.reset}`;
+    }
+  );
+}
+
+// --- PARSER DE ARGUMENTOS ---
+function parseArgs(args) {
+  const result = {
+    flags: {},
+    positional: [],
+  };
+
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+
+    if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      if (key.includes('=')) {
+        const [k, v] = key.split('=', 2);
+        result.flags[k] = v;
+      } else if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+        result.flags[key] = args[i + 1];
+        i++;
+      } else {
+        result.flags[key] = true;
+      }
+    } else if (arg.startsWith('-')) {
+      const key = arg.slice(1);
+      if (key === 'q') {
+        result.flags['raw-json'] = true;
+      } else if (key === 'h') {
+        result.flags['help'] = true;
+      } else if (key === 'v') {
+        result.flags['version'] = true;
+      } else if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+        result.flags[key] = args[i + 1];
+        i++;
+      } else {
+        result.flags[key] = true;
+      }
+    } else {
+      if (!result.resource) {
+        result.resource = arg;
+      } else if (!result.action) {
+        result.action = arg;
+      } else {
+        result.positional.push(arg);
+      }
+    }
+    i++;
+  }
+
+  return result;
+}
+
+// --- CLIENTE HTTP ---
+async function requestHttp(method, path, options = {}) {
+  const baseUrl = options.baseUrl || DEFAULT_BASE_URL;
+  const cleanBase = baseUrl.replace(/\/$/, '');
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const fullUrl = `${cleanBase}${cleanPath}`;
+
+  const headers = {
+    Accept: 'application/json',
+    ...(options.headers || {}),
+  };
+
+  let bodyStr = undefined;
+  if (options.body !== undefined) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+    bodyStr = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+  }
+
+  const start = performance.now();
+  const response = await fetch(fullUrl, {
+    method,
+    headers,
+    body: bodyStr,
+  });
+  const latencyMs = Math.round(performance.now() - start);
+
+  const contentType = response.headers.get('content-type') || '';
+  let data = null;
+  if (contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    data = await response.text();
+  }
+
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+    data,
+    latencyMs,
+    url: fullUrl,
+    method,
+  };
+}
+
+// Formateador de salida
+function renderResponse(res, rawJson) {
+  if (rawJson) {
+    if (typeof res.data === 'object' && res.data !== null) {
+      console.log(JSON.stringify(res.data, null, 2));
+    } else {
+      console.log(res.data);
+    }
+    if (res.status >= 400) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  const isSuccess = res.status >= 200 && res.status < 300;
+  const statusColor = isSuccess ? colors.green : colors.red;
+  const methodColor = colors.bold + colors.cyan;
+
+  console.log(
+    `${statusColor}HTTP/1.1 ${res.status} ${res.statusText}${colors.reset} ${colors.gray}[${res.latencyMs}ms]${colors.reset}`
+  );
+  console.log(`${methodColor}${res.method}${colors.reset} ${colors.dim}${res.url}${colors.reset}\n`);
+
+  if (typeof res.data === 'object' && res.data !== null) {
+    const jsonStr = JSON.stringify(res.data, null, 2);
+    console.log(highlightJson(jsonStr));
+  } else if (res.data) {
+    console.log(res.data);
+  }
+
+  if (res.status >= 400) {
+    process.exitCode = 1;
+  }
+}
+
+// --- MENÚS DE AYUDA ---
+function printGeneralHelp() {
+  console.log(`${colors.bold}AngelPixel Identity CLI${colors.reset} v${VERSION}
+Uso: identity <recurso> <accion> [banderas]
+
+${colors.bold}Recursos Disponibles:${colors.reset}
+  ${colors.cyan}auth${colors.reset}     Gestión de usuarios y autenticación (register, me)
+
+${colors.bold}Opciones Globales:${colors.reset}
+  --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
+  -q, --raw-json      Imprime exclusivamente JSON plano sin metadatos ni colores
+  -h, --help          Muestra este mensaje de ayuda
+  -v, --version       Muestra la versión de la CLI
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity auth register --tenant acme-corp --email user@acme.com --password "Secret2026!"
+  identity auth me --tenant acme-corp --token "$TOKEN"
+`);
+}
+
+function printAuthHelp() {
+  console.log(`${colors.bold}Uso: identity auth <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones:${colors.reset}
+  ${colors.cyan}register${colors.reset}    Registra un nuevo usuario en la organización
+              Banderas:
+                --tenant <id>       ID del inquilino (Requerido)
+                --email <email>     Correo electrónico (Requerido)
+                --password <pwd>    Contraseña (Requerido)
+                --name <name>       Nombre completo (Opcional)
+
+  ${colors.cyan}me${colors.reset}          Consulta el perfil del usuario autenticado (Cache-Aside)
+              Banderas:
+                --tenant <id>       ID del inquilino (Requerido)
+                --token <jwt>       Token de acceso Bearer (Requerido)
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity auth register --tenant acme-corp --email dev@acme.com --password "EnterprisePassword2026!"
+  identity auth me --tenant acme-corp --token eyJhbGciOi...
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO AUTH ---
+async function handleAuthDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printAuthHelp();
+    return;
+  }
+
+  if (action === 'register') {
+    const tenant = flags.tenant || flags.t;
+    const email = flags.email || flags.e;
+    const password = flags.password || flags.p;
+    const name = flags.name || flags.n;
+
+    if (!tenant) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --tenant es obligatoria para registrar un usuario.`);
+      process.exit(1);
+    }
+    if (!email) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --email es obligatoria para registrar un usuario.`);
+      process.exit(1);
+    }
+    if (!password) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --password es obligatoria para registrar un usuario.`);
+      process.exit(1);
+    }
+
+    const payload = { email, password };
+    if (name) payload.name = name;
+
+    const res = await requestHttp('POST', '/api/v1/auth/register', {
+      baseUrl,
+      headers: {
+        'X-Tenant-ID': String(tenant),
+      },
+      body: payload,
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'me') {
+    const tenant = flags.tenant || flags.t;
+    const token = flags.token;
+
+    if (!tenant) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --tenant es obligatoria para consultar el perfil.`);
+      process.exit(1);
+    }
+    if (!token) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --token es obligatoria para consultar el perfil.`);
+      process.exit(1);
+    }
+
+    const res = await requestHttp('GET', '/api/v1/auth/me', {
+      baseUrl,
+      headers: {
+        'X-Tenant-ID': String(tenant),
+        Authorization: `Bearer ${String(token).replace(/^Bearer\s+/i, '')}`,
+      },
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso auth. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
+}
+
+// --- FUNCIÓN PRINCIPAL (ENTRYPOINT) ---
+async function main() {
+  const parsed = parseArgs(process.argv.slice(2));
+  const baseUrl = parsed.flags['base-url'] || DEFAULT_BASE_URL;
+  const rawJson = Boolean(parsed.flags['raw-json'] || parsed.flags.q);
+
+  if (parsed.flags.version || parsed.flags.v) {
+    console.log(`v${VERSION}`);
+    return;
+  }
+
+  if (!parsed.resource) {
+    printGeneralHelp();
+    return;
+  }
+
+  switch (parsed.resource) {
+    case 'auth':
+      await handleAuthDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    default:
+      console.error(`${colors.red}Recurso desconocido:${colors.reset} "${parsed.resource}". Usa --help para ver los recursos disponibles.`);
+      process.exit(1);
+  }
+}
+
+main().catch((err) => {
+  console.error(`${colors.red}Error fatal de ejecución:${colors.reset}`, err.message || err);
+  process.exit(1);
+});
