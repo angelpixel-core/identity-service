@@ -2,7 +2,7 @@
 
 * **ID:** EPIC-08
 * **Bounded Context:** `observability` / `telemetry` / `infrastructure`
-* **Estado:** In Progress
+* **Estado:** Completed
 * **Arquitectura:** W3C Distributed Tracing / OpenTelemetry Semantic Conventions / Node.js AsyncLocalStorage / Active Dependency Probing
 * **Topología de Referencia:** [`.agent/TREE.txt`](../../TREE.txt)
 * **Plataforma de Ejecución:** Microsoft Azure / Kubernetes (AKS) / NGINX Ingress / PostgreSQL
@@ -30,7 +30,7 @@ La **EPIC-08** implementa la infraestructura de observabilidad bajo 3 pilares es
 | :--- | :--- | :--- | :--- | :--- |
 | **US-20** | [`US-20-distributed-request-id-tracing.md`](stories/US-20-distributed-request-id-tracing.md) | Inyección y propagación de `X-Request-ID` y W3C `traceparent` a través de Ingress, Express `AsyncLocalStorage` y PostgreSQL session context (`SET LOCAL app.traceparent`). | **W3C Trace Context**<br>**RFC 7230** | Completed |
 | **US-21** | [`US-21-opentelemetry-structured-metrics.md`](stories/US-21-opentelemetry-structured-metrics.md) | Instrumentación de métricas de rendimiento y Golden Signals con OpenTelemetry SDK en Node.js. | **OpenTelemetry** | Completed |
-| **US-22** | [`US-22-infrastructure-health-readiness-probes.md`](stories/US-22-infrastructure-health-readiness-probes.md) | Sondas `/health/live` y `/health/ready` con chequeo activo no bloqueante de PostgreSQL y Key Vault. | **Kubernetes Probes** | In Progress |
+| **US-22** | [`US-22-infrastructure-health-readiness-probes.md`](stories/US-22-infrastructure-health-readiness-probes.md) | Sondas `/health/live` y `/health/ready` con chequeo activo no bloqueante de PostgreSQL y Key Vault. | **Kubernetes Probes** | Completed |
 
 ---
 

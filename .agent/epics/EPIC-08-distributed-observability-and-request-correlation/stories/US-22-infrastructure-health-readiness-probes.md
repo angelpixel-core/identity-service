@@ -4,7 +4,7 @@ title: "Infrastructure Health & Readiness Probes"
 epic:
   id: EPIC-08
   name: "Distributed Observability & Request Correlation"
-status: in-progress
+status: completed
 priority: P1
 bounded_context: observability
 subdomain: health-probes
@@ -17,6 +17,7 @@ regulatory_standards:
   - "SOC 2 Type II CC7.2 & CC7.3"
 timestamps:
   created_at: "2026-11-17T07:22:00-03:00"
+  completed_at: "2026-11-17T08:55:00-03:00"
 traceability:
   adrs:
     - docs/adr/0007-cloud-infrastructure-topology.md
@@ -126,14 +127,14 @@ Feature: Infrastructure Health and Readiness Probes
 
 ## 4. Definición de Hecho (Definition of Done)
 
-- [ ] Puerto de dominio `HealthCheckPort` e interfaz `DependencyProbe` definidos en `src/contexts/shared/domain/health/`.
-- [ ] Adaptadores de sondas de dependencias implementados con timeout defensivo (`PostgresProbe`, `CacheProbe`, `KeyVaultProbe`).
-- [ ] Adaptador en memoria `InMemoryHealthAdapter` para pruebas unitarias herméticas.
-- [ ] Middlewares y endpoints `/health/liveness`, `/health/readiness` y `/health` expuestos en Express con códigos 200 y 503.
-- [ ] Pruebas unitarias para contratos de salud y sondas individuales pasando al 100%.
-- [ ] Pruebas de integración HTTP para códigos de estado y fallos simulados pasando al 100%.
-- [ ] Escenarios BDD Cucumber certificados en `tests/acceptance/features/health_readiness_probes.feature`.
-- [ ] Manifiestos Helm (`deployment.yaml`, `values.yaml`) alineados con las sondas de Kubernetes.
-- [ ] Guía canónica de ingeniería redactada en `.agent/guidelines/GUIDELINE-23-infrastructure-health-readiness-probes.md`.
-- [ ] Publicación técnica oficial redactada en `.agent/publications/ARTICLE-19-infrastructure-health-readiness-probes.md`.
-- [ ] Pull Request integrado a `main` y sincronizado con `development` con cero regresiones en la plataforma (674+ pruebas).
+- [x] Puerto de dominio `HealthCheckPort` e interfaz `DependencyProbe` definidos en `src/contexts/shared/domain/health/`.
+- [x] Adaptadores de sondas de dependencias implementados con timeout defensivo (`PostgresProbe`, `CacheProbe`, `KeyVaultProbe`).
+- [x] Adaptador en memoria `InMemoryHealthAdapter` para pruebas unitarias herméticas.
+- [x] Middlewares y endpoints `/health/liveness`, `/health/readiness` y `/health` expuestos en Express con códigos 200 y 503.
+- [x] Pruebas unitarias para contratos de salud y sondas individuales pasando al 100%.
+- [x] Pruebas de integración HTTP para códigos de estado y fallos simulados pasando al 100%.
+- [x] Escenarios BDD Cucumber certificados en `tests/acceptance/features/health_readiness_probes.feature`.
+- [x] Manifiestos Helm (`deployment.yaml`, `values.yaml`) alineados con las sondas de Kubernetes.
+- [x] Guía canónica de ingeniería redactada en `.agent/guidelines/GUIDELINE-23-infrastructure-health-readiness-probes.md`.
+- [x] Publicación técnica oficial redactada en `.agent/publications/ARTICLE-19-infrastructure-health-readiness-probes.md`.
+- [x] Pull Request integrado a `main` y sincronizado con `development` con cero regresiones en la plataforma (674+ pruebas).
