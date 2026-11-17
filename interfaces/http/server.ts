@@ -548,7 +548,7 @@ export function createApp(deps?: AppDependencies): Express {
   };
 
   // Sonda de Liveness (Kubernetes): /health/live y alias canónico /health/liveness
-  app.get(['/health/live', '/health/liveness'], async (req: Request, res: Response): Promise<void> => {
+  const handleLiveness = async (req: Request, res: Response): Promise<void> => {
     if (deps?.healthCheckPort) {
       const report = await deps.healthCheckPort.checkLiveness();
       res.status(200).json({
@@ -568,10 +568,12 @@ export function createApp(deps?: AppDependencies): Express {
       protocol: req.protocol,
       timestamp: new Date().toISOString(),
     });
-  });
+  };
+  app.get('/health/live', handleLiveness);
+  app.get('/health/liveness', handleLiveness);
 
   // Sonda de Readiness (Kubernetes): /health/ready y alias canónico /health/readiness
-  app.get(['/health/ready', '/health/readiness'], async (_req: Request, res: Response): Promise<void> => {
+  const handleReadiness = async (_req: Request, res: Response): Promise<void> => {
     if (deps?.healthCheckPort) {
       const report = await deps.healthCheckPort.checkReadiness();
       const statusCode = report.status === 'DOWN' ? 503 : 200;
@@ -591,7 +593,9 @@ export function createApp(deps?: AppDependencies): Express {
       },
       timestamp: new Date().toISOString(),
     });
-  });
+  };
+  app.get('/health/ready', handleReadiness);
+  app.get('/health/readiness', handleReadiness);
 
   // Sonda Combinada / Diagnóstico de Infraestructura
   app.get('/health', async (_req: Request, res: Response): Promise<void> => {

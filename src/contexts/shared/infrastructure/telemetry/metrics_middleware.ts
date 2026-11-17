@@ -53,9 +53,14 @@ export function createMetricsMiddleware(metricsPort: MetricsPort): RequestHandle
       const diffNs = process.hrtime.bigint() - startTime;
       const durationSeconds = Number(diffNs) / 1_000_000_000;
 
+      const routePathRaw = req.route?.path;
+      const routePath = Array.isArray(routePathRaw)
+        ? routePathRaw.find((p) => typeof p === 'string' && p === req.path) || routePathRaw[0] || req.path
+        : routePathRaw;
+
       const rawRoute = req.baseUrl
-        ? `${req.baseUrl}${req.route?.path || req.path || ''}`
-        : req.route?.path || req.path || '/';
+        ? `${req.baseUrl}${routePath || req.path || ''}`
+        : routePath || req.path || '/';
       const normalizedRoute = RouteNormalizer.normalize(rawRoute);
 
       const rawTenantId =
