@@ -942,3 +942,240 @@ En `RotateRefreshTokenCommandHandler`, se monitorea el ciclo de vida de la sesi�
   `this.metrics?.recordTokenIssued('refresh_token', tenantId);`
 
 Esta instrumentación en la capa de aplicación garantiza que cualquier intento de ataque automatizado (como fuerza bruta sobre credenciales o reutilización masiva de tokens) genere una señal inmediata de incremento en las tasas de fallo de `auth_attempts_total`, permitiendo a los sistemas SIEM y a Alertmanager activar bloqueos automatizados en cuestión de segundos.
+
+
+---
+
+## 5. Configuración Operacional en Kubernetes / Helm y Dashboards PromQL
+
+### 5.1 Especificación Declarativa en Helm Chart (`values.yaml`, `values-local.yaml` y `values.schema.json`)
+
+Para que la telemetría sea operativa en clústeres de Kubernetes empresariales, la configuración no puede depender de variables de entorno dispersas ni de intervenciones manuales en los pods. Siguiendo la filosofía de **Infraestructura como Código (IaC)** y despliegue declarativo, el Helm Chart de `identity-service` gobierna la exposición de métricas mediante un bloque dedicado en `values.yaml`:
+
+```yaml
+# deployments/helm/identity-service/values.yaml
+
+metrics:
+  enabled: true
+  port: 3000
+  path: /metrics
+  serviceMonitor:
+    enabled: false
+  prometheusRule:
+    enabled: false
+```
+
+Para asegurar que ningún despliegue en entornos de staging o producción sufra errores por configuraciones erróneas o tipos incompatibles, el esquema de validación **`values.schema.json`** aplica restricciones estrictas:
+
+```json
+{
+  "metrics": {
+    "type": "object",
+    "description": "Configuración de métricas y telemetría OpenTelemetry / Prometheus",
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+      "path": { "type": "string" },
+      "serviceMonitor": {
+        "type": "object",
+        "properties": { "enabled": { "type": "boolean" } }
+      },
+      "prometheusRule": {
+        "type": "object",
+        "properties": { "enabled": { "type": "boolean" } }
+      }
+    },
+    "required": ["enabled", "port", "path"]
+  }
+}
+```
+
+Durante los pipelines de integración continua, el comando `helm lint` evalúa este esquema contra los valores predeterminados y locales (`values-local.yaml`), garantizando que cualquier desviación sea rechazada antes del despliegue en el clúster.
+
+---
+
+### 5.2 Inyección Automática de Anotaciones de Scrape en `templates/service.yaml` y `templates/deployment.yaml`
+
+El método canónico y más universal de recolección en Prometheus (soportado tanto por Prometheus Server estándar como por agentes Prometheus Operator y Grafana Agent) consiste en la detección de anotaciones en los metadatos de los servicios de Kubernetes.
+
+Al compartir el puerto estándar `:3000`, la plantilla de Helm inyecta condicionalmente las directivas necesarias directamente en el recurso `Service`:
+
+```yaml
+# deployments/helm/identity-service/templates/service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "identity-service.fullname" . }}
+  labels:
+    {{- include "identity-service.labels" . | nindent 4 }}
+  {{- if .Values.metrics.enabled }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: {{ .Values.metrics.path | quote }}
+    prometheus.io/port: {{ .Values.metrics.port | quote }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+```
+
+Asimismo, en el template del despliegue (`templates/deployment.yaml`), la variable de entorno `METRICS_ENABLED` se inyecta en el contenedor para que la aplicación active o desactive los recolectores de métricas en memoria de acuerdo con la parametrización del clúster:
+
+```yaml
+# deployments/helm/identity-service/templates/deployment.yaml
+
+env:
+  - name: METRICS_ENABLED
+    value: {{ .Values.metrics.enabled | quote }}
+```
+
+#### Ventajas Operacionales de esta Topología:
+1. **Cero CRD Lock-in:** No se requiere la instalación obligatoria de los CRDs pesados de Prometheus Operator (`ServiceMonitor`, `PodMonitor`) en clústeres de desarrollo ligero o pruebas locales.
+2. **Aislamiento de Red Preservado:** Las políticas de red Zero-Trust (calificadas en [GUIDELINE-19](../guidelines/GUIDELINE-19-k8s-zero-trust-network-policies.md)) permiten el tráfico entrante al puerto `:3000` desde el ingress controller y desde el namespace de monitoreo, eliminando la necesidad de abrir puertos secundarios.
+
+---
+
+### 5.3 Catálogo Canónico de Consultas PromQL para los 4 Golden Signals
+
+Para la construcción de tableros ejecutivos en Grafana y el cálculo continuo de presupuestos de error (*Error Budget*), se formalizó el siguiente catálogo de expresiones PromQL optimizadas para el esquema de métricas de `identity-service`:
+
+#### 1. Tráfico (Traffic - Requests Per Second)
+Mide el volumen de peticiones procesadas por segundo desglosado por método HTTP y ruta canónica:
+```promql
+sum(rate(http_requests_total[5m])) by (method, route)
+```
+*Interpretación:* Permite detectar incrementos repentinos de tráfico, picos de carga estacionales o anomalías en endpoints específicos como `/oauth/v2/token`.
+
+#### 2. Latencia (Latency - Percentiles p95 y p99)
+Calcula el percentil 95 de duración de las solicitudes HTTP en segundos sobre una ventana móvil de 5 minutos:
+```promql
+histogram_quantile(
+  0.95,
+  sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route)
+)
+```
+Y para el percentil 99 más estricto en transacciones de emisión de credenciales:
+```promql
+histogram_quantile(
+  0.99,
+  sum(rate(http_request_duration_seconds_bucket{route="/oauth/v2/token"}[5m])) by (le)
+)
+```
+
+#### 3. Tasa de Errores (Error Rate %)
+Calcula la proporción porcentual de solicitudes que resultaron en error (códigos 4xx y 5xx) frente al tráfico total:
+```promql
+(
+  sum(rate(http_requests_errors_total[5m]))
+  /
+  sum(rate(http_requests_total[5m]))
+) * 100
+```
+Para evaluar exclusivamente los errores de servidor (fallos 5xx no atribuibles al usuario):
+```promql
+(
+  sum(rate(http_requests_errors_total{error_type="server_error"}[5m]))
+  /
+  sum(rate(http_requests_total[5m]))
+) * 100
+```
+
+#### 4. Saturación del Runtime (Event Loop Lag & Heap Memory)
+Supervisa el retardo del bucle de eventos en segundos:
+```promql
+nodejs_eventloop_lag_seconds
+```
+Y el porcentaje de memoria Heap consumida respecto a la asignada por la máquina virtual V8:
+```promql
+(
+  process_memory_heap_bytes{type="used"}
+  /
+  process_memory_heap_bytes{type="total"}
+) * 100
+```
+
+#### 5. Latencia de Transacciones en Base de Datos PostgreSQL con RLS
+Mide el percentil 95 del tiempo que toman las transacciones completas bajo aislamiento de inquilino:
+```promql
+histogram_quantile(
+  0.95,
+  sum(rate(db_query_duration_seconds_bucket{operation="transaction"}[5m])) by (le)
+)
+```
+
+#### 6. Tasa de Fallo de Autenticación (Auditoría PCI-DSS v4.0)
+Calcula el porcentaje de intentos de autenticación fallidos (credenciales erróneas, códigos PKCE inválidos o tokens expirados):
+```promql
+(
+  sum(rate(auth_attempts_total{outcome="failure"}[5m]))
+  /
+  sum(rate(auth_attempts_total[5m]))
+) * 100
+```
+
+---
+
+### 5.4 Reglas de Alerta Recomendadas (PrometheusRules)
+
+Para transformar la telemetría en acciones operativas automatizadas, se definieron cuatro reglas de alerta críticas para Alertmanager:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: identity-service-golden-signals
+  labels:
+    role: alert-rules
+spec:
+  groups:
+    - name: identity-service.rules
+      rules:
+        # Alerta 1: Tasa de error elevada que compromete el SLO
+        - alert: IdentityServiceHighHttpErrorRate
+          expr: (sum(rate(http_requests_errors_total{error_type="server_error"}[5m])) / sum(rate(http_requests_total[5m]))) * 100 > 1.0
+          for: 5m
+          labels:
+            severity: critical
+            tier: api
+          annotations:
+            summary: "Tasa de errores 5xx superior al 1% en identity-service"
+            description: "El servicio experimenta un error rate de {{ $value | printf \"%.2f\" }}% durante los últimos 5 minutos."
+
+        # Alerta 2: Degradación de latencia p95
+        - alert: IdentityServiceHighLatencyP95
+          expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route)) > 0.250
+          for: 5m
+          labels:
+            severity: warning
+            tier: api
+          annotations:
+            summary: "Latencia p95 excede 250ms en la ruta {{ $labels.route }}"
+            description: "La ruta {{ $labels.route }} presenta latencia p95 de {{ $value | printf \"%.3f\" }}s."
+
+        # Alerta 3: Bloqueo del Event Loop de Node.js (Saturación)
+        - alert: IdentityServiceEventLoopLagHigh
+          expr: nodejs_eventloop_lag_seconds > 0.100
+          for: 2m
+          labels:
+            severity: critical
+            tier: runtime
+          annotations:
+            summary: "Event Loop bloqueado en pod de identity-service"
+            description: "El retraso medio del Event Loop es de {{ $value | printf \"%.3f\" }}s durante más de 2 minutos."
+
+        # Alerta 4: Detección de Ataque de Fuerza Bruta / Pico de Autenticación Fallida
+        - alert: IdentityServiceAuthFailureSpike
+          expr: (sum(rate(auth_attempts_total{outcome="failure"}[5m])) / sum(rate(auth_attempts_total[5m]))) * 100 > 15.0
+          for: 3m
+          labels:
+            severity: critical
+            tier: security
+          annotations:
+            summary: "Pico anómalo de fallos de autenticación (>15%)"
+            description: "Posible ataque de fuerza bruta o fallo masivo de sincronización de credenciales. Tasa de fallo: {{ $value | printf \"%.2f\" }}%."
+```
