@@ -30,7 +30,7 @@ La **EPIC-08** implementa la infraestructura de observabilidad bajo 3 pilares es
 | :--- | :--- | :--- | :--- | :--- |
 | **US-20** | [`US-20-distributed-request-id-tracing.md`](stories/US-20-distributed-request-id-tracing.md) | Inyección y propagación de `X-Request-ID` y W3C `traceparent` a través de Ingress, Express `AsyncLocalStorage` y PostgreSQL session context (`SET LOCAL app.traceparent`). | **W3C Trace Context**<br>**RFC 7230** | Completed |
 | **US-21** | [`US-21-opentelemetry-structured-metrics.md`](stories/US-21-opentelemetry-structured-metrics.md) | Instrumentación de métricas de rendimiento y Golden Signals con OpenTelemetry SDK en Node.js. | **OpenTelemetry** | Completed |
-| **US-22** | `stories/US-22-infrastructure-health-readiness-probes.md` | Sondas `/health/live` y `/health/ready` con chequeo activo no bloqueante de PostgreSQL y Key Vault. | **Kubernetes Probes** | Draft |
+| **US-22** | [`US-22-infrastructure-health-readiness-probes.md`](stories/US-22-infrastructure-health-readiness-probes.md) | Sondas `/health/live` y `/health/ready` con chequeo activo no bloqueante de PostgreSQL y Key Vault. | **Kubernetes Probes** | In Progress |
 
 ---
 
