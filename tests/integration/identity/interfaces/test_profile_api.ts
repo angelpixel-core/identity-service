@@ -11,12 +11,14 @@ describe('Integration API: GET /api/v1/auth/me', () => {
 
   describe('Happy Path: Authenticated Profile Retrieval (200 OK)', () => {
     it('should return sanitized user profile for authenticated tenant user', async () => {
+      const uniqueEmail = `profile.${Date.now()}.${Math.random().toString(36).substring(7)}@acme.com`;
+
       // 1. Register a valid user to obtain authentication token
       const registerRes = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({
-          email: 'profile.user@acme.com',
+          email: uniqueEmail,
           password: 'Password123!',
         });
 
@@ -31,7 +33,7 @@ describe('Integration API: GET /api/v1/auth/me', () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('id', userId);
-      expect(response.body).toHaveProperty('email', 'profile.user@acme.com');
+      expect(response.body).toHaveProperty('email', uniqueEmail);
       expect(response.body).toHaveProperty('tenantId', 'acme-corp');
       expect(response.body).toHaveProperty('createdAt');
       expect(response.body).toHaveProperty('updatedAt');
@@ -72,12 +74,14 @@ describe('Integration API: GET /api/v1/auth/me', () => {
 
   describe('Tenant Boundary Violations (403 Forbidden)', () => {
     it('should reject when token claims do not match the requested x-tenant-id', async () => {
+      const boundaryEmail = `boundary.${Date.now()}.${Math.random().toString(36).substring(7)}@acme.com`;
+
       // Register user in acme-corp
       const registerRes = await request(app)
         .post('/api/v1/auth/register')
         .set('x-tenant-id', 'acme-corp')
         .send({
-          email: 'acme.user@acme.com',
+          email: boundaryEmail,
           password: 'Password123!',
         });
 

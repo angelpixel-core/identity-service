@@ -1,6 +1,9 @@
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
   preset: 'ts-jest',
+  setupFiles: ['<rootDir>/tests/setup.ts'],
   testEnvironment: 'node',
   testMatch: [
     '**/tests/**/*.test.[tj]s?(x)',
