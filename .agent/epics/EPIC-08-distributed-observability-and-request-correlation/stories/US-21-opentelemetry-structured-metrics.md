@@ -4,7 +4,7 @@ title: "OpenTelemetry SDK Integration & Structured Metrics (Golden Signals)"
 epic:
   id: EPIC-08
   name: "Distributed Observability & Request Correlation"
-status: in-progress
+status: completed
 priority: P1
 bounded_context: observability
 subdomain: metrics
@@ -38,7 +38,7 @@ tags:
 # US-21: OpenTelemetry SDK Integration & Structured Metrics (Golden Signals)
 
 **Epic:** [EPIC-08: Distributed Observability & Request Correlation](../README.md)  
-**Status:** In Progress  
+**Status:** Completed  
 **Domain / Bounded Context:** `observability` / `metrics`  
 **Slice Type:** Structured Metrics & Golden Signals Telemetry Slice  
 **Regulatory Framework:** OpenTelemetry Specification · OpenMetrics · Google SRE Golden Signals · PCI-DSS v4.0 · SOC 2 Type II  
@@ -113,16 +113,16 @@ Feature: Métricas Estructuradas OpenTelemetry y Golden Signals
 
 ## 4. Definición de Hecho (Definition of Done)
 
-- [ ] Puerto de telemetría `MetricsPort` definido en la capa de dominio compartido (`src/contexts/shared/domain/telemetry/`).
-- [ ] Adaptador `OpenTelemetryMetricsAdapter` implementado con `@opentelemetry/api`, `@opentelemetry/sdk-metrics` y `@opentelemetry/exporter-prometheus`.
-- [ ] Middleware HTTP `metricsMiddleware` implementado y registrado en `interfaces/http/server.ts`.
-- [ ] Endpoint de infraestructura `GET /metrics` operativo y respondiendo en formato OpenMetrics / Prometheus.
-- [ ] Instrumentos de saturación de runtime (memoria heap, event loop lag) configurados y reportando valores en tiempo real.
-- [ ] Instrumentación de base de datos conectada con `TenantAwareTransactionRunner`.
-- [ ] Pruebas unitarias para contratos de telemetría, adaptadores y middleware pasando al 100%.
-- [ ] Pruebas de integración para el endpoint `/metrics` y métricas de base de datos pasando al 100%.
-- [ ] Escenarios BDD Cucumber certificados y en verde (4/4 escenarios).
-- [ ] Manifiestos Helm actualizados con anotaciones Prometheus (`prometheus.io/scrape`).
-- [ ] Guía canónica de ingeniería redactada en `.agent/guidelines/GUIDELINE-22-opentelemetry-structured-metrics.md`.
-- [ ] Publicación técnica oficial redactada en `.agent/publications/ARTICLE-18-opentelemetry-structured-metrics.md`.
-- [ ] Integración Trunk-Based completada mediante Pull Request con cero regresiones en la suite completa de pruebas.
+- [x] Puerto de telemetría `MetricsPort` definido en la capa de dominio compartido (`src/contexts/shared/domain/telemetry/`).
+- [x] Adaptador `OpenTelemetryMetricsAdapter` implementado con `@opentelemetry/api`, `@opentelemetry/sdk-metrics` y `@opentelemetry/exporter-prometheus`.
+- [x] Middleware HTTP `metricsMiddleware` implementado y registrado en `interfaces/http/server.ts`.
+- [x] Endpoint de infraestructura `GET /metrics` operativo y respondiendo en formato OpenMetrics / Prometheus.
+- [x] Instrumentos de saturación de runtime (memoria heap, event loop lag) configurados y reportando valores en tiempo real.
+- [x] Instrumentación de base de datos conectada con `TenantAwareTransactionRunner`.
+- [x] Pruebas unitarias para contratos de telemetría, adaptadores y middleware pasando al 100%.
+- [x] Pruebas de integración para el endpoint `/metrics` y métricas de base de datos pasando al 100%.
+- [x] Escenarios BDD Cucumber certificados y en verde (4/4 escenarios).
+- [x] Manifiestos Helm actualizados con anotaciones Prometheus (`prometheus.io/scrape`).
+- [x] Guía canónica de ingeniería redactada en `.agent/guidelines/GUIDELINE-22-opentelemetry-structured-metrics.md`.
+- [x] Publicación técnica oficial redactada en `.agent/publications/ARTICLE-18-opentelemetry-structured-metrics.md`.
+- [x] Integración Trunk-Based completada mediante Pull Request con cero regresiones en la suite completa de pruebas.
