@@ -33,6 +33,7 @@ import { User } from '../../src/contexts/identity/domain/entities/user/aggregate
 import { Email } from '../../src/contexts/identity/domain/value_objects/email/value';
 import { TenantId } from '../../src/contexts/identity/domain/value_objects/tenant_id/value';
 import { MetricsPort } from '../../src/contexts/shared/domain/telemetry/metrics_port';
+import { HealthCheckPort } from '../../src/contexts/shared/domain/health/health_check_port';
 import { OpenTelemetryMetricsAdapter } from '../../src/contexts/shared/infrastructure/telemetry/opentelemetry_metrics_adapter';
 import { InMemoryMetricsAdapter } from '../../src/contexts/shared/domain/telemetry/in_memory_metrics_adapter';
 import { createMetricsMiddleware } from '../../src/contexts/shared/infrastructure/telemetry/metrics_middleware';
@@ -129,6 +130,8 @@ export interface AppDependencies {
   enableSecretWatcher?: boolean;
   sslOptions?: PostgresSslOptions;
   metricsAdapter?: MetricsPort;
+  healthCheckPort?: HealthCheckPort;
+  keyVaultHealthCheck?: () => Promise<boolean>;
 }
 
 /**
@@ -496,9 +499,11 @@ export function createApp(deps?: AppDependencies): Express {
     isHealthy: boolean;
     dbStatus: 'OK' | 'DOWN';
     cacheStatus: 'OK' | 'DOWN';
+    keyvaultStatus?: 'OK' | 'DOWN';
   }> => {
     let dbStatus: 'OK' | 'DOWN' = 'OK';
     let cacheStatus: 'OK' | 'DOWN' = 'OK';
+    let keyvaultStatus: 'OK' | 'DOWN' | undefined;
 
     try {
       if (deps?.dbHealthCheck) {
@@ -526,11 +531,35 @@ export function createApp(deps?: AppDependencies): Express {
       cacheStatus = 'DOWN';
     }
 
-    const isHealthy = dbStatus === 'OK' && cacheStatus === 'OK';
-    return { isHealthy, dbStatus, cacheStatus };
+    if (deps?.keyVaultHealthCheck) {
+      try {
+        const kvOk = await deps.keyVaultHealthCheck();
+        keyvaultStatus = kvOk ? 'OK' : 'DOWN';
+      } catch {
+        keyvaultStatus = 'DOWN';
+      }
+    }
+
+    const isHealthy =
+      dbStatus === 'OK' &&
+      cacheStatus === 'OK' &&
+      (keyvaultStatus === undefined || keyvaultStatus === 'OK');
+    return { isHealthy, dbStatus, cacheStatus, keyvaultStatus };
   };
 
-  app.get('/health/live', (req: Request, res: Response) => {
+  // Sonda de Liveness (Kubernetes): /health/live y alias canónico /health/liveness
+  const handleLiveness = async (req: Request, res: Response): Promise<void> => {
+    if (deps?.healthCheckPort) {
+      const report = await deps.healthCheckPort.checkLiveness();
+      res.status(200).json({
+        status: report.status,
+        checks: report.checks,
+        protocol: req.protocol,
+        timestamp: report.timestamp,
+      });
+      return;
+    }
+
     res.status(200).json({
       status: 'UP',
       checks: {
@@ -539,10 +568,20 @@ export function createApp(deps?: AppDependencies): Express {
       protocol: req.protocol,
       timestamp: new Date().toISOString(),
     });
-  });
+  };
+  app.get('/health/live', handleLiveness);
+  app.get('/health/liveness', handleLiveness);
 
-  app.get('/health/ready', async (_req: Request, res: Response) => {
-    const { isHealthy, dbStatus, cacheStatus } = await evaluateReadiness();
+  // Sonda de Readiness (Kubernetes): /health/ready y alias canónico /health/readiness
+  const handleReadiness = async (_req: Request, res: Response): Promise<void> => {
+    if (deps?.healthCheckPort) {
+      const report = await deps.healthCheckPort.checkReadiness();
+      const statusCode = report.status === 'DOWN' ? 503 : 200;
+      res.status(statusCode).json(report);
+      return;
+    }
+
+    const { isHealthy, dbStatus, cacheStatus, keyvaultStatus } = await evaluateReadiness();
     const statusCode = isHealthy ? 200 : 503;
 
     res.status(statusCode).json({
@@ -550,13 +589,24 @@ export function createApp(deps?: AppDependencies): Express {
       checks: {
         database: dbStatus,
         cache: cacheStatus,
+        ...(keyvaultStatus !== undefined ? { keyvault: keyvaultStatus } : {}),
       },
       timestamp: new Date().toISOString(),
     });
-  });
+  };
+  app.get('/health/ready', handleReadiness);
+  app.get('/health/readiness', handleReadiness);
 
-  app.get('/health', async (_req: Request, res: Response) => {
-    const { isHealthy, dbStatus, cacheStatus } = await evaluateReadiness();
+  // Sonda Combinada / Diagnóstico de Infraestructura
+  app.get('/health', async (_req: Request, res: Response): Promise<void> => {
+    if (deps?.healthCheckPort) {
+      const report = await deps.healthCheckPort.checkHealth();
+      const statusCode = report.status === 'DOWN' ? 503 : 200;
+      res.status(statusCode).json(report);
+      return;
+    }
+
+    const { isHealthy, dbStatus, cacheStatus, keyvaultStatus } = await evaluateReadiness();
     const statusCode = isHealthy ? 200 : 503;
 
     res.status(statusCode).json({
@@ -565,6 +615,7 @@ export function createApp(deps?: AppDependencies): Express {
         liveness: 'OK',
         database: dbStatus,
         cache: cacheStatus,
+        ...(keyvaultStatus !== undefined ? { keyvault: keyvaultStatus } : {}),
       },
       timestamp: new Date().toISOString(),
     });
