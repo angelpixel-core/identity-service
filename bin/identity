@@ -7,6 +7,7 @@
  */
 
 import { performance } from 'perf_hooks';
+import crypto from 'crypto';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
 const VERSION = '0.1.0';
@@ -188,6 +189,7 @@ ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}auth${colors.reset}       Gestión de usuarios y autenticación (register, me)
   ${colors.cyan}client${colors.reset}     Gobernanza y validación de clientes OAuth2 (validate)
   ${colors.cyan}token${colors.reset}      Emisión y canje de tokens OAuth2 (m2m, exchange)
+  ${colors.cyan}oidc${colors.reset}       Protocolo OpenID Connect (discovery, jwks, authorize)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -201,6 +203,9 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity client validate --client-id portal-web --origin https://portal.angelpixel.io
   identity token m2m --client-id m2m-service-app --client-secret "$SECRET"
   identity token exchange --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback --code "$CODE" --verifier "$VERIFIER"
+  identity oidc discovery
+  identity oidc jwks
+  identity oidc authorize --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback
 `);
 }
 
@@ -465,6 +470,112 @@ async function handleTokenDomain(action, flags, baseUrl, rawJson) {
   process.exit(1);
 }
 
+function printOidcHelp() {
+  console.log(`${colors.bold}Uso: identity oidc <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones:${colors.reset}
+  ${colors.cyan}discovery${colors.reset}   Consulta el documento canónico de metadatos OIDC (RFC 8414)
+              Endpoint: /.well-known/openid-configuration
+
+  ${colors.cyan}jwks${colors.reset}        Consulta el set de claves criptográficas públicas RSA (RFC 7517)
+              Endpoint: /.well-known/jwks.json
+
+  ${colors.cyan}authorize${colors.reset}   Inicia el flujo interactivo de autorización con soporte PKCE (RFC 7636)
+              Banderas:
+                -c, --client-id <id>        ID del cliente público (Requerido)
+                -r, --redirect-uri <uri>    URI de redirección exacta (Requerido)
+                --scope <scopes>            Ámbitos OIDC solicitados (def: openid profile email)
+                --state <state>             Valor de estado de seguridad (Opcional, def: auto-generado)
+                --challenge <str>           Desafío de código PKCE (Opcional, def: auto-generado con S256)
+                --challenge-method <method> Método de desafío PKCE: S256 (defecto) o plain
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity oidc discovery
+  identity oidc discovery --raw-json | jq -r .jwks_uri
+  identity oidc jwks
+  identity oidc authorize --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback
+  identity oidc authorize -c portal-web -r https://portal.angelpixel.io/callback --scope "openid profile"
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO OIDC ---
+async function handleOidcDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printOidcHelp();
+    return;
+  }
+
+  if (action === 'discovery') {
+    const res = await requestHttp('GET', '/.well-known/openid-configuration', {
+      baseUrl,
+    });
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'jwks') {
+    const res = await requestHttp('GET', '/.well-known/jwks.json', {
+      baseUrl,
+    });
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'authorize') {
+    const clientId = flags['client-id'] || flags.c;
+    const redirectUri = flags['redirect-uri'] || flags.r;
+    const scope = flags.scope || 'openid profile email';
+    const state = flags.state || `state_${crypto.randomBytes(8).toString('hex')}`;
+    let challenge = flags.challenge;
+    const challengeMethod = flags['challenge-method'] || 'S256';
+    let codeVerifier = undefined;
+
+    if (!clientId) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --client-id (-c) es obligatoria para iniciar autorización.`);
+      process.exit(1);
+    }
+    if (!redirectUri) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --redirect-uri (-r) es obligatoria para iniciar autorización.`);
+      process.exit(1);
+    }
+
+    if (!challenge) {
+      // Auto-generación criptográfica de PKCE RFC 7636
+      codeVerifier = crypto.randomBytes(32).toString('base64url');
+      challenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    }
+
+    const body = {
+      client_id: String(clientId),
+      redirect_uri: String(redirectUri),
+      response_type: 'code',
+      scope: String(scope),
+      state: String(state),
+      code_challenge: String(challenge),
+      code_challenge_method: String(challengeMethod),
+    };
+
+    const res = await requestHttp('POST', '/api/v1/oauth2/authorize', {
+      baseUrl,
+      headers: {
+        Accept: 'application/json',
+      },
+      body,
+    });
+
+    if (res.status >= 200 && res.status < 300 && codeVerifier && typeof res.data === 'object' && res.data !== null) {
+      // Inyectar code_verifier para facilitar la composición y encadenamiento con token exchange
+      res.data.code_verifier = codeVerifier;
+    }
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso oidc. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
+}
+
 // --- FUNCIÓN PRINCIPAL (ENTRYPOINT) ---
 async function main() {
   const parsed = parseArgs(process.argv.slice(2));
@@ -492,6 +603,10 @@ async function main() {
 
     case 'token':
       await handleTokenDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    case 'oidc':
+      await handleOidcDomain(parsed.action, parsed.flags, baseUrl, rawJson);
       break;
 
     default:
