@@ -204,4 +204,99 @@ Ran all test suites matching tests/integration/identity/security/test_database_t
 
 ---
 
+## 🌐 US-18: Kubernetes Zero-Trust NetworkPolicies & Micro-Segmentation
+
+En entornos de servicios financieros y banca digital, asumir que el perímetro interno del clúster es seguro constituye una vulnerabilidad crítica. Si un contenedor auxiliar o de otra aplicación fuese comprometido, la ausencia de segmentación permitiría a un atacante realizar escaneos laterales, interceptar tráfico o exfiltrar datos.
+
+Para neutralizar este vector, `identity-service` implementa una arquitectura **Zero-Trust nativa en Kubernetes** mediante `NetworkPolicies` orquestadas por el motor CNI (Calico / Azure CNI), certificada bajo los estándares **ISO/IEC 27001:2022 (Control A.13.1 - Seguridad de Redes)** y **SOC 2 Type II (Criterio CC6.6 - Microsegmentación de Límites Lógicos)**.
+
+### 🏛️ Pilares Arquitectónicos de US-18
+
+#### 1. Política Incondicional `default-deny-all`
+- **Aislamiento Total por Defecto:** En `deployments/helm/identity-service/templates/networkpolicy.yaml`, el manifiesto `identity-service-default-deny-all` aplica un selector vacío (`podSelector: {}`) afectando a todo el namespace con `policyTypes: [Ingress, Egress]`.
+- **Cero Suposición de Confianza:** Cualquier intento de comunicación que no esté explícitamente listado en una regla posterior es descartado silenciosamente por el kernel a nivel de eBPF / iptables.
+
+#### 2. Whitelist Estricta de Tráfico Entrante (Ingress)
+- **Acceso Exclusivo desde el Controlador de Ingress:** El tráfico entrante se autoriza únicamente hacia el puerto `:4000` (puerto de servicio HTTP) y se filtra doblemente:
+  1. `namespaceSelector`: Debe originarse en el namespace del controlador (`ingress-nginx`).
+  2. `podSelector`: Debe provenir de pods con la etiqueta del controlador oficial (`app.kubernetes.io/name: ingress-nginx`).
+- **Inmunidad ante Movimiento Lateral:** Ningún otro microservicio dentro del clúster (incluso dentro del mismo namespace) puede alcanzar directamente el puerto HTTP de `identity-service`.
+
+#### 3. Lockdown Estricto de Tráfico Saliente (Egress)
+- **Microsegmentación por Puerto y Destino:** La política de salida restringe estrictamente los destinos autorizados a los requerimientos esenciales del servicio:
+  - **Resolución de Nombres DNS:** Tráfico UDP y TCP en puerto `:53` restringido exclusivamente al namespace `kube-system` con destino a los pods de `CoreDNS` (`kube-dns`).
+  - **Base de Datos PostgreSQL:** Tráfico TCP en puerto `:5432` hacia la instancia administrada de Azure Database for PostgreSQL Flexible Server.
+  - **Caché Distribuida Redis:** Tráfico TCP en puerto `:6379` hacia Azure Cache for Redis.
+  - **Salida HTTPS Cifrada:** Tráfico TCP en puerto `:443` hacia Azure Key Vault y los endpoints de federación OAuth2/OIDC externos (Google Identity y Microsoft Entra ID).
+  - **Servicio de Metadatos Azure IMDS / CSI:** Tráfico TCP en puertos `:4577` y `:4578` para la sincronización de credenciales del Secrets Store CSI Driver.
+  - **Bloqueo de Exfiltración:** Todo intento de conexión hacia puertos no estándar, rangos de IP arbitrarios o internet abierto no catalogado es bloqueado de inmediato.
+
+---
+
+### 🔄 Diagrama de Secuencia: Filtrado Perimetral Zero-Trust (US-18)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Attacker as Pod Comprometido en Clúster
+    actor Nginx as Ingress NGINX (Namespace ingress-nginx)
+    participant CNI as Kubernetes CNI / NetworkPolicy Engine
+    participant Pod as Pod identity-service (:4000)
+    participant CoreDNS as CoreDNS (kube-system :53)
+    participant PG as PostgreSQL Flexible Server (:5432)
+    participant RogueExt as Servidor Malicioso en Internet
+
+    Nginx->>CNI: 1. Petición HTTPS entrante reenviada a puerto :4000
+    CNI->>CNI: 2. Validación de regla Ingress (namespace y pod match)
+    CNI->>Pod: 3. Tráfico permitido y entregado a identity-service
+    Pod->>CNI: 4. Consulta DNS de host de base de datos
+    CNI->>CoreDNS: 5. Egress permitido hacia kube-system:53
+    CoreDNS-->>Pod: 6. Resolución IP exitosa
+    Pod->>CNI: 7. Conexión TCP cifrada a base de datos
+    CNI->>PG: 8. Egress permitido hacia puerto :5432
+    Attacker--xCNI: 9. Intento de escaneo lateral o exploit directo a :4000
+    CNI--xAttacker: 10. BLOQUEADO (Violación de Default-Deny-All)
+    Pod--xCNI: 11. Intento hipotético de exfiltración hacia IP externa no autorizada
+    CNI--xRogueExt: 12. BLOQUEADO (Egress no autorizado rechazado a nivel de kernel)
+```
+
+#### Glosario de Componentes US-18:
+- **`Ingress NGINX (ingress-nginx)`:** Único punto de entrada autorizado al clúster, responsable de la terminación TLS y reenrutamiento seguro.
+- **`Kubernetes CNI / NetworkPolicy Engine`:** Motor de red subyacente (ej. Calico o Azure CNI) que hace cumplir las reglas de filtrado perimetral en cada nodo de cómputo.
+- **`Pod identity-service (:4000)`:** Instancia de la aplicación protegida en su espacio de red local.
+- **`CoreDNS (kube-system :53)`:** Servicio de resolución de nombres autorizado dentro del clúster.
+- **`PostgreSQL Flexible Server (:5432)`:** Base de datos relacional autorizada para persistencia.
+- **`Pod Comprometido en Clúster`:** Simulación de una amenaza interna que intenta realizar escaneo lateral o ataques directos a otros contenedores.
+- **`Servidor Malicioso en Internet`:** Destino externo no autorizado utilizado para evaluar la prevención de fuga de datos (*data exfiltration*).
+
+---
+
+### 🧪 Verificación Automatizada: Auditoría de NetworkPolicies en Helm
+
+La sintaxis, el renderizado de plantillas y las restricciones estrictas del esquema JSON para NetworkPolicies se auditan mediante la suite de empaquetado:
+
+```bash
+npm run test:helm
+```
+
+##### Salida Real de Verificación de NetworkPolicies (Auditoría Aprobada):
+```text
+=== [3/6] Renderizando Plantillas Kubernetes (helm template) ===
+...
+✓ Manifiesto NetworkPolicy renderizado correctamente.
+
+=== [4/6] Auditando Invariantes de Orquestación, Probes, CSI y Seguridad ===
+...
+✓ NetworkPolicies Zero-Trust (default-deny-all, Ingress :4000 desde ingress-nginx y Egress :53, :5432, :6379, :443, :4577/:4578) verificadas.
+
+=== [6/6] Verificando Rechazo Estricto de Casos Negativos (values.schema.json) ===
+...
+Probando caso negativo: networkPolicy.enabled tipo no booleano...
+✓ Caso negativo validado (falló según lo esperado): networkPolicy.enabled tipo no booleano.
+Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)...
+✓ Caso negativo validado (falló según lo esperado): networkPolicy.ingress.port fuera de rango IANA (> 65535).
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
