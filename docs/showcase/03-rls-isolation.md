@@ -381,18 +381,32 @@ PATCH http://localhost:4000/api/v1/users/4476ffac-2423-444b-8342-efbfe4dbaeba
 
 Un usuario autenticado de `acme-corp` presenta su token pero declara en la cabecera `X-Tenant-ID: beta-corp`:
 
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity auth me \
+  --tenant beta-corp \
+  --token "$TOKEN_ACME"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
 ```bash
 curl -i -X GET http://localhost:4000/api/v1/auth/me \
   -H "Authorization: Bearer $TOKEN_ACME" \
   -H "X-Tenant-ID: beta-corp"
 ```
+</details>
 
-##### Respuesta de Seguridad Obtenida:
-```http
-HTTP/1.1 403 Forbidden
-Content-Type: application/json; charset=utf-8
+##### Respuesta de Seguridad Obtenida (HTTP 403 Forbidden):
+```text
+HTTP/1.1 403 Forbidden [37ms]
+GET http://localhost:4000/api/v1/auth/me
 
-{"error":"Forbidden: Token does not belong to the requested tenant context"}
+{
+  "error": "Forbidden: Token does not belong to the requested tenant context"
+}
 ```
 
 ---
