@@ -299,4 +299,98 @@ Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)
 
 ---
 
+## 📋 US-19: Structured Security Audit Logging & Immutable WORM Analytics
+
+En organizaciones financieras reguladas, los registros de auditoría no sólo deben existir, sino que deben ser inmutables, estructurados de forma estricta y estar protegidos contra cualquier manipulación interna o externa. El estándar **PCI-DSS v4.0 (Requisitos 10.2 y 10.3)** y **SOC 2 Type II (Criterio CC6.8)** exigen registrar todo intento de acceso a datos sensibles, cambios de privilegios, fallos de autenticación e incidentes de seguridad con marcas de tiempo atómicas y almacenamiento no modificable (*Write Once, Read Many* o WORM).
+
+`identity-service` implementa una arquitectura integral de auditoría de seguridad basada en el principio **12-Factor App (Logs como flujos continuos)**, combinando emisión estructurada en NDJSON hacia `stdout`, sanitización criptográfica preventiva y recolección automatizada hacia **Azure Log Analytics Workspace** con retención inmutable de 365 días.
+
+### 🏛️ Pilares Arquitectónicos de US-19
+
+#### 1. Registro Basado en el Manifiesto 12-Factor (stdout NDJSON)
+- **Flujo de Eventos Desacoplado:** La aplicación no escribe bitácoras en archivos locales del pod ni interactúa sincrónicamente con bases de datos remotas de logging. Cada evento de seguridad se emite como una línea individual de texto JSON (**Newline Delimited JSON o NDJSON**) directamente a la salida estándar (`process.stdout`).
+- **Arquitectura Fail-Safe y No Bloqueante:** Implementada en `ConsoleSecurityAuditLogger`, la escritura en el stream de salida intercepta y neutraliza cualquier error de I/O (ej. `EPIPE` por rotación de descriptores de archivo) sin arrojar excepciones no controladas. Esto garantiza de forma absoluta que un fallo transitorio en la infraestructura de observabilidad jamás degrade o aborte una transacción de negocio activa.
+- **Sanitización y Redacción Criptográfica Preventiva:** Antes de la serialización del evento, un filtro de ofuscación analiza recursivamente todas las propiedades del payload. Cualquier campo clasificado como secreto (`password`, `client_secret`, `token`, `authorization`, `private_key` o credenciales bancarias) es redactado de forma irreversible reemplazándolo por `[REDACTED]`.
+
+#### 2. Constructor Estructurado de Eventos (`AuditEventBuilder`)
+- **Esquema de Seguridad Enriquecido:** Todo evento generado a través del dominio o la capa de aplicación implementa el siguiente esquema normalizado:
+  - `eventId`: Identificador único UUIDv4 para correlación y deduplicación en sistemas SIEM.
+  - `timestamp`: Marca temporal en UTC con precisión de milisegundos bajo formato estándar ISO-8601.
+  - `eventType`: Tipología estandarizada del evento (ej. `CROSS_TENANT_ACCESS_ATTEMPT`, `TOKEN_ISSUED`, `CREDENTIAL_ROTATION`, `M2M_AUTH_FAILURE`).
+  - `severity`: Clasificación de riesgo operacional (`INFO`, `WARN`, `ALERT`, `CRITICAL`).
+  - `tenantId` & `actor`: Identificación unívoca del espacio de tenencia y del sujeto ejecutor (usuario final, cliente M2M o subsistema interno).
+  - `complianceTags`: Etiquetas declarativas para auditoría regulatoria (ej. `["PCI-DSS-10.2", "SOC2-CC6.8"]`).
+  - `trace`: Contexto distribuido según la especificación W3C Trace Context (`traceId`, `spanId`), permitiendo correlacionar el evento de auditoría con las trazas distribuidas de OpenTelemetry.
+
+#### 3. Ingesta y Retención Inmutable WORM en Azure Log Analytics
+- **Recolección Automatizada en Clúster:** Agentes dedicados en AKS (Container Insights / Fluent Bit) consumen el stream de `stdout` de los contenedores sin introducir latencia en el proceso de la aplicación.
+- **Almacenamiento WORM (365 Días):** Los eventos se persisten en una tabla dedicada dentro del espacio de trabajo de Azure Log Analytics (`IdentitySecurityAudit_CL`), configurada con una política inmutable de retención de 365 días. Bajo este modelo WORM (*Write Once, Read Many*), los registros no pueden ser alterados ni purgados prematuramente, satisfaciendo los requerimientos de auditoría forense financiera.
+
+---
+
+### 🔄 Diagrama de Secuencia: Pipeline de Auditoría de Seguridad Inmutable (US-19)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Usuario / Atacante
+    participant Gateway as Ingress & Controller HTTP
+    participant Builder as AuditEventBuilder
+    participant Logger as ConsoleSecurityAuditLogger (stdout)
+    participant Daemon as Container Insights (DaemonSet)
+    participant LogAnalytics as Azure Log Analytics Workspace
+    participant SIEM as Microsoft Sentinel / SOC SIEM
+
+    User->>Gateway: 1. Intento de acceso cross-tenant o autenticación anómala
+    Gateway->>Builder: 2. Detección de incidente de seguridad y generación de evento
+    Builder->>Builder: 3. Sanitización y redacción criptográfica de secretos
+    Builder->>Logger: 4. Emisión de NDJSON estructurado con tags PCI/SOC2
+    Logger->>Logger: 5. Escritura no bloqueante (fail-safe) a stdout
+    Daemon->>Logger: 6. Recolección de trazas NDJSON desde el stream del pod
+    Daemon->>LogAnalytics: 7. Ingesta cifrada vía Azure Monitor Ingestion API
+    LogAnalytics->>LogAnalytics: 8. Persistencia WORM inmutable con retención de 365 días
+    LogAnalytics->>SIEM: 9. Alerta en tiempo real al equipo SOC / Monitoreo FinTech
+```
+
+#### Glosario de Componentes US-19:
+- **`Usuario / Atacante`:** Origen de la petición evaluada por los filtros de seguridad de `identity-service`.
+- **`Ingress & Controller HTTP`:** Capa de enrutamiento y middlewares de seguridad (Rate Limiting, Tenant Context, Auth).
+- **`AuditEventBuilder`:** Clase de dominio encargada de ensamblar y normalizar el payload del evento de auditoría con metadatos contextuales y regulatorios.
+- **`ConsoleSecurityAuditLogger (stdout)`:** Adaptador de infraestructura que realiza la sanitización criptográfica y escribe en `process.stdout` de forma no bloqueante.
+- **`Container Insights (DaemonSet)`:** Agente recolector desplegado en cada nodo del clúster AKS que recopila flujos de salida estándar de los contenedores.
+- **`Azure Log Analytics Workspace`:** Repositorio centralizado en la nube con cifrado en reposo mediante claves administradas por el cliente (CMK) y retención WORM de 365 días.
+- **`Microsoft Sentinel / SOC SIEM`:** Plataforma de seguridad que analiza las bitácoras en tiempo real y dispara incidentes automáticos ante eventos con severidad `ALERT` o `CRITICAL`.
+
+---
+
+### 🧪 Verificación Automatizada: Suite de Pruebas de Auditoría E2E (US-19)
+
+La precisión del esquema de auditoría, la redacción obligatoria de secretos y la propagación de contexto W3C se certifican mediante la siguiente suite de integración:
+
+```bash
+npx jest tests/integration/identity/security/test_structured_audit_logging.ts
+```
+
+##### Salida Real de Verificación Automatizada (4/4 Escenarios Aprobados):
+```text
+PASS tests/integration/identity/security/test_structured_audit_logging.ts
+  Integration E2E: Structured Security Audit Logging & NDJSON Ingestion (US-19)
+    Scenario 1 (BDD 1): Cross-Tenant Access Violation Detection
+      ✓ should abort with 403 Forbidden and emit an ALERT NDJSON audit log when tenant mismatch is detected (107 ms)
+    Scenario 2 (BDD 2): M2M Authentication & Strict Credential Redaction
+      ✓ should reject invalid client credentials and ensure secrets are redacted in audit output (49 ms)
+    Scenario 3: Correlation & Request ID Header Forwarding
+      ✓ should preserve and forward client-supplied correlation headers into trace object (66 ms)
+    Scenario 4: Runtime Server Wiring Default Resolution
+      ✓ should instantiate ConsoleSecurityAuditLogger by default when in production environment (98 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        2.072 s
+Ran all test suites matching tests/integration/identity/security/test_structured_audit_logging.ts.
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
