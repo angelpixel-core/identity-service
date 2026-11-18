@@ -714,4 +714,37 @@ POST http://localhost:4000/api/v1/oauth2/refresh
 
 ---
 
+#### Escenario B: Extracción de Access Token en Tubería UNIX (`--raw-json | jq`)
+
+Utilizando el token hijo activo (`37cdcc2430cc3acf00e683986c89ae85b6e8309ad30eaaa029e4828752fc983e`) emitido en la rotación previa:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity session refresh \
+  --token "37cdcc2430cc3acf00e683986c89ae85b6e8309ad30eaaa029e4828752fc983e" \
+  --client-id portal-web \
+  --raw-json | jq -r .access_token
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X POST http://localhost:4000/api/v1/oauth2/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "37cdcc2430cc3acf00e683986c89ae85b6e8309ad30eaaa029e4828752fc983e",
+    "client_id": "portal-web"
+  }' | jq -r .access_token
+```
+</details>
+
+##### Respuesta Real Obtenida (JWT RS256 Puro):
+```text
+eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtleS1mNzE5ZTRhMWI2NjYifQ.eyJzdWIiOiJ1c3JfMDFKMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjQwMDAiLCJhdWQiOiJwb3J0YWwtd2ViIiwiY2xpZW50X2lkIjoicG9ydGFsLXdlYiIsInRlbmFudF9pZCI6ImFjbWUtY29ycCIsInNjb3BlIjoib3BlbmlkIHByb2ZpbGUiLCJpYXQiOjE3OTQ5Njk1MDIsImV4cCI6MTc5NDk3MDQwMn0...
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
