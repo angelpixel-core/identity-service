@@ -212,9 +212,19 @@ ETag: W/"303-HMCoOKBsEKMrW+LaZUUf1j2cqjY"
 
 #### Receta 2: Inspeccionar el Conjunto de Claves Públicas (`GET /.well-known/jwks.json`)
 
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity oidc jwks
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
 ```bash
 curl -i http://localhost:4000/.well-known/jwks.json
 ```
+</details>
 
 ##### Respuesta Real Obtenida (HTTP 200 OK):
 ```http
