@@ -219,6 +219,17 @@ POST http://localhost:4000/api/v1/oauth2/clients/validate
 
 Cuando una aplicación cliente es desactivada por el equipo de seguridad o fin de ciclo de vida (`legacy-app`):
 
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity client validate \
+  --client-id legacy-app \
+  --origin https://legacy.angelpixel.io
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "Content-Type: application/json" \
@@ -226,9 +237,13 @@ curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "X-Client-ID: legacy-app" \
   -d '{"clientId": "legacy-app"}'
 ```
+</details>
 
-##### Respuesta de Seguridad Obtenida:
-```json
+##### Respuesta de Seguridad Obtenida (HTTP 401 Unauthorized):
+```text
+HTTP/1.1 401 Unauthorized [31ms]
+POST http://localhost:4000/api/v1/oauth2/clients/validate
+
 {
   "error": "client_deactivated",
   "message": "Client application \"legacy-app\" is currently deactivated."
