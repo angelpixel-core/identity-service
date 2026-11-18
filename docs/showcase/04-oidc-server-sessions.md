@@ -8,7 +8,7 @@ user_stories:
     status: "completed"
   - id: "US-08"
     name: "Flujo de Autorización con PKCE (RFC 7636)"
-    status: "in-progress"
+    status: "completed"
   - id: "US-09"
     name: "Rotación de Refresh Tokens & Revocación de Sesiones"
     status: "pending"
@@ -21,7 +21,7 @@ security_standards:
   - "Aislamiento Estricto de Clave Privada ([REDACTED])"
   - "Verificación de Firmas Criptográficas sin Estado (Stateless)"
 created_at: "2026-11-17"
-updated_at: "2026-11-17"
+updated_at: "2026-11-18"
 tags:
   - oidc
   - jwks
@@ -48,7 +48,7 @@ Este capítulo documenta la implementación de `identity-service` como un **Prov
 | Historia | Descripción | Estado |
 | :--- | :--- | :---: |
 | **US-07** | Servidor OIDC, Gestión Criptográfica de Claves y Endpoints de Descubrimiento JWKS | ✅ En Producción |
-| **US-08** | Flujo de Autorización OAuth2 con PKCE y Consentimiento de Usuario | 🔄 Próximo Paso |
+| **US-08** | Flujo de Autorización OAuth2 con PKCE y Consentimiento de Usuario | ✅ En Producción |
 | **US-09** | Rotación Deslizante de Refresh Tokens con Cookies Seguras HttpOnly | ⏳ Planificado |
 
 ---
@@ -307,6 +307,85 @@ Tests:       2 passed, 2 total
 Snapshots:   0 total
 Time:        1.792 s
 ```
+
+---
+
+## 🛡️ US-08: Flujo de Autorización OAuth2 con PKCE (RFC 7636) & Canje Criptográfico
+
+### 1. Arquitectura Criptográfica & Mitigación de Interceptación de Código
+
+Los clientes públicos (Single-Page Applications en React, aplicaciones móviles nativas y herramientas CLI) no pueden almacenar un `client_secret` estático de forma confidencial. Si un atacante intercepta el `authorization_code` devuelto a través de la URI de redirección del navegador o del sistema operativo, podría canjearlo ilegítimamente por tokens de acceso (**Authorization Code Interception Attack**).
+
+`identity-service` neutraliza este vector exigiendo de manera obligatoria **PKCE (Proof Key for Code Exchange - RFC 7636)** con transformación criptográfica **SHA-256 (`S256`)**:
+
+1. **Secreto Efímero por Petición (`code_verifier`):** Antes de iniciar el flujo, el cliente genera un secreto aleatorio criptográficamente seguro de alta entropía (32 bytes / 256 bits codificados en Base64URL).
+2. **Compromiso Público Irreversible (`code_challenge`):** El cliente calcula el hash `BASE64URL(SHA256(code_verifier))` y lo envía al endpoint `/api/v1/oauth2/authorize` junto con `code_challenge_method: "S256"`.
+3. **Código de Autorización de Un Solo Uso (`Single-Use TTL 60s`):** El servidor vincula el `code_challenge` al código emitido con una ventana de vida máxima de 60 segundos.
+4. **Verificación Matemática en Tiempo Constante:** Durante el canje en `/api/v1/oauth2/token`, el cliente revela el `code_verifier` original. El servidor aplica SHA-256 sobre el verificador recibido y lo compara en tiempo constante (`crypto.timingSafeEqual`) contra el `code_challenge` almacenado. Si coinciden, consume atómicamente el código y emite el `access_token` e `id_token` firmados con RS256.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor SPA as Cliente Público (SPA / CLI)
+    participant Gateway as Express API Gateway
+    participant AuthHandler as AuthorizeUserCommandHandler
+    participant ClientRepo as ClientApplicationRepository
+    participant CodeStore as AuthorizationCodeRepository
+    participant ExchangeHandler as ExchangeAuthCodeCommandHandler
+    participant PKCE as PkceValidator (RFC 7636 S256)
+    participant KeyProvider as AsymmetricKeyProvider (RS256)
+
+    SPA->>SPA: Generar code_verifier (256-bit) y code_challenge = BASE64URL(SHA256(verifier))
+    SPA->>Gateway: POST /api/v1/oauth2/authorize (client_id, redirect_uri, code_challenge, S256)
+    Gateway->>AuthHandler: execute(AuthorizeUserCommand)
+    AuthHandler->>ClientRepo: findByClientId(clientId)
+    ClientRepo-->>AuthHandler: ClientApplication (active, redirectUris)
+    AuthHandler->>CodeStore: save(AuthorizationCode: { code, challenge, ttl: 60s, consumed: false })
+    AuthHandler-->>SPA: HTTP 200 OK { code, state, callback_url }
+
+    Note over SPA,KeyProvider: Fase 2: Canje Criptográfico del Código con Verificador PKCE
+    SPA->>Gateway: POST /api/v1/oauth2/token (grant_type=authorization_code, code, code_verifier)
+    Gateway->>ExchangeHandler: execute(ExchangeAuthCodeCommand)
+    ExchangeHandler->>CodeStore: findByCode(code)
+    CodeStore-->>ExchangeHandler: AuthorizationCode Aggregate
+    ExchangeHandler->>PKCE: verify(code_verifier, stored_challenge, "S256")
+    ExchangeHandler->>CodeStore: markAsConsumed(code) [Single-Use Enforcement]
+    ExchangeHandler->>KeyProvider: signToken(accessPayload & idTokenPayload, RS256)
+    KeyProvider-->>ExchangeHandler: Signed JWTs (access_token, id_token)
+    ExchangeHandler-->>SPA: HTTP 200 OK { access_token, id_token, token_type: "Bearer", expires_in: 3600 }
+```
+
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`SPA` (Cliente Público / CLI)** | `actor` | Aplicación frontend o binario `./bin/identity` que inicia el flujo OIDC generando el par efímero PKCE (`code_verifier` y `code_challenge`). |
+| **`Gateway` (Express API Gateway)** | `participant` | Pasarela HTTP que expone los endpoints `/api/v1/oauth2/authorize` y `/api/v1/oauth2/token`. |
+| **`AuthHandler` (`AuthorizeUserCommandHandler`)** | `participant` | Caso de uso que valida el cliente público, la URI de redirección autorizada y emite el código de autorización efímero vinculado al reto PKCE. |
+| **`ClientRepo` (`ClientApplicationRepository`)** | `participant` | Puerto de persistencia que verifica que el `client_id` exista, esté activo y tenga registrada exactamente la `redirect_uri` solicitada. |
+| **`CodeStore` (`AuthorizationCodeRepository`)** | `participant` | Almacén en memoria/persistencia de códigos de autorización con TTL estricto de 60 segundos y control de estado de consumo único (`consumed`). |
+| **`ExchangeHandler` (`ExchangeAuthCodeCommandHandler`)** | `participant` | Caso de uso que orquesta el canje del código, detecta intentos de repetición (*replay attacks*) y coordina la prueba criptográfica PKCE. |
+| **`PKCE` (`PkceValidator` RFC 7636 S256)** | `participant` | Validador de dominio sin estado que computa `BASE64URL(SHA256(code_verifier))` y ejecuta comparación en tiempo constante (`timingSafeEqual`). |
+| **`KeyProvider` (`AsymmetricKeyProvider` RS256)** | `participant` | Motor criptográfico RSA 2048-bit que firma el `access_token` y el `id_token` OIDC incluyendo el identificador de clave activa (`kid`). |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 16)
+
+1. **Paso 1 (`SPA -> SPA`):** El cliente genera localmente un `code_verifier` criptográficamente aleatorio y deriva su `code_challenge` aplicando SHA-256 y codificación Base64URL sin relleno (`S256`).
+2. **Paso 2 (`SPA -> Gateway`):** El cliente envía `POST /api/v1/oauth2/authorize` indicando `client_id`, `redirect_uri`, `response_type: "code"`, `code_challenge` y `code_challenge_method: "S256"`.
+3. **Paso 3 (`Gateway -> AuthHandler`):** El controlador despacha el comando `AuthorizeUserCommand` hacia la capa de aplicación.
+4. **Paso 4 (`AuthHandler -> ClientRepo`):** Se consulta el registro de aplicaciones cliente por `clientId`.
+5. **Paso 5 (`ClientRepo -->> AuthHandler`):** El repositorio retorna el agregado `ClientApplication`, verificándose que esté activo y que la `redirect_uri` coincida exactamente con la lista blanca.
+6. **Paso 6 (`AuthHandler -> CodeStore`):** Se genera un `AuthorizationCode` de alta entropía con un TTL de 60 segundos, asociándolo inmutablemente al `code_challenge` recibido y marcándolo como `consumed: false`.
+7. **Paso 7 (`AuthHandler -->> SPA`):** El servidor retorna `HTTP 200 OK` entregando el `code` de autorización, el parámetro `state` anti-CSRF y la `callback_url` estructurada.
+8. **Paso 8 (`SPA -> Gateway`):** En la fase de canje, el cliente invoca `POST /api/v1/oauth2/token` enviando `grant_type: "authorization_code"`, el `code` recibido y el secreto plano `code_verifier`.
+9. **Paso 9 (`Gateway -> ExchangeHandler`):** El Gateway transfiere la solicitud al manejador `ExchangeAuthCodeCommandHandler`.
+10. **Paso 10 (`ExchangeHandler -> CodeStore`):** Se recupera el registro del código de autorización desde el almacén.
+11. **Paso 11 (`CodeStore -->> ExchangeHandler`):** El repositorio devuelve el agregado `AuthorizationCode` (si ya fue consumido previamente, se aborta de inmediato con `HTTP 400 invalid_grant` por detección de ataque de repetición).
+12. **Paso 12 (`ExchangeHandler -> PKCE`):** El validador `PkceValidator` recalcula el hash SHA-256 en Base64URL a partir del `code_verifier` y comprueba en tiempo constante que coincida bit a bit con el `code_challenge` original.
+13. **Paso 13 (`ExchangeHandler -> CodeStore`):** Superada la validación matemática, el código se marca inmediatamente como consumido (`markAsConsumed`) garantizando la propiedad de un solo uso (*Single-Use*).
+14. **Paso 14 (`ExchangeHandler -> KeyProvider`):** Se solicita la firma asimétrica RS256 tanto para el `access_token` como para el `id_token` OIDC con los claims de identidad y sesión.
+15. **Paso 15 (`KeyProvider -->> ExchangeHandler`):** El proveedor criptográfico devuelve ambos tokens JWT firmados con la clave privada activa.
+16. **Paso 16 (`ExchangeHandler -->> SPA`):** El servidor responde con `HTTP 200 OK` (y cabecera `Cache-Control: no-store`) entregando `access_token`, `id_token`, `token_type: "Bearer"` y `expires_in: 3600`.
 
 ---
 
