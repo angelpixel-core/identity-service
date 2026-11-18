@@ -669,4 +669,49 @@ sequenceDiagram
 
 ---
 
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
+
+El servidor en modo de desarrollo inicializa una sesión semilla activa (`seed_refresh_token_portal_web_dev_2026`) asociada al cliente `portal-web`, permitiendo verificar en vivo el ciclo completo de rotación y revocación:
+
+#### Escenario A: Rotación Exitosa 1-a-1 de Refresh Token y Renovación de Acceso (HTTP 200 OK)
+
+La CLI captura automáticamente la cabecera `Set-Cookie` (`HttpOnly; SameSite=Strict`) emitida por el servidor e inyecta el nuevo token hijo bajo la propiedad `new_refresh_token` para facilitar el encadenamiento en scripts:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity session refresh \
+  --token "seed_refresh_token_portal_web_dev_2026" \
+  --client-id portal-web
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/oauth2/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "seed_refresh_token_portal_web_dev_2026",
+    "client_id": "portal-web"
+  }'
+```
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+```text
+HTTP/1.1 200 OK [97ms]
+POST http://localhost:4000/api/v1/oauth2/refresh
+
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtleS1mNzE5ZTRhMWI2NjYifQ...",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtleS1mNzE5ZTRhMWI2NjYifQ...",
+  "new_refresh_token": "37cdcc2430cc3acf00e683986c89ae85b6e8309ad30eaaa029e4828752fc983e"
+}
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
