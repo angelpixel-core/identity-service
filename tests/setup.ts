@@ -5,8 +5,8 @@
  * and ensures tests always run with in-memory adapters and zero external network leaks.
  */
 
-// 1. Inicializar por defecto NODE_ENV='test' permitiendo mutabilidad controlada en pruebas
-process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+// 1. Forzar estrictamente NODE_ENV='test' para aislar las pruebas de variables de entorno externas
+process.env.NODE_ENV = 'test';
 
 // 2. Silenciar mensajes de diagnóstico ruidosos de dotenv en entorno de pruebas
 const originalConsoleError = console.error;
