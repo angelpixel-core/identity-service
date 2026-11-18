@@ -747,4 +747,42 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtleS1mNzE5ZTRhMWI2NjYifQ.eyJzdWIiO
 
 ---
 
+#### Escenario C: Seguridad Negativa — Detección de Reúso de Token y Revocación de Familia (HTTP 401 Unauthorized)
+
+Al presentar nuevamente un token que ya fue consumido en una rotación anterior (`seed_refresh_token_portal_web_dev_2026`), el servidor detecta una brecha de seguridad e invalida en cascada toda la familia de tokens:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity session refresh \
+  --token "seed_refresh_token_portal_web_dev_2026" \
+  --client-id portal-web
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/oauth2/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "seed_refresh_token_portal_web_dev_2026",
+    "client_id": "portal-web"
+  }'
+```
+</details>
+
+##### Respuesta de Seguridad Obtenida (HTTP 401 Unauthorized):
+```text
+HTTP/1.1 401 Unauthorized [70ms]
+POST http://localhost:4000/api/v1/oauth2/refresh
+
+{
+  "error": "invalid_grant",
+  "error_description": "Refresh token has already been consumed. Session compromised and revoked."
+}
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
