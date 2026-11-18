@@ -129,11 +129,22 @@ sequenceDiagram
 
 ---
 
-### 2. Recetas Interactivas cURL Paso a Paso
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
-Puedes probar cada una de las bifurcaciones de validación de seguridad directamente contra el entorno en ejecución:
+Puedes probar cada una de las bifurcaciones de validación de seguridad directamente contra el entorno en ejecución utilizando la CLI oficial o `cURL`:
 
 #### Escenario A: Origen Autorizado y Cliente Activo (HTTP 200 OK)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity client validate \
+  --client-id portal-web \
+  --origin https://portal.angelpixel.io
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
@@ -142,9 +153,13 @@ curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "X-Client-ID: portal-web" \
   -d '{"clientId": "portal-web"}'
 ```
+</details>
 
-##### Respuesta Real Obtenida:
-```json
+##### Respuesta Real Obtenida (HTTP 200 OK):
+```text
+HTTP/1.1 200 OK [48ms]
+POST http://localhost:4000/api/v1/oauth2/clients/validate
+
 {
   "authorized": true,
   "clientId": "portal-web",
