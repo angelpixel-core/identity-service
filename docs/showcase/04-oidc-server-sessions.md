@@ -820,4 +820,60 @@ POST http://localhost:4000/api/v1/oauth2/revoke
 
 ---
 
+#### Escenario E: Seguridad Negativa — Rechazo de Refresco en Sesión Revocada (HTTP 401 Unauthorized)
+
+Cualquier intento posterior de renovar credenciales utilizando un token perteneciente a una familia revocada es rechazado taxativamente:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity session refresh \
+  --token "seed_refresh_token_portal_web_dev_2026"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/oauth2/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "seed_refresh_token_portal_web_dev_2026"
+  }'
+```
+</details>
+
+##### Respuesta de Seguridad Obtenida (HTTP 401 Unauthorized):
+```text
+HTTP/1.1 401 Unauthorized [61ms]
+POST http://localhost:4000/api/v1/oauth2/refresh
+
+{
+  "error": "invalid_grant",
+  "error_description": "Refresh session has been revoked"
+}
+```
+
+---
+
+### 3. Cobertura de Pruebas Automatizadas
+
+El ciclo de vida de sesiones deslizantes, rotación 1-a-1 y revocación en cascada está certificado por las suites unitarias, de integración y de aceptación:
+
+```bash
+# Suite Unitaria (Agregado RefreshSession y Casos de Uso) y Suite de Integración HTTP
+npx jest tests/unit/identity/domain/session/test_refresh_session_aggregate.ts tests/unit/identity/application/session/ tests/integration/identity/interfaces/test_refresh_token_rotation.ts
+```
+
+```bash
+# Especificación Ejecutable BDD / Gherkin
+npx jest tests/acceptance/step_defs/test_refresh_token_rotation_steps.ts
+```
+
+- **Invariante 1:** Ningún Refresh Token en texto plano se almacena en memoria o base de datos; solo su hash `SHA-256` verificable en tiempo constante.
+- **Invariante 2:** Cada rotación consume irreversiblemente el token padre y emite un único hijo en la misma `familyId`.
+- **Invariante 3:** Cualquier intento de reutilizar un token consumido dispara la revocación atómica de toda la familia (`revokeFamily`) y emite alerta de auditoría de seguridad.
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
