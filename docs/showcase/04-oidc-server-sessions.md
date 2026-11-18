@@ -389,4 +389,202 @@ sequenceDiagram
 
 ---
 
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
+
+La herramienta `./bin/identity` incorpora un motor criptográfico PKCE nativo que genera el par `code_verifier` / `code_challenge` (`S256`) de forma transparente cuando no se especifica manualmente:
+
+#### Escenario A: Solicitud de Código de Autorización con Auto-PKCE S256 (HTTP 200 OK)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity oidc authorize \
+  --client-id portal-web \
+  --redirect-uri https://portal.angelpixel.io/callback
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/oauth2/authorize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "response_type": "code",
+    "client_id": "portal-web",
+    "redirect_uri": "https://portal.angelpixel.io/callback",
+    "code_challenge": "E9Melhoa2OwvFrGMTJguSR7e7IF3B5A_tL5V1I_A5hM",
+    "code_challenge_method": "S256",
+    "scope": "openid profile email",
+    "state": "state_a3d76717d7c58bcd",
+    "user_id": "usr_01J00000000000000000000001",
+    "tenant_id": "acme-corp"
+  }'
+```
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+```text
+HTTP/1.1 200 OK [80ms]
+POST http://localhost:4000/api/v1/oauth2/authorize
+
+{
+  "code": "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U",
+  "redirect_uri": "https://portal.angelpixel.io/callback",
+  "state": "state_a3d76717d7c58bcd",
+  "callback_url": "https://portal.angelpixel.io/callback?code=NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U&state=state_a3d76717d7c58bcd",
+  "code_verifier": "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
+}
+```
+
+---
+
+#### Escenario B: Canje Criptográfico del Código por Tokens RS256 (HTTP 200 OK)
+
+Presentando el `code` efímero junto con el `code_verifier` original generado en el paso anterior:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity token exchange \
+  --client-id portal-web \
+  --redirect-uri https://portal.angelpixel.io/callback \
+  --code "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U" \
+  --verifier "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "grant_type": "authorization_code",
+    "client_id": "portal-web",
+    "redirect_uri": "https://portal.angelpixel.io/callback",
+    "code": "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U",
+    "code_verifier": "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
+  }'
+```
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+```text
+HTTP/1.1 200 OK [95ms]
+POST http://localhost:4000/api/v1/oauth2/token
+
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtleS0xMjJhYmU5ZGNmODAifQ...",
+  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtleS0xMjJhYmU5ZGNmODAifQ...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "openid profile email"
+}
+```
+
+---
+
+#### Escenario C: Seguridad Negativa — Detección de Replay Attack del Código (HTTP 400 Bad Request)
+
+Si un atacante intercepta el código de autorización e intenta canjearlo por segunda vez (dentro de su ventana de 60 segundos):
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity token exchange \
+  --client-id portal-web \
+  --redirect-uri https://portal.angelpixel.io/callback \
+  --code "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U" \
+  --verifier "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "grant_type": "authorization_code",
+    "client_id": "portal-web",
+    "redirect_uri": "https://portal.angelpixel.io/callback",
+    "code": "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U",
+    "code_verifier": "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
+  }'
+```
+</details>
+
+##### Respuesta de Seguridad Obtenida (HTTP 400 Bad Request):
+```text
+HTTP/1.1 400 Bad Request [41ms]
+POST http://localhost:4000/api/v1/oauth2/token
+
+{
+  "error": "invalid_grant",
+  "error_description": "Authorization code has already been consumed (replay attack detected)"
+}
+```
+
+---
+
+#### Escenario D: Seguridad Negativa — Solicitud con Cliente No Registrado (HTTP 401 Unauthorized)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity oidc authorize \
+  --client-id non-existent-app \
+  --redirect-uri https://portal.angelpixel.io/callback
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/oauth2/authorize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "response_type": "code",
+    "client_id": "non-existent-app",
+    "redirect_uri": "https://portal.angelpixel.io/callback",
+    "code_challenge": "E9Melhoa2OwvFrGMTJguSR7e7IF3B5A_tL5V1I_A5hM",
+    "code_challenge_method": "S256"
+  }'
+```
+</details>
+
+##### Respuesta de Seguridad Obtenida (HTTP 401 Unauthorized):
+```text
+HTTP/1.1 401 Unauthorized [91ms]
+POST http://localhost:4000/api/v1/oauth2/authorize
+
+{
+  "error": "invalid_client",
+  "error_description": "Client application not found"
+}
+```
+
+---
+
+### 3. Cobertura de Pruebas Automatizadas
+
+El flujo de autorización con PKCE está certificado en las tres capas de la pirámide de testing:
+
+```bash
+# Suite Unitaria (Validador PKCE RFC 7636) y Suite de Integración HTTP
+npx jest tests/unit/identity/domain/oauth2/test_pkce_validator.ts tests/integration/identity/interfaces/test_oauth2_auth_code_flow.ts
+```
+
+```bash
+# Especificación Ejecutable BDD / Gherkin
+npx jest tests/acceptance/step_defs/test_oauth2_pkce_flow_steps.ts
+```
+
+- **Invariante 1:** Rechazo obligatorio del método degradado `plain`, admitiendo exclusivamente `S256`.
+- **Invariante 2:** Validación en tiempo constante (`crypto.timingSafeEqual`) del par `code_verifier` / `code_challenge`.
+- **Invariante 3:** Consumo atómico de un solo uso (*Single-Use*) y expiración estricta a los 60 segundos.
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
