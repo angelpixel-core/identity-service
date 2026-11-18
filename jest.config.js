@@ -20,6 +20,13 @@ module.exports = {
     ],
   },
   moduleDirectories: ['node_modules', '<rootDir>'],
+  moduleNameMapper: {
+    '^@interfaces/(.*)$': '<rootDir>/interfaces/$1',
+    '^@identity/domain/(.*)$': '<rootDir>/src/contexts/identity/domain/$1',
+    '^@identity/application/(.*)$': '<rootDir>/src/contexts/identity/application/$1',
+    '^@identity/infrastructure/(.*)$': '<rootDir>/src/contexts/identity/infrastructure/$1',
+    '^@shared/(.*)$': '<rootDir>/src/shared/$1',
+  },
   verbose: true,
   clearMocks: true,
   restoreMocks: true,

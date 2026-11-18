@@ -8,6 +8,13 @@
     "outDir": "./dist",
     "rootDir": ".",
     "baseUrl": ".",
+    "paths": {
+      "@interfaces/*": ["interfaces/*"],
+      "@identity/domain/*": ["src/contexts/identity/domain/*"],
+      "@identity/application/*": ["src/contexts/identity/application/*"],
+      "@identity/infrastructure/*": ["src/contexts/identity/infrastructure/*"],
+      "@shared/*": ["src/shared/*"]
+    },
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,

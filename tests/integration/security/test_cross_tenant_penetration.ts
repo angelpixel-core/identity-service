@@ -1,13 +1,22 @@
+// 1. Librerías Externas (3rd-Party & Runtime)
+import type { Express } from 'express';
 import request from 'supertest';
-import { Express } from 'express';
-import { createApp } from '../../../interfaces/http/server';
-import { InMemorySecurityAuditLogger } from '../../../src/contexts/identity/infrastructure/logging/memory_security_audit_logger';
-import { User } from '../../../src/contexts/identity/domain/entities/user/aggregate';
-import { Email } from '../../../src/contexts/identity/domain/value_objects/email/value';
-import { TenantId } from '../../../src/contexts/identity/domain/value_objects/tenant_id/value';
-import { UserRepositoryPort } from '../../../src/contexts/identity/application/ports/user/repository';
-import { TenantSessionContext } from '../../../src/contexts/identity/domain/value_objects/tenant_session_context/value';
-import { CrossTenantContextViolationError } from '../../../src/contexts/identity/domain/exceptions/security/error';
+
+// 2. Capa de Interfaces (Adaptadores Primarios / Servidor HTTP)
+import { createApp } from '@interfaces/http/server';
+
+// 3. Capa de Infraestructura (Adaptadores Secundarios / Logging)
+import { InMemorySecurityAuditLogger } from '@identity/infrastructure/logging/memory_security_audit_logger';
+
+// 4. Capa de Aplicación (Puertos e Interfaces)
+import type { UserRepositoryPort } from '@identity/application/ports/user/repository';
+
+// 5. Capa de Dominio (Agregados, Value Objects y Excepciones Puras)
+import { User } from '@identity/domain/entities/user/aggregate';
+import { CrossTenantContextViolationError } from '@identity/domain/exceptions/security/error';
+import { Email } from '@identity/domain/value_objects/email/value';
+import { TenantId } from '@identity/domain/value_objects/tenant_id/value';
+import { TenantSessionContext } from '@identity/domain/value_objects/tenant_session_context/value';
 
 describe('Integration Security Harness: Cross-Tenant Zero-Trust Penetration Suite (US-06)', () => {
   let app: Express;
