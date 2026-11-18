@@ -422,9 +422,21 @@ POST http://localhost:4000/api/v1/oauth2/token
 
 ---
 
-#### Modo 2: Autenticación RFC 6749 con Cabecera HTTP Basic Auth
+#### Modo 2: Autenticación RFC 6749 con Cabecera HTTP Basic Auth (HTTP 200 OK)
 
-El estándar OAuth2 permite enviar las credenciales en la cabecera `Authorization: Basic <base64>` y el `grant_type` en formato `application/x-www-form-urlencoded`.
+El estándar OAuth2 permite enviar las credenciales en la cabecera `Authorization: Basic <base64>` y el `grant_type` en formato `application/x-www-form-urlencoded`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity token m2m \
+  --client-id m2m-service-app \
+  --client-secret "ValidSecret123!_SuperSecureSecretForTesting_2026" \
+  --auth-mode basic
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 Puedes utilizar la opción nativa `-u` de `curl` (que codifica a Base64 automáticamente y evita conflictos con el carácter `!` en shells interactivos como `zsh`):
 
@@ -443,6 +455,7 @@ curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials"
 ```
+</details>
 
 ##### Cabeceras y Cuerpo de Respuesta Obtenidos (HTTP 200 OK):
 ```http
