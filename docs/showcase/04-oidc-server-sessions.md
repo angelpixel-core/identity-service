@@ -785,4 +785,39 @@ POST http://localhost:4000/api/v1/oauth2/refresh
 
 ---
 
+#### Escenario D: Cierre de Sesión Explícito y Revocación de Refresh Token RFC 7009 (HTTP 200 OK)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity session revoke \
+  --token "seed_refresh_token_portal_web_dev_2026" \
+  --reason "user_logout"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/oauth2/revoke \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "seed_refresh_token_portal_web_dev_2026",
+    "reason": "user_logout"
+  }'
+```
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+```text
+HTTP/1.1 200 OK [66ms]
+POST http://localhost:4000/api/v1/oauth2/revoke
+
+{
+  "message": "Session revoked successfully"
+}
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
