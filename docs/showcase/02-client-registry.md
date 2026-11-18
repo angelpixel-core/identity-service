@@ -254,6 +254,17 @@ POST http://localhost:4000/api/v1/oauth2/clients/validate
 
 #### Escenario D: Identificador de Cliente Inexistente (HTTP 404 Not Found)
 
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity client validate \
+  --client-id cliente-fantasma \
+  --origin https://portal.angelpixel.io
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "Content-Type: application/json" \
@@ -261,9 +272,13 @@ curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "X-Client-ID: cliente-fantasma" \
   -d '{"clientId": "cliente-fantasma"}'
 ```
+</details>
 
-##### Respuesta de Seguridad Obtenida:
-```json
+##### Respuesta de Seguridad Obtenida (HTTP 404 Not Found):
+```text
+HTTP/1.1 404 Not Found [25ms]
+POST http://localhost:4000/api/v1/oauth2/clients/validate
+
 {
   "error": "client_not_found",
   "message": "Client application \"cliente-fantasma\" was not found in registered_clients."
