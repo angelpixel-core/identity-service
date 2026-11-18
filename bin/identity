@@ -134,10 +134,13 @@ async function requestHttp(method, path, options = {}) {
     data = await response.text();
   }
 
+  const setCookie = response.headers.get('set-cookie');
+
   return {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
+    setCookie,
     data,
     latencyMs,
     url: fullUrl,
@@ -190,6 +193,7 @@ ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}client${colors.reset}     Gobernanza y validación de clientes OAuth2 (validate)
   ${colors.cyan}token${colors.reset}      Emisión y canje de tokens OAuth2 (m2m, exchange)
   ${colors.cyan}oidc${colors.reset}       Protocolo OpenID Connect (discovery, jwks, authorize)
+  ${colors.cyan}session${colors.reset}    Gestión de sesiones y rotación de Refresh Tokens (refresh, revoke)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -206,6 +210,8 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity oidc discovery
   identity oidc jwks
   identity oidc authorize --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback
+  identity session refresh --token "$REFRESH_TOKEN"
+  identity session revoke --token "$REFRESH_TOKEN"
 `);
 }
 
@@ -576,6 +582,94 @@ async function handleOidcDomain(action, flags, baseUrl, rawJson) {
   process.exit(1);
 }
 
+function printSessionHelp() {
+  console.log(`${colors.bold}Uso: identity session <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones:${colors.reset}
+  ${colors.cyan}refresh${colors.reset}     Ejecuta la rotación 1 a 1 del Refresh Token y renueva el Access Token (RFC 6749 §6)
+              Banderas:
+                -t, --token <token>         Token de refresco activo (Requerido)
+                -c, --client-id <id>        ID del cliente asociado (Opcional)
+
+  ${colors.cyan}revoke${colors.reset}      Revoca una sesión activa y todas las credenciales de su familia (RFC 7009)
+              Banderas:
+                -t, --token <token>         Token de refresco a revocar (Requerido)
+                --reason <str>              Razón de revocación (Opcional, def: user_logout)
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity session refresh --token "seed_refresh_token_portal_web_dev_2026" --client-id portal-web
+  identity session refresh -t "$REFRESH_TOKEN"
+  identity session revoke --token "$REFRESH_TOKEN" --reason "user_logout"
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO SESSION ---
+async function handleSessionDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printSessionHelp();
+    return;
+  }
+
+  if (action === 'refresh') {
+    const token = flags.token || flags.t || flags['refresh-token'] || flags.r;
+    const clientId = flags['client-id'] || flags.c;
+
+    if (!token) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --token (-t) es obligatoria para renovar la sesión.`);
+      process.exit(1);
+    }
+
+    const body = {
+      refresh_token: String(token),
+    };
+    if (clientId) {
+      body.client_id = String(clientId);
+    }
+
+    const res = await requestHttp('POST', '/api/v1/oauth2/refresh', {
+      baseUrl,
+      body,
+    });
+
+    // Extraer new_refresh_token de la cookie Set-Cookie si existe
+    if (res.status >= 200 && res.status < 300 && res.setCookie && typeof res.data === 'object' && res.data !== null) {
+      const match = res.setCookie.match(/refresh_token=([^;]+)/i);
+      if (match && match[1]) {
+        res.data.new_refresh_token = match[1];
+      }
+    }
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'revoke') {
+    const token = flags.token || flags.t || flags['refresh-token'] || flags.r;
+    const reason = flags.reason || 'user_logout';
+
+    if (!token) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --token (-t) es obligatoria para revocar la sesión.`);
+      process.exit(1);
+    }
+
+    const body = {
+      refresh_token: String(token),
+      reason: String(reason),
+    };
+
+    const res = await requestHttp('POST', '/api/v1/oauth2/revoke', {
+      baseUrl,
+      body,
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso session. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
+}
+
 // --- FUNCIÓN PRINCIPAL (ENTRYPOINT) ---
 async function main() {
   const parsed = parseArgs(process.argv.slice(2));
@@ -607,6 +701,10 @@ async function main() {
 
     case 'oidc':
       await handleOidcDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    case 'session':
+      await handleSessionDomain(parsed.action, parsed.flags, baseUrl, rawJson);
       break;
 
     default:

@@ -63,6 +63,7 @@ import { GetJwksQueryHandler } from '../../src/contexts/identity/application/que
 import { DiscoveryController } from './rest/v1/oidc/discovery_controller';
 import { RefreshSessionRepositoryPort } from '../../src/contexts/identity/domain/ports/repositories/refresh_session_repository_port';
 import { InMemoryRefreshSessionRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/refresh_session/in_memory_repository';
+import { RefreshSession } from '../../src/contexts/identity/domain/entities/refresh_session/aggregate';
 import { RotateRefreshTokenCommandHandler } from '../../src/contexts/identity/application/commands/rotate_refresh_token/handler';
 import { RevokeSessionCommandHandler } from '../../src/contexts/identity/application/commands/revoke_session/handler';
 import { OAuth2SessionController } from './rest/v1/oauth2/session_controller';
@@ -259,6 +260,16 @@ export function createApp(deps?: AppDependencies): Express {
   let refreshSessionRepository = deps?.refreshSessionRepository;
   if (!refreshSessionRepository) {
     refreshSessionRepository = new InMemoryRefreshSessionRepository();
+    if (process.env.NODE_ENV !== 'production') {
+      const { session: devSession } = RefreshSession.create({
+        familyId: 'fam-portal-web-dev',
+        userId: 'usr_01J00000000000000000000001',
+        tenantId: 'acme-corp',
+        clientId: 'portal-web',
+        plainToken: 'seed_refresh_token_portal_web_dev_2026',
+      });
+      void refreshSessionRepository.save(devSession);
+    }
   }
 
   let federatedIdentityRepository = deps?.federatedIdentityRepository;
