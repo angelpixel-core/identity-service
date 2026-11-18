@@ -131,27 +131,44 @@ sequenceDiagram
 
 ### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
-Puedes probar cada una de las bifurcaciones de validación de seguridad directamente contra el entorno en ejecución utilizando la CLI oficial o `cURL`:
+#### Paso 0: Preparación de la Sesión Interactiva en Terminal
+
+Ejecuta este bloque en tu terminal para definir las variables base de clientes y orígenes:
+
+```bash
+# ==============================================================================
+# Variables de Sesión Interactiva para Registro de Clientes
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export CLIENT_ID="portal-web"
+export APP_ORIGIN="https://portal.angelpixel.io"
+export REDIRECT_URI="https://portal.angelpixel.io/callback"
+```
+
+---
 
 #### Escenario A: Origen Autorizado y Cliente Activo (HTTP 200 OK)
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-./bin/identity client validate \
-  --client-id portal-web \
-  --origin https://portal.angelpixel.io
+CLIENT_INFO=$(./bin/identity client validate \
+  --client-id "$CLIENT_ID" \
+  --origin "$APP_ORIGIN" \
+  --raw-json)
+
+echo "$CLIENT_INFO" | jq .
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
+curl -i -X POST "$BASE_URL/api/v1/oauth2/clients/validate" \
   -H "Content-Type: application/json" \
-  -H "Origin: https://portal.angelpixel.io" \
-  -H "X-Client-ID: portal-web" \
-  -d '{"clientId": "portal-web"}'
+  -H "Origin: $APP_ORIGIN" \
+  -H "X-Client-ID: $CLIENT_ID" \
+  -d "{\"clientId\": \"$CLIENT_ID\"}"
 ```
 </details>
 
@@ -186,7 +203,7 @@ Si un atacante aloja una aplicación maliciosa en otro dominio e intenta utiliza
 
 ```bash
 ./bin/identity client validate \
-  --client-id portal-web \
+  --client-id "$CLIENT_ID" \
   --origin https://malicious-phishing-site.com
 ```
 
@@ -194,11 +211,11 @@ Si un atacante aloja una aplicación maliciosa en otro dominio e intenta utiliza
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
+curl -i -X POST "$BASE_URL/api/v1/oauth2/clients/validate" \
   -H "Content-Type: application/json" \
   -H "Origin: https://malicious-phishing-site.com" \
-  -H "X-Client-ID: portal-web" \
-  -d '{"clientId": "portal-web"}'
+  -H "X-Client-ID: $CLIENT_ID" \
+  -d "{\"clientId\": \"$CLIENT_ID\"}"
 ```
 </details>
 
@@ -383,27 +400,41 @@ sequenceDiagram
 
 ### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
-#### Modo 1: Autenticación con Payload JSON en el Body (HTTP 200 OK)
+#### Modo 1: Autenticación con Payload JSON en el Body y Extracción Dinámica del Token (HTTP 200 OK)
+
+Inicializa las credenciales de servicio en la sesión y extrae automáticamente el `M2M_TOKEN`:
+
+```bash
+export M2M_CLIENT_ID="m2m-service-app"
+export M2M_CLIENT_SECRET="ValidSecret123!_SuperSecureSecretForTesting_2026"
+```
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-./bin/identity token m2m \
-  --client-id m2m-service-app \
-  --client-secret "ValidSecret123!_SuperSecureSecretForTesting_2026"
+M2M_RESP=$(./bin/identity token m2m \
+  --client-id "$M2M_CLIENT_ID" \
+  --client-secret "$M2M_CLIENT_SECRET" \
+  --raw-json)
+
+export M2M_TOKEN=$(echo "$M2M_RESP" | jq -r .access_token)
+echo "M2M_TOKEN=$M2M_TOKEN"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
+M2M_RESP=$(curl -s -X POST "$BASE_URL/api/v1/oauth2/token" \
   -H "Content-Type: application/json" \
-  -d '{
-    "grant_type": "client_credentials",
-    "client_id": "m2m-service-app",
-    "client_secret": "ValidSecret123!_SuperSecureSecretForTesting_2026"
-  }'
+  -d "{
+    \"grant_type\": \"client_credentials\",
+    \"client_id\": \"$M2M_CLIENT_ID\",
+    \"client_secret\": \"$M2M_CLIENT_SECRET\"
+  }")
+
+export M2M_TOKEN=$(echo "$M2M_RESP" | jq -r .access_token)
+echo "M2M_TOKEN=$M2M_TOKEN"
 ```
 </details>
 
@@ -430,28 +461,19 @@ El estándar OAuth2 permite enviar las credenciales en la cabecera `Authorizatio
 
 ```bash
 ./bin/identity token m2m \
-  --client-id m2m-service-app \
-  --client-secret "ValidSecret123!_SuperSecureSecretForTesting_2026" \
+  --client-id "$M2M_CLIENT_ID" \
+  --client-secret "$M2M_CLIENT_SECRET" \
   --auth-mode basic
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
-Puedes utilizar la opción nativa `-u` de `curl` (que codifica a Base64 automáticamente y evita conflictos con el carácter `!` en shells interactivos como `zsh`):
+Puedes utilizar la opción nativa `-u` de `curl` consumiendo directamente las variables de sesión:
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
-  -u 'm2m-service-app:ValidSecret123!_SuperSecureSecretForTesting_2026' \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials"
-```
-
-O suministrar directamente la cabecera Base64 precalculada:
-
-```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
-  -H "Authorization: Basic bTJtLXNlcnZpY2UtYXBwOlZhbGlkU2VjcmV0MTIzIV9TdXBlclNlY3VyZVNlY3JldEZvclRlc3RpbmdfMjAyNg==" \
+curl -i -X POST "$BASE_URL/api/v1/oauth2/token" \
+  -u "$M2M_CLIENT_ID:$M2M_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials"
 ```

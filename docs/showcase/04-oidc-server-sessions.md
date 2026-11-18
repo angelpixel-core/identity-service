@@ -391,35 +391,65 @@ sequenceDiagram
 
 ### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
-La herramienta `./bin/identity` incorpora un motor criptográfico PKCE nativo que genera el par `code_verifier` / `code_challenge` (`S256`) de forma transparente cuando no se especifica manualmente:
+#### Paso 0: Preparación de la Sesión Interactiva en Terminal
+
+Ejecuta este bloque en tu terminal para inicializar las variables base del servidor OIDC y cliente:
+
+```bash
+# ==============================================================================
+# Variables de Sesión Interactiva para OIDC y Sesiones
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export CLIENT_ID="portal-web"
+export REDIRECT_URI="https://portal.angelpixel.io/callback"
+```
+
+---
 
 #### Escenario A: Solicitud de Código de Autorización con Auto-PKCE S256 (HTTP 200 OK)
+
+La CLI oficial `./bin/identity` incorpora un motor criptográfico PKCE nativo que genera el par `code_verifier` / `code_challenge` (`S256`) de forma transparente e inyecta el `code_verifier` en la respuesta JSON para permitir su extracción inmediata:
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-./bin/identity oidc authorize \
-  --client-id portal-web \
-  --redirect-uri https://portal.angelpixel.io/callback
+AUTH_RESP=$(./bin/identity oidc authorize \
+  --client-id "$CLIENT_ID" \
+  --redirect-uri "$REDIRECT_URI" \
+  --raw-json)
+
+export CODE=$(echo "$AUTH_RESP" | jq -r .code)
+export VERIFIER=$(echo "$AUTH_RESP" | jq -r .code_verifier)
+
+echo "CODE=$CODE"
+echo "VERIFIER=$VERIFIER"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
+Generación criptográfica dinámica del par PKCE (`S256`) en línea utilizando Node.js nativo sin herramientas de terceros:
+
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/authorize \
+export VERIFIER=$(node -e 'console.log(require("crypto").randomBytes(32).toString("base64url"))')
+export CHALLENGE=$(node -e 'console.log(require("crypto").createHash("sha256").update(process.env.VERIFIER).digest("base64url"))')
+
+AUTH_RESP=$(curl -s -X POST "$BASE_URL/api/v1/oauth2/authorize" \
   -H "Content-Type: application/json" \
-  -d '{
-    "response_type": "code",
-    "client_id": "portal-web",
-    "redirect_uri": "https://portal.angelpixel.io/callback",
-    "code_challenge": "E9Melhoa2OwvFrGMTJguSR7e7IF3B5A_tL5V1I_A5hM",
-    "code_challenge_method": "S256",
-    "scope": "openid profile email",
-    "state": "state_a3d76717d7c58bcd",
-    "user_id": "usr_01J00000000000000000000001",
-    "tenant_id": "acme-corp"
-  }'
+  -d "{
+    \"response_type\": \"code\",
+    \"client_id\": \"$CLIENT_ID\",
+    \"redirect_uri\": \"$REDIRECT_URI\",
+    \"code_challenge\": \"$CHALLENGE\",
+    \"code_challenge_method\": \"S256\",
+    \"scope\": \"openid profile email\",
+    \"state\": \"state_$(date +%s)\"
+  }")
+
+export CODE=$(echo "$AUTH_RESP" | jq -r .code)
+
+echo "CODE=$CODE"
+echo "VERIFIER=$VERIFIER"
 ```
 </details>
 
@@ -441,31 +471,43 @@ POST http://localhost:4000/api/v1/oauth2/authorize
 
 #### Escenario B: Canje Criptográfico del Código por Tokens RS256 (HTTP 200 OK)
 
-Presentando el `code` efímero junto con el `code_verifier` original generado en el paso anterior:
+Consumiendo dinámicamente las variables `$CODE` y `$VERIFIER` extraídas en el paso anterior:
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-./bin/identity token exchange \
-  --client-id portal-web \
-  --redirect-uri https://portal.angelpixel.io/callback \
-  --code "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U" \
-  --verifier "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
+TOKEN_RESP=$(./bin/identity token exchange \
+  --client-id "$CLIENT_ID" \
+  --redirect-uri "$REDIRECT_URI" \
+  --code "$CODE" \
+  --verifier "$VERIFIER" \
+  --raw-json)
+
+export ACCESS_TOKEN=$(echo "$TOKEN_RESP" | jq -r .access_token)
+export ID_TOKEN=$(echo "$TOKEN_RESP" | jq -r .id_token)
+
+echo "ACCESS_TOKEN=$ACCESS_TOKEN"
+echo "ID_TOKEN=$ID_TOKEN"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
+TOKEN_RESP=$(curl -s -X POST "$BASE_URL/api/v1/oauth2/token" \
   -H "Content-Type: application/json" \
-  -d '{
-    "grant_type": "authorization_code",
-    "client_id": "portal-web",
-    "redirect_uri": "https://portal.angelpixel.io/callback",
-    "code": "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U",
-    "code_verifier": "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
-  }'
+  -d "{
+    \"grant_type\": \"authorization_code\",
+    \"client_id\": \"$CLIENT_ID\",
+    \"redirect_uri\": \"$REDIRECT_URI\",
+    \"code\": \"$CODE\",
+    \"code_verifier\": \"$VERIFIER\"
+  }")
+
+export ACCESS_TOKEN=$(echo "$TOKEN_RESP" | jq -r .access_token)
+export ID_TOKEN=$(echo "$TOKEN_RESP" | jq -r .id_token)
+
+echo "ACCESS_TOKEN=$ACCESS_TOKEN"
 ```
 </details>
 
@@ -487,31 +529,31 @@ POST http://localhost:4000/api/v1/oauth2/token
 
 #### Escenario C: Seguridad Negativa — Detección de Replay Attack del Código (HTTP 400 Bad Request)
 
-Si un atacante intercepta el código de autorización e intenta canjearlo por segunda vez (dentro de su ventana de 60 segundos):
+Si un atacante intercepta el código de autorización e intenta canjearlo por segunda vez (reutilizando el mismo `$CODE` ya consumido):
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
 ./bin/identity token exchange \
-  --client-id portal-web \
-  --redirect-uri https://portal.angelpixel.io/callback \
-  --code "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U" \
-  --verifier "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
+  --client-id "$CLIENT_ID" \
+  --redirect-uri "$REDIRECT_URI" \
+  --code "$CODE" \
+  --verifier "$VERIFIER"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
+curl -i -X POST "$BASE_URL/api/v1/oauth2/token" \
   -H "Content-Type: application/json" \
-  -d '{
-    "grant_type": "authorization_code",
-    "client_id": "portal-web",
-    "redirect_uri": "https://portal.angelpixel.io/callback",
-    "code": "NnnTOf1LzxMmPdUWcxdML4nq0iclAMnR4jHW73Nbe9U",
-    "code_verifier": "1mtB-5sZXPQNuqssad47RvthMsXoToXivkHC1j7hu-8"
-  }'
+  -d "{
+    \"grant_type\": \"authorization_code\",
+    \"client_id\": \"$CLIENT_ID\",
+    \"redirect_uri\": \"$REDIRECT_URI\",
+    \"code\": \"$CODE\",
+    \"code_verifier\": \"$VERIFIER\"
+  }"
 ```
 </details>
 
@@ -535,22 +577,22 @@ POST http://localhost:4000/api/v1/oauth2/token
 ```bash
 ./bin/identity oidc authorize \
   --client-id non-existent-app \
-  --redirect-uri https://portal.angelpixel.io/callback
+  --redirect-uri "$REDIRECT_URI"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/authorize \
+curl -i -X POST "$BASE_URL/api/v1/oauth2/authorize" \
   -H "Content-Type: application/json" \
-  -d '{
-    "response_type": "code",
-    "client_id": "non-existent-app",
-    "redirect_uri": "https://portal.angelpixel.io/callback",
-    "code_challenge": "E9Melhoa2OwvFrGMTJguSR7e7IF3B5A_tL5V1I_A5hM",
-    "code_challenge_method": "S256"
-  }'
+  -d "{
+    \"response_type\": \"code\",
+    \"client_id\": \"non-existent-app\",
+    \"redirect_uri\": \"$REDIRECT_URI\",
+    \"code_challenge\": \"E9Melhoa2OwvFrGMTJguSR7e7IF3B5A_tL5V1I_A5hM\",
+    \"code_challenge_method\": \"S256\"
+  }"
 ```
 </details>
 
@@ -675,26 +717,43 @@ El servidor en modo de desarrollo inicializa una sesión semilla activa (`seed_r
 
 #### Escenario A: Rotación Exitosa 1-a-1 de Refresh Token y Renovación de Acceso (HTTP 200 OK)
 
-La CLI captura automáticamente la cabecera `Set-Cookie` (`HttpOnly; SameSite=Strict`) emitida por el servidor e inyecta el nuevo token hijo bajo la propiedad `new_refresh_token` para facilitar el encadenamiento en scripts:
+La CLI captura automáticamente la cabecera `Set-Cookie` (`HttpOnly; SameSite=Strict`) emitida por el servidor e inyecta el nuevo token hijo bajo la propiedad `new_refresh_token` para permitir su exportación inmediata a variables de entorno:
+
+```bash
+export INITIAL_REFRESH_TOKEN="seed_refresh_token_portal_web_dev_2026"
+```
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-./bin/identity session refresh \
-  --token "seed_refresh_token_portal_web_dev_2026" \
-  --client-id portal-web
+REFRESH_RESP=$(./bin/identity session refresh \
+  --token "$INITIAL_REFRESH_TOKEN" \
+  --client-id "$CLIENT_ID" \
+  --raw-json)
+
+export NEW_REFRESH_TOKEN=$(echo "$REFRESH_RESP" | jq -r .new_refresh_token)
+export ROTATED_ACCESS_TOKEN=$(echo "$REFRESH_RESP" | jq -r .access_token)
+
+echo "NEW_REFRESH_TOKEN=$NEW_REFRESH_TOKEN"
+echo "ROTATED_ACCESS_TOKEN=$ROTATED_ACCESS_TOKEN"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/refresh \
+REFRESH_RESP=$(curl -s -X POST "$BASE_URL/api/v1/oauth2/refresh" \
   -H "Content-Type: application/json" \
-  -d '{
-    "refresh_token": "seed_refresh_token_portal_web_dev_2026",
-    "client_id": "portal-web"
-  }'
+  -d "{
+    \"refresh_token\": \"$INITIAL_REFRESH_TOKEN\",
+    \"client_id\": \"$CLIENT_ID\"
+  }")
+
+export NEW_REFRESH_TOKEN=$(echo "$REFRESH_RESP" | jq -r .new_refresh_token)
+export ROTATED_ACCESS_TOKEN=$(echo "$REFRESH_RESP" | jq -r .access_token)
+
+echo "NEW_REFRESH_TOKEN=$NEW_REFRESH_TOKEN"
+echo "ROTATED_ACCESS_TOKEN=$ROTATED_ACCESS_TOKEN"
 ```
 </details>
 
@@ -714,16 +773,16 @@ POST http://localhost:4000/api/v1/oauth2/refresh
 
 ---
 
-#### Escenario B: Extracción de Access Token en Tubería UNIX (`--raw-json | jq`)
+#### Escenario B: Extracción y Consumo del Token Hijo Activo (`$NEW_REFRESH_TOKEN`)
 
-Utilizando el token hijo activo (`37cdcc2430cc3acf00e683986c89ae85b6e8309ad30eaaa029e4828752fc983e`) emitido en la rotación previa:
+Utilizando el token hijo activo rotado en el paso anterior (`$NEW_REFRESH_TOKEN`) para ejecutar una segunda rotación fluida:
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
 ./bin/identity session refresh \
-  --token "37cdcc2430cc3acf00e683986c89ae85b6e8309ad30eaaa029e4828752fc983e" \
-  --client-id portal-web \
+  --token "$NEW_REFRESH_TOKEN" \
+  --client-id "$CLIENT_ID" \
   --raw-json | jq -r .access_token
 ```
 
@@ -731,12 +790,12 @@ Utilizando el token hijo activo (`37cdcc2430cc3acf00e683986c89ae85b6e8309ad30eaa
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -s -X POST http://localhost:4000/api/v1/oauth2/refresh \
+curl -s -X POST "$BASE_URL/api/v1/oauth2/refresh" \
   -H "Content-Type: application/json" \
-  -d '{
-    "refresh_token": "37cdcc2430cc3acf00e683986c89ae85b6e8309ad30eaaa029e4828752fc983e",
-    "client_id": "portal-web"
-  }' | jq -r .access_token
+  -d "{
+    \"refresh_token\": \"$NEW_REFRESH_TOKEN\",
+    \"client_id\": \"$CLIENT_ID\"
+  }" | jq -r .access_token
 ```
 </details>
 
@@ -749,26 +808,26 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtleS1mNzE5ZTRhMWI2NjYifQ.eyJzdWIiO
 
 #### Escenario C: Seguridad Negativa — Detección de Reúso de Token y Revocación de Familia (HTTP 401 Unauthorized)
 
-Al presentar nuevamente un token que ya fue consumido en una rotación anterior (`seed_refresh_token_portal_web_dev_2026`), el servidor detecta una brecha de seguridad e invalida en cascada toda la familia de tokens:
+Al presentar nuevamente el token inicial (`$INITIAL_REFRESH_TOKEN`), que ya fue consumido en la rotación del Escenario A, el servidor detecta una anomalía de seguridad e invalida en cascada toda la familia de tokens:
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
 ./bin/identity session refresh \
-  --token "seed_refresh_token_portal_web_dev_2026" \
-  --client-id portal-web
+  --token "$INITIAL_REFRESH_TOKEN" \
+  --client-id "$CLIENT_ID"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/refresh \
+curl -i -X POST "$BASE_URL/api/v1/oauth2/refresh" \
   -H "Content-Type: application/json" \
-  -d '{
-    "refresh_token": "seed_refresh_token_portal_web_dev_2026",
-    "client_id": "portal-web"
-  }'
+  -d "{
+    \"refresh_token\": \"$INITIAL_REFRESH_TOKEN\",
+    \"client_id\": \"$CLIENT_ID\"
+  }"
 ```
 </details>
 
@@ -791,7 +850,7 @@ POST http://localhost:4000/api/v1/oauth2/refresh
 
 ```bash
 ./bin/identity session revoke \
-  --token "seed_refresh_token_portal_web_dev_2026" \
+  --token "$INITIAL_REFRESH_TOKEN" \
   --reason "user_logout"
 ```
 
@@ -799,12 +858,12 @@ POST http://localhost:4000/api/v1/oauth2/refresh
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/revoke \
+curl -i -X POST "$BASE_URL/api/v1/oauth2/revoke" \
   -H "Content-Type: application/json" \
-  -d '{
-    "refresh_token": "seed_refresh_token_portal_web_dev_2026",
-    "reason": "user_logout"
-  }'
+  -d "{
+    \"refresh_token\": \"$INITIAL_REFRESH_TOKEN\",
+    \"reason\": \"user_logout\"
+  }"
 ```
 </details>
 
@@ -828,18 +887,18 @@ Cualquier intento posterior de renovar credenciales utilizando un token pertenec
 
 ```bash
 ./bin/identity session refresh \
-  --token "seed_refresh_token_portal_web_dev_2026"
+  --token "$INITIAL_REFRESH_TOKEN"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/oauth2/refresh \
+curl -i -X POST "$BASE_URL/api/v1/oauth2/refresh" \
   -H "Content-Type: application/json" \
-  -d '{
-    "refresh_token": "seed_refresh_token_portal_web_dev_2026"
-  }'
+  -d "{
+    \"refresh_token\": \"$INITIAL_REFRESH_TOKEN\"
+  }"
 ```
 </details>
 

@@ -116,32 +116,59 @@ La captura de pantalla a continuación fue generada de manera automatizada media
 
 ### 3. Ejecución en Vivo & Verificación Interactiva
 
-Puedes probar el endpoint de registro inmediatamente contra el stack local utilizando la CLI oficial del proyecto o mediante `cURL`:
+#### Paso 0: Preparación de la Sesión Interactiva en Terminal
+
+Ejecuta este bloque para inicializar las variables de entorno de la sesión antes de comenzar las pruebas:
+
+```bash
+# ==============================================================================
+# Variables de Sesión Interactiva para Gestión de Identidades
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export TENANT_ID="acme-corp"
+```
+
+---
 
 #### Escenario A: Registro Exitoso de Usuario Multi-Tenant (HTTP 201 Created)
+
+El comando ejecuta el registro y extrae automáticamente el `accessToken` y `userId` hacia variables de entorno de tu sesión de shell mediante `jq`:
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-./bin/identity auth register \
-  --tenant acme-corp \
-  --email "lead.architect@acme-corp.com" \
+REG_RESP=$(./bin/identity auth register \
+  --tenant "$TENANT_ID" \
+  --email "lead.architect.$(date +%s)@acme-corp.com" \
   --password "EnterprisePassword2026!" \
-  --name "Sofia Valenzuela"
+  --name "Sofia Valenzuela" \
+  --raw-json)
+
+export TOKEN=$(echo "$REG_RESP" | jq -r .accessToken)
+export USER_ID=$(echo "$REG_RESP" | jq -r .userId)
+
+echo "TOKEN=$TOKEN"
+echo "USER_ID=$USER_ID"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X POST http://localhost:4000/api/v1/auth/register \
+REG_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: acme-corp" \
-  -d '{
-    "email": "lead.architect@acme-corp.com",
-    "password": "EnterprisePassword2026!",
-    "name": "Sofia Valenzuela"
-  }'
+  -H "X-Tenant-ID: $TENANT_ID" \
+  -d "{
+    \"email\": \"lead.architect.$(date +%s)@acme-corp.com\",
+    \"password\": \"EnterprisePassword2026!\",
+    \"name\": \"Sofia Valenzuela\"
+  }")
+
+export TOKEN=$(echo "$REG_RESP" | jq -r .accessToken)
+export USER_ID=$(echo "$REG_RESP" | jq -r .userId)
+
+echo "TOKEN=$TOKEN"
+echo "USER_ID=$USER_ID"
 ```
 </details>
 
@@ -261,17 +288,23 @@ Captura generada por Playwright que demuestra el perfil autenticado en la SPA Re
 
 ### 3. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
+> [!TIP]
+> Si ya ejecutaste el **Escenario A de US-01** en esta misma sesión de terminal, las variables `$TOKEN` y `$USER_ID` ya se encuentran cargadas y listas para usar. Si abres una ventana nueva, puedes inicializarlas directamente con el **Paso 1**.
+
 #### Paso 1: Registrar o Iniciar Sesión para Obtener el Token Bearer
 
 **Comando CLI Oficial en Tubería UNIX (`./bin/identity`):**
 
 ```bash
-TOKEN=$(./bin/identity auth register \
-  --tenant acme-corp \
-  --email "sofia.valenzuela@acme-corp.com" \
+REG_RESP=$(./bin/identity auth register \
+  --tenant "$TENANT_ID" \
+  --email "sofia.valenzuela.$(date +%s)@acme-corp.com" \
   --password "EnterprisePassword2026!" \
   --name "Sofia Valenzuela" \
-  --raw-json | jq -r .accessToken)
+  --raw-json)
+
+export TOKEN=$(echo "$REG_RESP" | jq -r .accessToken)
+export USER_ID=$(echo "$REG_RESP" | jq -r .userId)
 
 echo "Bearer Token Obtenido: $TOKEN"
 ```
@@ -280,14 +313,17 @@ echo "Bearer Token Obtenido: $TOKEN"
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:4000/api/v1/auth/register \
+REG_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: acme-corp" \
-  -d '{
-    "email": "sofia.valenzuela@acme-corp.com",
-    "password": "EnterprisePassword2026!",
-    "name": "Sofia Valenzuela"
-  }' | jq -r .accessToken)
+  -H "X-Tenant-ID: $TENANT_ID" \
+  -d "{
+    \"email\": \"sofia.valenzuela.$(date +%s)@acme-corp.com\",
+    \"password\": \"EnterprisePassword2026!\",
+    \"name\": \"Sofia Valenzuela\"
+  }")
+
+export TOKEN=$(echo "$REG_RESP" | jq -r .accessToken)
+export USER_ID=$(echo "$REG_RESP" | jq -r .userId)
 
 echo "Bearer Token Obtenido: $TOKEN"
 ```
@@ -301,7 +337,7 @@ echo "Bearer Token Obtenido: $TOKEN"
 
 ```bash
 ./bin/identity auth me \
-  --tenant acme-corp \
+  --tenant "$TENANT_ID" \
   --token "$TOKEN"
 ```
 
@@ -309,9 +345,9 @@ echo "Bearer Token Obtenido: $TOKEN"
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X GET http://localhost:4000/api/v1/auth/me \
+curl -i -X GET "$BASE_URL/api/v1/auth/me" \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-Tenant-ID: acme-corp"
+  -H "X-Tenant-ID: $TENANT_ID"
 ```
 </details>
 
@@ -334,7 +370,7 @@ GET http://localhost:4000/api/v1/auth/me
 
 #### Paso 3: Demostración de Barrera Anti-Suplantación (Tenant Boundary Defense)
 
-Si un actor malicioso o un cliente desalineado intenta consultar el perfil enviando un `X-Tenant-ID` ajeno con el token emitido para `acme-corp`:
+Si un actor malicioso o un cliente desalineado intenta consultar el perfil enviando un `X-Tenant-ID` ajeno con el token emitido para `$TENANT_ID`:
 
 **Comando CLI Oficial (`./bin/identity`):**
 
@@ -348,7 +384,7 @@ Si un actor malicioso o un cliente desalineado intenta consultar el perfil envia
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X GET http://localhost:4000/api/v1/auth/me \
+curl -i -X GET "$BASE_URL/api/v1/auth/me" \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Tenant-ID: malicious-hacker-tenant"
 ```

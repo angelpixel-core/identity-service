@@ -289,35 +289,78 @@ sequenceDiagram
 
 Puedes reproducir los tres vectores de ataque directamente contra el entorno en vivo utilizando la CLI oficial o `cURL`:
 
-#### Paso 0: Obtención del Token de Autenticación para `acme-corp` (`$TOKEN_ACME`)
+#### Paso 0: Preparación de la Sesión y Registro Dinámico Multi-Tenant (`$TOKEN_ACME` & `$USER_BETA_ID`)
 
-Para ejecutar los vectores de prueba de seguridad, primero obtenemos un token JWT Bearer emitido legítimamente para un usuario del inquilino `acme-corp`:
-
-**Comando CLI Oficial en Tubería UNIX (`./bin/identity`):**
+Para comprobar que el aislamiento RLS no depende de UUIDs ficticios sino de entidades reales en la base de datos, inicializamos las variables de sesión, registramos un usuario en `acme-corp` y otro usuario legítimo en `beta-corp`:
 
 ```bash
-export TOKEN_ACME=$(./bin/identity auth register \
-  --tenant acme-corp \
+# ==============================================================================
+# Variables de Sesión Interactiva para Aislamiento RLS
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export TENANT_A="acme-corp"
+export TENANT_B="beta-corp"
+```
+
+**1. Registrar Usuario en Tenant A (`$TENANT_A`) y extraer `$TOKEN_ACME` y `$USER_ACME_ID`:**
+
+```bash
+USER_A_RESP=$(./bin/identity auth register \
+  --tenant "$TENANT_A" \
   --email "security.tester.$(date +%s)@acme-corp.com" \
   --password "EnterprisePassword2026!" \
-  --raw-json | jq -r .accessToken)
+  --raw-json)
+
+export TOKEN_ACME=$(echo "$USER_A_RESP" | jq -r .accessToken)
+export USER_ACME_ID=$(echo "$USER_A_RESP" | jq -r .userId)
 
 echo "TOKEN_ACME=$TOKEN_ACME"
+echo "USER_ACME_ID=$USER_ACME_ID"
+```
+
+**2. Registrar Usuario Legítimo en Tenant B (`$TENANT_B`) y extraer `$USER_BETA_ID`:**
+
+```bash
+USER_B_RESP=$(./bin/identity auth register \
+  --tenant "$TENANT_B" \
+  --email "victim.user.$(date +%s)@beta-corp.com" \
+  --password "EnterprisePassword2026!" \
+  --raw-json)
+
+export USER_BETA_ID=$(echo "$USER_B_RESP" | jq -r .userId)
+
+echo "USER_BETA_ID=$USER_BETA_ID (Usuario real persistido en Tenant B)"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-export TOKEN_ACME=$(curl -s -X POST http://localhost:4000/api/v1/auth/register \
+# 1. Tenant A
+USER_A_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: acme-corp" \
+  -H "X-Tenant-ID: $TENANT_A" \
   -d "{
     \"email\": \"security.tester.$(date +%s)@acme-corp.com\",
     \"password\": \"EnterprisePassword2026!\"
-  }" | jq -r .accessToken)
+  }")
+
+export TOKEN_ACME=$(echo "$USER_A_RESP" | jq -r .accessToken)
+export USER_ACME_ID=$(echo "$USER_A_RESP" | jq -r .userId)
+
+# 2. Tenant B
+USER_B_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: $TENANT_B" \
+  -d "{
+    \"email\": \"victim.user.$(date +%s)@beta-corp.com\",
+    \"password\": \"EnterprisePassword2026!\"
+  }")
+
+export USER_BETA_ID=$(echo "$USER_B_RESP" | jq -r .userId)
 
 echo "TOKEN_ACME=$TOKEN_ACME"
+echo "USER_BETA_ID=$USER_BETA_ID"
 ```
 </details>
 
@@ -335,21 +378,21 @@ Al inspeccionar el JWT emitido, se observa cómo el claim `tenantId` queda fijad
 ```
 
 > [!TIP]
-> Si abres una nueva ventana o pestaña de terminal para probar los vectores siguientes, asegúrate de ejecutar primero el bloque del **Paso 0** para inicializar la variable de entorno `$TOKEN_ACME`.
+> Si abres una nueva ventana o pestaña de terminal para probar los vectores siguientes, asegúrate de ejecutar primero el bloque del **Paso 0** para inicializar las variables `$TOKEN_ACME` y `$USER_BETA_ID`.
 
 ---
 
 #### Vector 1: Prevención de Enumeración de Usuarios (HTTP 404 Not Found)
 
-Un usuario legítimo del inquilino `acme-corp` intenta actualizar o consultar un ID de usuario que pertenece al inquilino `beta-corp`:
+Un usuario legítimo del inquilino `acme-corp` intenta actualizar el perfil del usuario `$USER_BETA_ID` (que existe en PostgreSQL bajo `beta-corp`):
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
 ./bin/identity auth update-user \
-  --tenant acme-corp \
+  --tenant "$TENANT_A" \
   --token "$TOKEN_ACME" \
-  --user-id "4476ffac-2423-444b-8342-efbfe4dbaeba" \
+  --user-id "$USER_BETA_ID" \
   --name "Intento de Mutacion Ajena"
 ```
 
@@ -357,9 +400,9 @@ Un usuario legítimo del inquilino `acme-corp` intenta actualizar o consultar un
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X PATCH http://localhost:4000/api/v1/users/4476ffac-2423-444b-8342-efbfe4dbaeba \
+curl -i -X PATCH "$BASE_URL/api/v1/users/$USER_BETA_ID" \
   -H "Authorization: Bearer $TOKEN_ACME" \
-  -H "X-Tenant-ID: acme-corp" \
+  -H "X-Tenant-ID: $TENANT_A" \
   -H "Content-Type: application/json" \
   -d '{"name": "Intento de Mutacion Ajena"}'
 ```
@@ -379,13 +422,13 @@ PATCH http://localhost:4000/api/v1/users/4476ffac-2423-444b-8342-efbfe4dbaeba
 
 #### Vector 2: Intento de Suplantación de Inquilino / Token Divergence (HTTP 403 Forbidden)
 
-Un usuario autenticado de `acme-corp` presenta su token pero declara en la cabecera `X-Tenant-ID: beta-corp`:
+Un usuario autenticado de `acme-corp` presenta su token pero declara en la cabecera `X-Tenant-ID: $TENANT_B`:
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
 ./bin/identity auth me \
-  --tenant beta-corp \
+  --tenant "$TENANT_B" \
   --token "$TOKEN_ACME"
 ```
 
@@ -393,9 +436,9 @@ Un usuario autenticado de `acme-corp` presenta su token pero declara en la cabec
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X GET http://localhost:4000/api/v1/auth/me \
+curl -i -X GET "$BASE_URL/api/v1/auth/me" \
   -H "Authorization: Bearer $TOKEN_ACME" \
-  -H "X-Tenant-ID: beta-corp"
+  -H "X-Tenant-ID: $TENANT_B"
 ```
 </details>
 
@@ -427,7 +470,7 @@ Un atacante intenta inyectar sentencias SQL para eludir el aislamiento en `X-Ten
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X GET http://localhost:4000/api/v1/auth/me \
+curl -i -X GET "$BASE_URL/api/v1/auth/me" \
   -H "Authorization: Bearer $TOKEN_ACME" \
   -H "X-Tenant-ID: alpha-corp'; DROP TABLE users; --"
 ```
