@@ -1,0 +1,242 @@
+---
+title: "Capítulo 05: Federación de Identidad OIDC & Aprovisionamiento JIT"
+epic: "EPIC-05"
+description: "Documentación interactiva, walkthrough técnico y recetas de verificación para Conectores OIDC Externos (Google & Microsoft Entra ID), vinculación automática de cuentas (Account Linking) y aprovisionamiento Just-In-Time (US-10 y US-11)."
+user_stories:
+  - id: "US-10"
+    name: "Conectores OIDC Externos (Google & Microsoft Entra ID)"
+    status: "completed"
+  - id: "US-11"
+    name: "Vinculación Automática de Cuentas & Aprovisionamiento JIT"
+    status: "completed"
+architecture_pattern: "Vertical Slice + Hexagonal (DDD) + Ports & Adapters"
+security_standards:
+  - "OpenID Connect Core 1.0 Federation"
+  - "Anti-CSRF Signed State (HMAC-SHA256 + Timing-Safe Verification)"
+  - "Cryptographic Replay Defense (OIDC Nonce)"
+  - "Remote JWKS Signature Verification (RS256 with Exponential Backoff & Cooldown)"
+  - "Verified Email Account Linking Guard (Anti-Pre-Hijacking)"
+  - "PostgreSQL 16 Row-Level Security (federated_identities)"
+created_at: "2026-11-18"
+updated_at: "2026-11-18"
+tags:
+  - federation
+  - oidc
+  - google
+  - microsoft-entra
+  - account-linking
+  - jit-provisioning
+---
+
+# Capítulo 05: Federación de Identidad OIDC & Aprovisionamiento JIT
+
+[![OIDC Federation](https://img.shields.io/badge/OIDC%20Federation-Google%20%26%20Microsoft%20Entra-blue.svg)](#)
+[![Anti-CSRF State](https://img.shields.io/badge/Security-Signed%20HMAC--SHA256%20State-orange.svg)](#)
+[![JIT Provisioning](https://img.shields.io/badge/Identity-JIT%20%26%20Account%20Linking-green.svg)](#)
+[![PostgreSQL RLS](https://img.shields.io/badge/Database-PostgreSQL%2016%20RLS-336791.svg)](#)
+[![Status](https://img.shields.io/badge/Status-Completed-success.svg)](#)
+
+Este capítulo documenta la arquitectura e implementación del **Épico 05: Federación de Identidades y Proveedores Externos**. En entornos corporativos B2B y SaaS modernos, las organizaciones requieren delegar la autenticación primaria en sus propios directorios de identidad (**Google Workspace** y **Microsoft Entra ID / Azure AD**), manteniendo al mismo tiempo el aislamiento multi-inquilino estricto y las sesiones deslizantes nativas de `identity-service`.
+
+---
+
+## 🧭 Historias de Usuario del Épico 05
+
+| Historia | Descripción | Estado |
+| :--- | :--- | :---: |
+| **US-10** | Conectores OIDC Externos (Google & Microsoft Entra ID) con Validación Criptográfica de Estado y JWKS | ✅ En Producción |
+| **US-11** | Vinculación Automática de Cuentas (Account Linking) y Aprovisionamiento Just-In-Time (JIT) Multi-Tenant | ✅ En Producción |
+
+---
+
+## 🌐 US-10: Conectores OIDC Externos (Google & Microsoft Entra ID)
+
+### 1. Arquitectura de Federación Sin Estado, Anti-CSRF HMAC y Verificación JWKS
+
+El diseño sigue el patrón **Ports & Adapters (Arquitectura Hexagonal)** mediante la interfaz de dominio `ExternalIdentityProviderPort`, implementada por `GoogleOidcAdapter` y `MicrosoftEntraAdapter`:
+
+1. **Estado Anti-CSRF Firmado sin Sesiones de Servidor (`FederationStateManager`):** Para evitar almacenar estados efímeros en memoria que fallen en despliegues multi-réplica Kubernetes, el parámetro `state` encapsula `{ tenantId, clientId, redirectUri, provider, nonce, createdAt, expiresAt }` codificado en Base64URL y firmado con **HMAC-SHA256**. Al recibir el callback, la firma se verifica en tiempo constante (`crypto.timingSafeEqual`) y se exige una vigencia máxima de 10 minutos.
+2. **Mitigación de Ataques de Repetición (`nonce` OIDC):** Cada solicitud de login inyecta un `nonce` criptográfico de 128 bits (32 caracteres hex) tanto en la URL de autorización como dentro del `state` firmado. Durante el canje, el adaptador exige que el claim `nonce` dentro del `id_token` firmado por Google o Microsoft coincida exactamente con el `nonce` del `state`.
+3. **Verificación Remota RS256 Resiliente (`JwksTokenVerifier`):** Los `id_token` devueltos por el proveedor externo son verificados criptográficamente contra el catálogo JWKS público del IdP (`googleapis.com/oauth2/v3/certs` o `login.microsoftonline.com/common/discovery/v2.0/keys`), incorporando caché en memoria, rotación automática ante `kid` desconocido con ventana de enfriamiento (*cooldown*) y reintentos con *exponential backoff*.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor SPA as Cliente (SPA / CLI)
+    participant Gateway as Express API Gateway
+    participant LoginHandler as GenerateFederatedLoginUrlQueryHandler
+    participant StateMgr as FederationStateManager (HMAC-SHA256)
+    participant Adapter as OIDC Adapter (Google / Microsoft)
+    participant IdP as Proveedor OIDC Externo
+    participant CallbackHandler as ProcessFederatedCallbackCommandHandler
+    participant Verifier as JwksTokenVerifier (RS256)
+
+    SPA->>Gateway: GET /api/v1/auth/federation/:provider/login (tenant_id, redirect_uri, client_id)
+    Gateway->>LoginHandler: execute({ provider, tenantId, clientId, redirectUri })
+    LoginHandler->>StateMgr: generateNonce() & generateState({ tenantId, clientId, redirectUri, provider, nonce })
+    StateMgr-->>LoginHandler: state (Payload Base64URL + Firma HMAC-SHA256, TTL 10m) + nonce
+    LoginHandler->>Adapter: getAuthorizationUrl({ redirectUri, state, nonce })
+    Adapter-->>LoginHandler: URL OIDC (accounts.google.com / login.microsoftonline.com)
+    LoginHandler-->>SPA: HTTP 302 Redirect (o HTTP 200 JSON con url, state, nonce)
+
+    Note over SPA,IdP: Autenticación del Usuario en el Proveedor Externo
+    SPA->>IdP: Usuario se autentica y autoriza scopes (openid email profile)
+    IdP-->>Gateway: Callback GET/POST /api/v1/auth/federation/:provider/callback (code, state)
+    Gateway->>CallbackHandler: execute({ code, state, provider })
+    CallbackHandler->>StateMgr: verifyState(state) [timingSafeEqual HMAC + Expiración]
+    CallbackHandler->>Adapter: exchangeCodeAndVerifyToken({ code, redirectUri, nonce })
+    Adapter->>IdP: POST /token (grant_type=authorization_code, code) & GET /jwks
+    IdP-->>Adapter: id_token (RS256) + Public JWKS
+    Adapter->>Verifier: verifyIdToken(id_token, expectedAudience, expectedIssuers) + validar nonce
+    Adapter-->>CallbackHandler: FederatedUserProfile ({ provider, externalSubjectId, email, emailVerified })
+```
+
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`SPA` (Cliente SPA / CLI)** | `actor` | Aplicación web o herramienta `./bin/identity` que inicia el flujo de federación para un inquilino específico. |
+| **`Gateway` (Express API Gateway)** | `participant` | Pasarela HTTP que expone `/api/v1/auth/federation/:provider/login` y `/callback`. |
+| **`LoginHandler` (`GenerateFederatedLoginUrlQueryHandler`)** | `participant` | Caso de uso de consulta que coordina la creación del estado criptográfico y la construcción de la URL del proveedor. |
+| **`StateMgr` (`FederationStateManager`)** | `participant` | Gestor criptográfico que firma y verifica tokens `state` con HMAC-SHA256 en tiempo constante y controla su TTL de 10 minutos. |
+| **`Adapter` (`GoogleOidcAdapter` / `MicrosoftEntraAdapter`)** | `participant` | Adaptador de infraestructura que implementa `ExternalIdentityProviderPort`, normalizando las diferencias entre Google OIDC y Microsoft Entra ID v2.0 (`oid`/`sub`, `preferred_username`/`upn`). |
+| **`IdP` (Proveedor OIDC Externo)** | `participant` | Autoridad de identidad externa (Google o Microsoft) que autentica al usuario y emite el `id_token` firmado con RS256. |
+| **`CallbackHandler` (`ProcessFederatedCallbackCommandHandler`)** | `participant` | Caso de uso que valida la integridad del `state`, previene ataques de sustitución de proveedor y orquesta el canje del código. |
+| **`Verifier` (`JwksTokenVerifier`)** | `participant` | Motor de verificación RS256 con caché de claves públicas JWKS, rotación bajo demanda y reintentos con retroceso exponencial. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 16)
+
+1. **Paso 1 (`SPA -> Gateway`):** El cliente solicita iniciar sesión federada invocando `GET /api/v1/auth/federation/:provider/login` con `tenant_id`, `redirect_uri` y opcionalmente `client_id`.
+2. **Paso 2 (`Gateway -> LoginHandler`):** El controlador valida los parámetros con Zod y delega en `GenerateFederatedLoginUrlQueryHandler`.
+3. **Paso 3 (`LoginHandler -> StateMgr`):** Se solicita la generación de un `nonce` aleatorio de 128 bits y de un token `state` firmado que encapsula el contexto multi-tenant.
+4. **Paso 4 (`StateMgr -->> LoginHandler`):** El gestor retorna el `state` (`<payload_base64url>.<hmac_sha256>`) con expiración a 10 minutos y el `nonce`.
+5. **Paso 5 (`LoginHandler -> Adapter`):** Se invoca `getAuthorizationUrl` en el adaptador correspondiente (`google` o `microsoft`).
+6. **Paso 6 (`Adapter -->> LoginHandler`):** El adaptador construye la URL OIDC completa con `client_id`, `response_type=code`, `scope`, `state` y `nonce`.
+7. **Paso 7 (`LoginHandler -->> SPA`):** El servidor redirige con `HTTP 302` hacia el proveedor externo (o devuelve `HTTP 200 OK` en JSON cuando se solicita desde la CLI o con `format=json`).
+8. **Paso 8 (`SPA -> IdP`):** El usuario se autentica en la plataforma externa (Google o Microsoft Entra ID).
+9. **Paso 9 (`IdP -->> Gateway`):** El proveedor externo redirige de vuelta al endpoint `/api/v1/auth/federation/:provider/callback` entregando el `code` de autorización y el `state`.
+10. **Paso 10 (`Gateway -> CallbackHandler`):** El controlador invoca `ProcessFederatedCallbackCommandHandler`.
+11. **Paso 11 (`CallbackHandler -> StateMgr`):** Se verifica en tiempo constante la firma HMAC-SHA256 del `state`, su vigencia temporal y la coincidencia exacta del proveedor de la URL con el proveedor firmado en el `state`.
+12. **Paso 12 (`CallbackHandler -> Adapter`):** Superada la barrera anti-CSRF, se solicita al adaptador el canje del código y la verificación del token (`exchangeCodeAndVerifyToken`).
+13. **Paso 13 (`Adapter -> IdP`):** El adaptador realiza la petición `POST` al endpoint de tokens del proveedor externo y consulta su catálogo JWKS si la clave no está en caché.
+14. **Paso 14 (`IdP -->> Adapter`):** El proveedor externo devuelve el `id_token` firmado en RS256 y las claves públicas JWK.
+15. **Paso 15 (`Adapter -> Verifier`):** `JwksTokenVerifier` valida la firma RS256 del `id_token`, el emisor (`iss`), la audiencia (`aud`), la expiración (`exp`) y el adaptador comprueba la coincidencia del `nonce` y que `email_verified` sea verdadero.
+16. **Paso 16 (`Adapter -->> CallbackHandler`):** Se retorna el perfil normalizado `FederatedUserProfile` listo para su vinculación o aprovisionamiento local.
+
+---
+
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
+
+#### Escenario A: Generación de URL de Autorización OIDC para Google (`HTTP 200 OK`)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity federation login \
+  --provider google \
+  --tenant acme-corp \
+  --client-id portal-web \
+  --redirect-uri https://portal.angelpixel.io/callback
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i "http://localhost:4000/api/v1/auth/federation/google/login?tenant_id=acme-corp&client_id=portal-web&redirect_uri=https://portal.angelpixel.io/callback&format=json"
+```
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+```text
+HTTP/1.1 200 OK [146ms]
+GET http://localhost:4000/api/v1/auth/federation/google/login?tenant_id=acme-corp&redirect_uri=https%3A%2F%2Fportal.angelpixel.io%2Fcallback&format=json&client_id=portal-web
+
+{
+  "url": "https://accounts.google.com/o/oauth2/v2/auth?client_id=mock-google-client-id&redirect_uri=https%3A%2F%2Fportal.angelpixel.io%2Fcallback&response_type=code&scope=openid+email+profile&state=eyJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsImNsaWVudElkIjoicG9ydGFsLXdlYiIsInJlZGlyZWN0VXJpIjoiaHR0cHM6Ly9wb3J0YWwuYW5nZWxwaXhlbC5pby9jYWxsYmFjayIsInByb3ZpZGVyIjoiZ29vZ2xlIiwibm9uY2UiOiI4OWQzYjliOWI3NWM3OGFhYjM3NzU3ZTQ2OWE5ZmNhZiIsImNyZWF0ZWRBdCI6MTc5NTAxOTM5Nzk5MCwiZXhwaXJlc0F0IjoxNzk1MDE5OTk3OTkwfQ.TxXYiTWlo2ylMdSAbZQitBEPQtTVVzljGrLV4UiUJPA&nonce=89d3b9b9b75c78aab37757e469a9fcaf&access_type=offline&prompt=consent",
+  "state": "eyJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsImNsaWVudElkIjoicG9ydGFsLXdlYiIsInJlZGlyZWN0VXJpIjoiaHR0cHM6Ly9wb3J0YWwuYW5nZWxwaXhlbC5pby9jYWxsYmFjayIsInByb3ZpZGVyIjoiZ29vZ2xlIiwibm9uY2UiOiI4OWQzYjliOWI3NWM3OGFhYjM3NzU3ZTQ2OWE5ZmNhZiIsImNyZWF0ZWRBdCI6MTc5NTAxOTM5Nzk5MCwiZXhwaXJlc0F0IjoxNzk1MDE5OTk3OTkwfQ.TxXYiTWlo2ylMdSAbZQitBEPQtTVVzljGrLV4UiUJPA",
+  "nonce": "89d3b9b9b75c78aab37757e469a9fcaf"
+}
+```
+
+---
+
+#### Escenario B: Generación de URL de Autorización OIDC para Microsoft Entra ID v2.0 (`HTTP 200 OK`)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity federation login \
+  --provider microsoft \
+  --tenant acme-corp \
+  --client-id portal-web \
+  --redirect-uri https://portal.angelpixel.io/callback
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i "http://localhost:4000/api/v1/auth/federation/microsoft/login?tenant_id=acme-corp&client_id=portal-web&redirect_uri=https://portal.angelpixel.io/callback&format=json"
+```
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+```text
+HTTP/1.1 200 OK [27ms]
+GET http://localhost:4000/api/v1/auth/federation/microsoft/login?tenant_id=acme-corp&redirect_uri=https%3A%2F%2Fportal.angelpixel.io%2Fcallback&format=json&client_id=portal-web
+
+{
+  "url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=mock-msft-client-id&response_type=code&redirect_uri=https%3A%2F%2Fportal.angelpixel.io%2Fcallback&response_mode=query&scope=openid+email+profile+User.Read&state=eyJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsImNsaWVudElkIjoicG9ydGFsLXdlYiIsInJlZGlyZWN0VXJpIjoiaHR0cHM6Ly9wb3J0YWwuYW5nZWxwaXhlbC5pby9jYWxsYmFjayIsInByb3ZpZGVyIjoibWljcm9zb2Z0Iiwibm9uY2UiOiJmYjc4ZjMxYzg3NWI3MjYxMzdkM2I3OWYyNDQ1NjZlMSIsImNyZWF0ZWRBdCI6MTc5NTAxOTM5ODEwMCwiZXhwaXJlc0F0IjoxNzk1MDE5OTk4MTAwfQ.Nl3WDjtCSOjuOuaMk33zeV7-1kNL0NFTO8fMyGjuM3A&nonce=fb78f31c875b726137d3b79f244566e1",
+  "state": "eyJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsImNsaWVudElkIjoicG9ydGFsLXdlYiIsInJlZGlyZWN0VXJpIjoiaHR0cHM6Ly9wb3J0YWwuYW5nZWxwaXhlbC5pby9jYWxsYmFjayIsInByb3ZpZGVyIjoibWljcm9zb2Z0Iiwibm9uY2UiOiJmYjc4ZjMxYzg3NWI3MjYxMzdkM2I3OWYyNDQ1NjZlMSIsImNyZWF0ZWRBdCI6MTc5NTAxOTM5ODEwMCwiZXhwaXJlc0F0IjoxNzk1MDE5OTk4MTAwfQ.Nl3WDjtCSOjuOuaMk33zeV7-1kNL0NFTO8fMyGjuM3A",
+  "nonce": "fb78f31c875b726137d3b79f244566e1"
+}
+```
+
+---
+
+#### Escenario C: Seguridad Negativa — Proveedor de Identidad No Soportado (`HTTP 400 Bad Request`)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity federation login \
+  --provider github \
+  --tenant acme-corp \
+  --redirect-uri https://portal.angelpixel.io/callback
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i "http://localhost:4000/api/v1/auth/federation/github/login?tenant_id=acme-corp&redirect_uri=https://portal.angelpixel.io/callback"
+```
+</details>
+
+##### Respuesta de Seguridad Obtenida (HTTP 400 Bad Request):
+```text
+HTTP/1.1 400 Bad Request [19ms]
+GET http://localhost:4000/api/v1/auth/federation/github/login?tenant_id=acme-corp&redirect_uri=https%3A%2F%2Fportal.angelpixel.io%2Fcallback&format=json
+
+{
+  "error": "invalid_request",
+  "error_description": "Unsupported identity provider: \"github\". Allowed: google, microsoft"
+}
+```
+
+---
+
+### 3. Cobertura de Pruebas Automatizadas (US-10)
+
+```bash
+npx jest tests/unit/identity/infrastructure/federation/ tests/unit/identity/application/federation/test_federated_handlers.ts tests/integration/identity/interfaces/test_federation_api.ts
+```
+
+- **Invariante 1 (`FederationStateManager`):** Rechazo de tokens `state` expirados, malformados o con firma HMAC-SHA256 alterada; redacción de secretos en `toString()` / `util.inspect`.
+- **Invariante 2 (`JwksTokenVerifier`):** Cacheo de claves públicas, refresco automático ante rotación de `kid` con *cooldown* y *exponential backoff*.
+- **Invariante 3 (Adaptadores Google y Microsoft):** Validación estricta de `nonce`, `aud`, `iss` y normalización de claims (`oid`/`sub`, `preferred_username`/`upn`).
+
+---
+
+[⬅️ Volver al Hub Principal de Showcase](./README.md)
