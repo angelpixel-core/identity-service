@@ -112,4 +112,96 @@ Ran all test suites matching tests/integration/identity/security/test_zero_downt
 
 ---
 
+## 🔒 US-17: Database Encryption In-Flight (TLS 1.3/1.2) & Anti-Downgrade Defense
+
+En la industria de tecnología financiera (FinTech), el cifrado en tránsito no es opcional ni puede depender de configuraciones permisivas. El estándar **PCI-DSS v4.0 (Req 4.1)** y **SOC 2 (CC6.7)** prohíben explícitamente el uso de suites criptográficas obsoletas (SSLv3, TLS 1.0, TLS 1.1) y exigen autenticación mutua o verificación estricta de la cadena de confianza de la Autoridad Certificadora (CA).
+
+`identity-service` implementa un blindaje integral para las conexiones hacia **Azure Database for PostgreSQL Flexible Server** y **Redis**, combinando verificación estricta de certificados, carga dinámica de certificados CA desde volúmenes CSI y una defensa activa contra ataques de degradación (*Anti-Downgrade SSL Guard*).
+
+### 🏛️ Pilares Arquitectónicos de US-17
+
+#### 1. Forzado Mandatorio de TLS 1.2+ y Carga Dinámica de CA
+- **Cifrado E2E Obligatorio:** Toda conexión cliente administrada por `DynamicPostgresPoolManager` se inicializa con TLS 1.2 como versión mínima permitida (`DATABASE_SSL_MIN_VERSION: TLSv1.2` o `TLSv1.3`), rechazando cualquier intento de negociación bajo protocolos obsoletos.
+- **Resolución de CA Root desde Volumen CSI (`DATABASE_SSL_CA_PATH`):** El certificado público de la CA de Azure (`ca.crt`) no se almacena en el código ni en la imagen del contenedor; se monta dinámicamente en `/mnt/secrets-store/ca.crt` mediante el CSI Driver. El servicio resuelve este archivo en tiempo de ejecución para validar criptográficamente la identidad del servidor de base de datos.
+
+#### 2. Rechazo Determinista de MitM (`rejectUnauthorized: true`)
+- **Bloqueo Incondicional de Certificados Inválidos:** Se prohíbe el uso de banderas permisivas como `rejectUnauthorized: false` o modos `sslmode=no-verify`. Si el servidor remoto presenta un certificado autofirmado desconocido, expirado o con nombres de dominio (SAN) no coincidentes, el handshake falla inmediatamente.
+- **Aislamiento Seguro en Probes de Diagnóstico:** Ante un fallo de validación de certificados, el gestor de base de datos reporta el error a las sondas de salud. La sonda `/health/ready` responde de inmediato con `HTTP 503 Service Unavailable`, evitando que Kubernetes envíe tráfico de usuarios hacia un pod con conectividad degradada, mientras que `/health/live` se mantiene en `HTTP 200 OK` para prevenir reinicios destructivos en bucle (*crashloops*).
+
+#### 3. Defensa Activa en Caliente (*Runtime Anti-Downgrade SSL Guard*)
+- **Interceptación de Parámetros Maliciosos durante Rotaciones:** Si durante una rotación automática o manual de secretos CSI el archivo de configuración es alterado para incluir parámetros inseguros (ej. `sslmode=disable`, `ssl=false` o certificados alterados), el mecanismo *Anti-Downgrade SSL Guard* intercepta la operación en memoria.
+- **Fail-Safe & Emisión de Alerta de Seguridad:** La recarga del nuevo pool es rechazada de inmediato, el pool seguro activo previo permanece intacto atendiendo transacciones cifradas y el sistema emite un evento de auditoría de seguridad clasificado como `SECURITY_VIOLATION` hacia las bitácoras estructuradas.
+
+---
+
+### 🔄 Diagrama de Secuencia: Validación TLS & Protección Anti-Downgrade (US-17)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Cliente / Transacción API
+    participant App as Aplicación (Server HTTP)
+    participant PoolMgr as DynamicPostgresPoolManager
+    participant SSLGuard as Anti-Downgrade SSL Guard
+    participant PG as PostgreSQL Flexible Server (TLS 1.2+)
+    participant Audit as Logger de Auditoría NDJSON
+
+    Client->>App: 1. Petición que requiere persistencia segura
+    App->>PoolMgr: 2. Solicitud de conexión cliente del pool
+    PoolMgr->>SSLGuard: 3. Validación de opciones SSL (rejectUnauthorized: true, TLS >= 1.2)
+    alt Handshake Seguro con CA Válido
+        SSLGuard->>PG: 4. Establecimiento de túnel TLS con verificación de CA (/mnt/secrets-store/ca.crt)
+        PG-->>PoolMgr: 5. Handshake completado exitosamente (Cifrado Activo)
+        PoolMgr-->>App: 6. Conexión entregada; ejecución de transacción cifrada
+        App-->>Client: 7. Respuesta exitosa 200 OK con datos protegidos
+    else Intento de Rotación Insegura (sslmode=disable / MitM)
+        SSLGuard->>SSLGuard: 4. Detección de degradación criptográfica o certificado no confiable
+        SSLGuard->>Audit: 5. Emisión de alerta de seguridad crítica (SECURITY_VIOLATION)
+        SSLGuard-->>PoolMgr: 6. Rechazo de inicialización y preservación del pool seguro anterior
+        PoolMgr-->>App: 7. Sonda /health/ready reporta 503 DOWN para proteger el tráfico
+    end
+```
+
+#### Glosario de Componentes US-17:
+- **`Cliente / Transacción API`:** Usuario o aplicación externa ejecutando una operación autenticada (ej. registro, login o emisión de tokens).
+- **`Aplicación (Server HTTP)`:** Instancia de `identity-service` que atiende peticiones en el puerto `:4000`.
+- **`DynamicPostgresPoolManager`:** Administrador generacional de pools de conexión PostgreSQL con soporte estricto de SSL.
+- **`Anti-Downgrade SSL Guard`:** Componente de defensa perimetral en memoria que valida las opciones criptográficas antes de cualquier operación de red.
+- **`PostgreSQL Flexible Server (TLS 1.2+)`:** Instancia de base de datos en Azure configurada con `ssl_enforcement_enabled = true` y `ssl_minimal_tls_version_enforced = TLSv1.2`.
+- **`Logger de Auditoría NDJSON`:** Módulo emisor de eventos de seguridad que envía trazas enriquecidas con severidad `CRITICAL` hacia stdout.
+
+---
+
+### 🧪 Verificación Automatizada: Suite de Pruebas de Cifrado y Hardening (US-17)
+
+La efectividad de la protección TLS y la defensa anti-downgrade se validan mediante la siguiente suite de integración:
+
+```bash
+npx jest tests/integration/identity/security/test_database_tls_hardening.ts
+```
+
+##### Salida Real de Verificación Automatizada (6/6 Escenarios Aprobados):
+```text
+PASS tests/integration/identity/security/test_database_tls_hardening.ts
+  Integration E2E: Database Encryption In-Flight TLS & Hardening (US-17)
+    Scenario 1: Full In-Flight TLS 1.2+ Enforcement with CA Certificate Validation
+      ✓ should initialize dynamic pool with strict TLS 1.2+ and valid CA, serving /health probes with 200 OK (51 ms)
+      ✓ should resolve SSL configuration from environment variables (DATABASE_SSL_*) on bootstrap (22 ms)
+    Scenario 2: Runtime Anti-Downgrade Defense during CSI Secret Rotation
+      ✓ should block downgrade attack when CSI secret rotates to sslmode=no-verify and emit security audit event (165 ms)
+    Scenario 3: Deterministic Rejection of Untrusted / MitM Certificates
+      ✓ should reject untrusted server certificates, returning 503 on readiness and 200 on liveness (84 ms)
+    Scenario 4: CA Certificate Resolution from Mounted CSI Volume File (DATABASE_SSL_CA_PATH)
+      ✓ should read CA certificate file from DATABASE_SSL_CA_PATH and bind it to pool configuration (47 ms)
+      ✓ should bootstrap server directly with DATABASE_SSL_CA_PATH environment variable (39 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        2.136 s
+Ran all test suites matching tests/integration/identity/security/test_database_tls_hardening.ts.
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
