@@ -179,4 +179,165 @@ Ran all test suites matching tests/integration/identity/tracing/test_database_tr
 
 ---
 
+## 📊 US-21: Métricas Prometheus / OpenMetrics Multi-Tenant & Golden Signals
+
+El monitoreo efectivo de un servicio de autenticación y autorización de misión crítica no puede limitarse a consultar si el proceso está activo. La metodología de **Site Reliability Engineering (SRE)** de Google establece que todo sistema distribuido debe gobernarse mediante las **4 Señales de Oro (Golden Signals)**: Latencia, Tráfico, Errores y Saturación.
+
+`identity-service` implementa un motor de telemetría de alto rendimiento basado en **OpenTelemetry Metrics SDK** y el estándar **OpenMetrics / Prometheus**, con agregación dimensional por espacio de tenencia (`tenant_id`), normalización de rutas contra alta cardinalidad y exposición sin bloqueo en el endpoint estándar `/metrics`.
+
+### 🏛️ Pilares Arquitectónicos de US-21
+
+#### 1. Las 4 Señales de Oro (SRE Golden Signals)
+- **Latencia:**
+  - Histograma `http_request_duration_seconds` con cubos (*buckets*) exponenciales rigurosamente calibrados (`0.005s`, `0.01s`, `0.025s`, `0.05s`, `0.1s`, `0.25s`, `0.5s`, `1s`, `2.5s`, `5s`, `10s`), permitiendo calcular percentiles precisos ($p_{50}$, $p_{95}$, $p_{99}$) y verificar Acuerdos de Nivel de Servicio (SLA/SLO).
+  - Histograma interno `db_query_duration_seconds` para aislar el tiempo de procesamiento en base de datos del tiempo de red HTTP.
+- **Tráfico:**
+  - Contador monotónico `http_requests_total` que cuantifica la tasa de peticiones entrantes, etiquetado dimensionalmente por método HTTP (`GET`, `POST`, `PATCH`), ruta normalizada (`route`), código de estado (`status_code`) y tenencia (`tenant_id`).
+- **Errores:**
+  - Contador `http_errors_total` que agrega fallos clasificados (códigos 4xx para errores de cliente y 5xx para fallos internos).
+  - Contador `auth_attempts_total{result="failure"}` que detecta picos de intentos de autenticación fallidos o ataques de fuerza bruta.
+- **Saturación:**
+  - Medidor de runtime `target_info` y métricas de memoria heap y event loop de Node.js.
+  - Indicadores de saturación del pool de conexiones PostgreSQL (`db_pool_active_connections`, `db_pool_idle_connections`, `db_pool_waiting_queries`), permitiendo disparar alertas antes de que se agote la capacidad de la base de datos.
+
+#### 2. Prevención Activa de Explosión de Cardinalidad de Rutas
+- **El Peligro de la Alta Cardinalidad:** Si una API registra rutas con parámetros variables directamente (ej. `/api/v1/users/usr_1a2b3c`), cada identificador genera una nueva serie temporal en la base de datos de Prometheus, provocando agotamiento de memoria (*OOM crash*) en el servidor de monitoreo.
+- **`RouteNormalizer` en Middleware:** `identity-service` intercepta las rutas antes de registrar las métricas, normalizando dinámicamente los parámetros de ruta hacia plantillas canónicas (ej. `/api/v1/users/:userId`, `/api/v1/auth/federation/:provider/login`).
+
+---
+
+### 🔄 Diagrama de Secuencia: Pipeline de Scraping de Métricas & Dashboard (US-21)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Clientes / Consumidores API
+    participant App as Instancia identity-service (:4000)
+    participant Normalizer as RouteNormalizer & MetricsMiddleware
+    participant MetricsAdapter as OpenTelemetryMetricsAdapter
+    participant Prom as Servidor Prometheus (Scraper)
+    participant Grafana as Grafana Dashboard (Golden Signals)
+    participant Alert as Prometheus Alertmanager (SLO Alerts)
+
+    User->>App: 1. Peticiones HTTP entrantes concurrentes
+    App->>Normalizer: 2. Interceptación y normalización de ruta (evita cardinalidad)
+    Normalizer->>MetricsAdapter: 3. Actualización de contadores (Tráfico/Errores) e histogramas (Latencia)
+    App-->>User: 4. Entrega de respuesta HTTP con cabecera traceparent
+    Prom->>App: 5. Sondeo periódico de scraping a GET /metrics
+    App->>MetricsAdapter: 6. Serialización de métricas en formato OpenMetrics/Prometheus
+    MetricsAdapter-->>Prom: 7. Entrega de métricas crudas con etiquetas dimensionales
+    Prom->>Grafana: 8. Consulta PromQL y visualización de Golden Signals por tenant
+    Prom->>Alert: 9. Evaluación de alertas de tasa de error o saturación de pool
+```
+
+#### Glosario de Componentes US-21:
+- **`RouteNormalizer & MetricsMiddleware`:** Middleware que intercepta la finalización de cada petición (`res.on('finish')`), calcula la duración exacta con `perf_hooks` y normaliza la ruta antes de registrar métricas.
+- **`OpenTelemetryMetricsAdapter`:** Adaptador de telemetría que administra el registro de métricas en memoria bajo la especificación de OpenTelemetry SDK y genera la salida en formato OpenMetrics.
+- **`Servidor Prometheus (Scraper)`:** Agente centralizado de recolección que sondea `/metrics` cada 15 segundos mediante peticiones HTTP pull.
+- **`Grafana Dashboard (Golden Signals)`:** Panel de visualización ejecutiva y operativa que grafica las 4 Señales de Oro desglosadas por inquilino y ruta.
+- **`Prometheus Alertmanager`:** Subsistema de alertas que notifica al equipo de guardia SRE cuando la latencia $p_{99} > 250\text{ms}$ o la tasa de errores 5xx supera el $1\%$.
+
+---
+
+### 🧪 Recetas Reproducibles de Métricas Prometheus
+
+#### Receta 1: Inspección Filtrada con CLI Nativa (Receta Primaria)
+
+El comando `identity ops metrics` permite consultar y filtrar las métricas del servicio de forma inmediata:
+
+```bash
+./bin/identity ops metrics --filter http_requests
+```
+
+##### Salida Real de Métricas de Tráfico:
+```text
+Métricas Prometheus (7 líneas encontradas):
+# HELP http_requests_total Total number of inbound HTTP requests processed
+# TYPE http_requests_total counter
+http_requests_total{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 4
+http_requests_total{method="GET",route="/health",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
+http_requests_total{method="GET",route="/metrics",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
+http_requests_total{method="GET",route="/health/ready",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 3
+http_requests_total{method="GET",route="/.well-known/jwks.json",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
+```
+
+También puedes exportar las métricas en formato JSON estructurado:
+
+```bash
+./bin/identity ops metrics --filter target_info --format json
+```
+
+##### Salida en Formato JSON:
+```json
+{
+  "target_info{service_name=\"unknown_service:/usr/local/bin/node\",telemetry_sdk_language=\"nodejs\",telemetry_sdk_name=\"opentelemetry\",telemetry_sdk_version=\"3.1.1\"}": 1
+}
+```
+
+---
+
+#### Receta 2: Scraping Estándar con cURL (Receta Detallada)
+
+<details open>
+<summary><b>Click para ver la receta detallada con cURL</b></summary>
+
+Puedes realizar un scraping directo al endpoint `/metrics` emulando el comportamiento exacto de Prometheus:
+
+```bash
+curl -s http://localhost:4000/metrics | head -n 25
+```
+
+##### Muestra Real de Exposición de Métricas Prometheus:
+```text
+# HELP target_info Target metadata
+# TYPE target_info gauge
+target_info{service_name="unknown_service:/usr/local/bin/node",telemetry_sdk_language="nodejs",telemetry_sdk_name="opentelemetry",telemetry_sdk_version="3.1.1"} 1
+# HELP http_request_duration_seconds Duration of inbound HTTP requests in seconds
+# UNIT http_request_duration_seconds s
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_count{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 4
+http_request_duration_seconds_sum{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 0.045211042
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.005"} 0
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.01"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.025"} 3
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.05"} 4
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="+Inf"} 4
+# HELP http_requests_total Total number of inbound HTTP requests processed
+# TYPE http_requests_total counter
+http_requests_total{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 4
+```
+
+</details>
+
+---
+
+### 🧪 Verificación Automatizada: Endpoint de Métricas y Normalización (US-21)
+
+La integridad de las métricas y la prevención de cardinalidad se verifican mediante la siguiente suite de pruebas:
+
+```bash
+npx jest tests/integration/interfaces/http/test_metrics_endpoint.ts
+```
+
+##### Salida Real de Verificación Automatizada (5/5 Tests Aprobados):
+```text
+PASS tests/integration/interfaces/http/test_metrics_endpoint.ts
+  Integration API: Structured Metrics & Prometheus Endpoint (US-21)
+    Default In-Memory Metrics in Express Server
+      ✓ should expose GET /metrics with status 200 and standard Prometheus exposition Content-Type (78 ms)
+      ✓ should record inbound request traffic and latency after processing HTTP endpoints (38 ms)
+      ✓ should record HTTP errors in http_errors_total when request fails with 4xx or 5xx (56 ms)
+      ✓ should normalize parameterized and unmapped dynamic routes to prevent cardinality explosion (40 ms)
+    Full OpenTelemetry SDK Integration in Express Server
+      ✓ should export OpenTelemetry formatted metrics including runtime saturation and explicit histogram buckets (58 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        1.942 s
+Ran all test suites matching tests/integration/interfaces/http/test_metrics_endpoint.ts.
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
