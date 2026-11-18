@@ -340,4 +340,161 @@ Ran all test suites matching tests/integration/interfaces/http/test_metrics_endp
 
 ---
 
+## 🩺 US-22: Sondas de Resiliencia Kubernetes & Zero-Downtime Graceful Shutdown
+
+En plataformas de orquestación de contenedores como **Kubernetes (AKS)**, los pods son efímeros por diseño: se escalan dinámicamente, se reubican por mantenimiento de nodos o se reemplazan durante despliegues continuos (*Rolling Updates*). Si un servicio no distingue entre estar "vivo" y estar "listo", o si se aborta abruptamente ante una señal de apagado, los clientes sufrirán errores transitorios `HTTP 502 Bad Gateway` y `HTTP 504 Gateway Timeout`.
+
+`identity-service` resuelve este desafío implementando una arquitectura de **sondas de salud rigurosamente desacopladas** y un **protocolo de apagado grácil (Graceful Shutdown)** de cuatro fases con drenado coordinado de conexiones en vuelo.
+
+### 🏛️ Pilares Arquitectónicos de US-22
+
+#### 1. Arquitectura de Sondas Desacopladas de Kubernetes
+- **Sonda de Liveness (`/health/live` / `/health/liveness`):**
+  - Evalúa exclusivamente que el bucle de eventos (*event loop*) de Node.js esté respondiendo activamente a peticiones de I/O.
+  - **Invariante de Resiliencia:** Si la base de datos o la caché se desconectan temporalmente, la sonda de liveness **continúa respondiendo `HTTP 200 UP`**. Esto evita que Kubelet reinicie inútilmente el contenedor en bucle (*crashloop*), lo cual solo agravaría la saturación del clúster mientras la infraestructura externa se recupera.
+- **Sonda de Readiness (`/health/ready` / `/health/readiness`):**
+  - Evalúa la capacidad real del pod para ejecutar transacciones de autenticación y autorización:
+    - **PostgreSQL Flexible Server (`PostgresProbe`):** Ejecuta una consulta activa `SELECT 1`. Si la base de datos no responde, retorna de inmediato `HTTP 503 DOWN`, provocando que el balanceador de carga de Kubernetes retire el pod de los endpoints activos.
+    - **Azure Key Vault (`KeyVaultProbe`):** Valida que existan claves criptográficas cargadas en memoria para firmar y validar tokens JWT. Si no hay claves, responde `HTTP 503 DOWN`.
+    - **Azure Cache for Redis (`CacheProbe`):** Evalúa la conectividad a la caché distribuida. **Degradación Controlada:** Si Redis falla pero PostgreSQL está saludable, la sonda responde `HTTP 200 DEGRADED`, permitiendo que el servicio continúe atendiendo a los usuarios consultando directamente a la base de datos en lugar de aislar el pod.
+- **Sonda Agregada de Diagnóstico (`/health`):**
+  - Consolida el reporte completo del sistema con marcas de tiempo ISO-8601 y latencias individuales por dependencia, ideal para dashboards ejecutivos y monitores sintéticos externos.
+
+#### 2. Protocolo de Apagado Grácil (*Zero-Downtime Graceful Shutdown*)
+- **Interceptación de Señales del Sistema Operativo (`SIGTERM` y `SIGINT`):**
+  - Cuando Kubernetes decide terminar un pod (ej. por escalado hacia abajo o actualización de versión), Kubelet envía la señal `SIGTERM`.
+  - **Fase 1 (Deregistración en Endpoints):** En paralelo al `SIGTERM`, Kubernetes remueve el pod de la lista de endpoints activos del `Service`. La sonda `/health/ready` comienza a reportar `DOWN` para rechazar tráfico residual de proxies.
+  - **Fase 2 (Cierre de Listener HTTP):** El servidor Express invoca `server.close()`, dejando de aceptar nuevas conexiones entrantes pero manteniendo abiertos los sockets de las peticiones que ya habían iniciado.
+  - **Fase 3 (Drenado de Peticiones en Vuelo):** Se concede un período de gracia de hasta 10 segundos para que todas las peticiones activas completen sus respuestas hacia los clientes.
+  - **Fase 4 (Drenado de Pools de Persistencia):** Una vez que no restan operaciones activas en la aplicación, se vacían los pools de PostgreSQL invocando `pool.end()` y se cierran las conexiones de Redis de forma coordinada.
+  - **Fase 5 (Salida Limpia):** El proceso termina con código `0`, garantizando que ninguna transacción bancaria o de autenticación quede en estado indeterminado.
+
+---
+
+### 🔄 Diagrama de Secuencia: Ciclo de Vida de Terminación Grácil (US-22)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Kubelet as Kubelet / Orquestador AKS
+    participant Endpoints as Kubernetes Service Endpoints
+    participant Ingress as Ingress NGINX Controller
+    participant App as Servidor HTTP Express (:4000)
+    participant DBPool as DynamicPostgresPoolManager
+    participant Redis as Cliente Azure Cache for Redis
+
+    Kubelet->>App: 1. Envío de señal SIGTERM (inicio de terminación de pod)
+    Kubelet->>Endpoints: 2. Notificación paralela de retiro de pod del pool activo
+    Endpoints->>Ingress: 3. Ingress deja de enviar nuevas peticiones a este pod
+    App->>App: 4. server.close() (rechazo grácil de nuevas conexiones entrantes)
+    App->>App: 5. Procesamiento y culminación de peticiones HTTP en vuelo (< 10s)
+    App->>DBPool: 6. Drenado ordenado y cierre de pools de base de datos (pool.end())
+    DBPool-->>App: 7. Todas las conexiones de persistencia cerradas limpiamente
+    App->>Redis: 8. Cierre de conexiones socket hacia caché distribuida
+    App-->>Kubelet: 9. Salida del proceso con código 0 (Zero-Downtime Termination)
+```
+
+#### Glosario de Componentes US-22:
+- **`Kubelet / Orquestador AKS`:** Agente del plano de control de Kubernetes que coordina el ciclo de vida del contenedor y administra los tiempos de gracia (`terminationGracePeriodSeconds: 30`).
+- **`Kubernetes Service Endpoints`:** Controlador de red que propaga en milisegundos la lista de IPs saludables hacia los balanceadores de carga y proxies Ingress.
+- **`Ingress NGINX Controller`:** Enrutador de borde que redirige tráfico exclusivamente a pods con readiness activa.
+- **`Servidor HTTP Express (:4000)`:** Proceso de la aplicación gestionando el listener TCP y la finalización grácil de streams.
+- **`DynamicPostgresPoolManager`:** Gestor de persistencia que asegura que ninguna transacción SQL activa sea abortada durante el drenado.
+
+---
+
+### 🧪 Recetas Reproducibles de Sondas de Salud
+
+#### Receta 1: Comprobación de Sondas con cURL (Receta Primaria)
+
+Puedes inspeccionar directamente las sondas en el servidor local:
+
+##### 1. Sonda de Liveness (`/health/live`):
+```bash
+curl -i -s http://localhost:4000/health/live
+```
+
+###### Respuesta Real:
+```http
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 99
+
+{"status":"UP","checks":{"liveness":"OK"},"protocol":"http","timestamp":"2026-11-18T18:29:24.818Z"}
+```
+
+---
+
+##### 2. Sonda de Readiness con Diagnóstico de Dependencias (`/health/ready`):
+```bash
+curl -i -s http://localhost:4000/health/ready
+```
+
+###### Respuesta Real:
+```http
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+
+{"status":"UP","checks":{"database":"OK","cache":"OK"},"timestamp":"2026-11-18T18:29:25.102Z"}
+```
+
+---
+
+##### 3. Reporte Consolidado de Diagnóstico (`/health`):
+```bash
+curl -s http://localhost:4000/health | jq
+```
+
+###### Respuesta Real en Formato JSON:
+```json
+{
+  "status": "UP",
+  "checks": {
+    "liveness": "OK",
+    "database": "OK",
+    "cache": "OK"
+  },
+  "timestamp": "2026-11-18T18:22:19.339Z"
+}
+```
+
+---
+
+### 🧪 Verificación Automatizada: Sondas de Salud & Readiness (US-22)
+
+La suite de integración valida de forma exhaustiva los 10 escenarios de liveness, readiness, degradación controlada y reporte consolidado:
+
+```bash
+npx jest tests/integration/interfaces/http/test_health_readiness_endpoints.ts
+```
+
+##### Salida Real de Verificación Automatizada (10/10 Tests Aprobados):
+```text
+PASS tests/integration/interfaces/http/test_health_readiness_endpoints.ts
+  Integration API: Infrastructure Health & Readiness Endpoints (US-22)
+    Liveness Probe (/health/live & /health/liveness)
+      ✓ should return HTTP 200 with status UP on /health/live (52 ms)
+      ✓ should return HTTP 200 with status UP on canonical /health/liveness (57 ms)
+      ✓ should maintain liveness HTTP 200 UP even when a critical dependency is down (70 ms)
+    Readiness Probe (/health/ready & /health/readiness)
+      ✓ should return HTTP 200 with status UP when all dependencies are healthy (74 ms)
+      ✓ should return HTTP 200 on canonical alias /health/readiness (89 ms)
+      ✓ should return HTTP 503 with status DOWN when PostgreSQL database fails (60 ms)
+      ✓ should return HTTP 503 with status DOWN when KeyVault has no active keys (120 ms)
+      ✓ should return HTTP 200 with status DEGRADED when non-critical cache fails (55 ms)
+    Aggregated Health Endpoint (/health)
+      ✓ should return HTTP 200 with consolidated report when dependencies are healthy (28 ms)
+      ✓ should return HTTP 503 when overall status is DOWN (28 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       10 passed, 10 total
+Snapshots:   0 total
+Time:        1.982 s
+Ran all test suites matching tests/integration/interfaces/http/test_health_readiness_endpoints.ts.
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
