@@ -464,8 +464,73 @@ export function createApp(deps?: AppDependencies): Express {
   const revokeSessionHandler = new RevokeSessionCommandHandler(refreshSessionRepository);
 
   const federationStateManager = deps?.federationStateManager ?? new FederationStateManager();
-  const googleAdapter = deps?.googleOidcAdapter ?? new GoogleOidcAdapter();
-  const microsoftAdapter = deps?.microsoftEntraAdapter ?? new MicrosoftEntraAdapter();
+
+  const devFederationHttpClient =
+    process.env.NODE_ENV !== 'production'
+      ? async (url: string, init?: any) => {
+          if (url.includes('certs') || url.includes('keys')) {
+            return asymmetricKeyProvider.getPublicKeyJwks();
+          }
+          if (url.includes('token') && init?.body) {
+            const params = new URLSearchParams(String(init.body));
+            const code = params.get('code') || '';
+            const nonce = params.get('nonce') || undefined;
+            if (code.startsWith('dev_')) {
+              const isMicrosoft = url.includes('microsoft');
+              const emailMap: Record<string, string> = {
+                dev_google_jit_2026: 'valeria.mendoza@acme-corp.com',
+                dev_google_link_2026: 'lead.architect@acme-corp.com',
+                dev_msft_sso_2026: 'carlos.ibanez@acme-corp.com',
+                dev_unverified_2026: 'unverified.attacker@acme-corp.com',
+              };
+              const subMap: Record<string, string> = {
+                dev_google_jit_2026: 'google-sub-jit-2026',
+                dev_google_link_2026: 'google-sub-linked-2026',
+                dev_msft_sso_2026: 'msft-sub-2026',
+                dev_unverified_2026: 'google-sub-unverified-2026',
+              };
+              const nameMap: Record<string, string> = {
+                dev_google_jit_2026: 'Valeria Mendoza (Google SSO)',
+                dev_google_link_2026: 'Sofia Valenzuela (Linked Google)',
+                dev_msft_sso_2026: 'Carlos Ibanez (Microsoft Entra)',
+                dev_unverified_2026: 'Unverified External Account',
+              };
+
+              const idToken = await asymmetricKeyProvider.signToken(
+                {
+                  iss: isMicrosoft
+                    ? 'https://login.microsoftonline.com/common/v2.0'
+                    : 'https://accounts.google.com',
+                  aud: isMicrosoft ? 'mock-msft-client-id' : 'mock-google-client-id',
+                  sub: subMap[code] || `dev-sub-${code}`,
+                  ...(isMicrosoft ? { oid: `oid-${code}` } : {}),
+                  email: emailMap[code] || `${code}@acme-corp.com`,
+                  email_verified: code !== 'dev_unverified_2026',
+                  name: nameMap[code] || 'Federated Demo User',
+                  ...(nonce ? { nonce } : {}),
+                },
+                { expiresIn: 3600 }
+              );
+
+              return {
+                id_token: idToken,
+                access_token: `mock_external_access_${code}`,
+              };
+            }
+          }
+          const res = await fetch(url, init);
+          if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`HTTP ${res.status} from ${url}: ${errorText}`);
+          }
+          return res.json();
+        }
+      : undefined;
+
+  const googleAdapter =
+    deps?.googleOidcAdapter ?? new GoogleOidcAdapter({ httpClient: devFederationHttpClient });
+  const microsoftAdapter =
+    deps?.microsoftEntraAdapter ?? new MicrosoftEntraAdapter({ httpClient: devFederationHttpClient });
   const federationProviders = [googleAdapter, microsoftAdapter];
 
   const generateFederatedLoginUrlHandler = new GenerateFederatedLoginUrlQueryHandler(

@@ -189,11 +189,12 @@ function printGeneralHelp() {
 Uso: identity <recurso> <accion> [banderas]
 
 ${colors.bold}Recursos Disponibles:${colors.reset}
-  ${colors.cyan}auth${colors.reset}       Gestión de usuarios y autenticación (register, me, update-user)
-  ${colors.cyan}client${colors.reset}     Gobernanza y validación de clientes OAuth2 (validate)
-  ${colors.cyan}token${colors.reset}      Emisión y canje de tokens OAuth2 (m2m, exchange)
-  ${colors.cyan}oidc${colors.reset}       Protocolo OpenID Connect (discovery, jwks, authorize)
-  ${colors.cyan}session${colors.reset}    Gestión de sesiones y rotación de Refresh Tokens (refresh, revoke)
+  ${colors.cyan}auth${colors.reset}         Gestión de usuarios y autenticación (register, me, update-user)
+  ${colors.cyan}client${colors.reset}       Gobernanza y validación de clientes OAuth2 (validate)
+  ${colors.cyan}token${colors.reset}        Emisión y canje de tokens OAuth2 (m2m, exchange)
+  ${colors.cyan}oidc${colors.reset}         Protocolo OpenID Connect (discovery, jwks, authorize)
+  ${colors.cyan}session${colors.reset}      Gestión de sesiones y rotación de Refresh Tokens (refresh, revoke)
+  ${colors.cyan}federation${colors.reset}   Federación de identidad OIDC externa (login, callback)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -213,6 +214,8 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity oidc authorize --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback
   identity session refresh --token "$REFRESH_TOKEN"
   identity session revoke --token "$REFRESH_TOKEN"
+  identity federation login --provider google --tenant acme-corp --redirect-uri https://portal.angelpixel.io/callback
+  identity federation callback --provider google --code "dev_google_jit_2026" --state "$STATE"
 `);
 }
 
@@ -711,6 +714,117 @@ async function handleSessionDomain(action, flags, baseUrl, rawJson) {
   process.exit(1);
 }
 
+function printFederationHelp() {
+  console.log(`${colors.bold}Uso: identity federation <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones:${colors.reset}
+  ${colors.cyan}login${colors.reset}       Genera la URL de autorización OIDC externa con State HMAC-SHA256 y Nonce (US-10)
+              Banderas:
+                -p, --provider <id>         Proveedor OIDC: google | microsoft (Requerido)
+                -t, --tenant <id>           ID del inquilino (Requerido)
+                -r, --redirect-uri <uri>    URI de redirección autorizada (Requerido)
+                -c, --client-id <id>        ID del cliente OAuth2 (Opcional)
+                --login-hint <email>        Sugerencia de correo de inicio de sesión (Opcional)
+
+  ${colors.cyan}callback${colors.reset}    Procesa el callback OIDC externo, vincula cuenta o aprovisiona usuario JIT (US-11)
+              Banderas:
+                -p, --provider <id>         Proveedor OIDC: google | microsoft (Requerido)
+                --code <code>               Código de autorización externo o código dev_* (Requerido)
+                --state <state>             Token state firmado anti-CSRF (Requerido)
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity federation login --provider google --tenant acme-corp --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback
+  identity federation login -p microsoft -t acme-corp -r https://portal.angelpixel.io/callback
+  identity federation callback --provider google --code "dev_google_jit_2026" --state "$STATE"
+  identity federation callback --provider google --code "dev_google_link_2026" --state "$STATE"
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO FEDERATION ---
+async function handleFederationDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printFederationHelp();
+    return;
+  }
+
+  if (action === 'login') {
+    const provider = flags.provider || flags.p;
+    const tenantId = flags.tenant || flags['tenant-id'] || flags.t;
+    const redirectUri = flags['redirect-uri'] || flags.r;
+    const clientId = flags['client-id'] || flags.c;
+    const loginHint = flags['login-hint'];
+    const prompt = flags.prompt;
+
+    if (!provider) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --provider (-p) es obligatoria (google | microsoft).`);
+      process.exit(1);
+    }
+    if (!tenantId) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --tenant (-t) es obligatoria.`);
+      process.exit(1);
+    }
+    if (!redirectUri) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --redirect-uri (-r) es obligatoria.`);
+      process.exit(1);
+    }
+
+    const qs = new URLSearchParams({
+      tenant_id: String(tenantId),
+      redirect_uri: String(redirectUri),
+      format: 'json',
+    });
+    if (clientId) qs.set('client_id', String(clientId));
+    if (loginHint) qs.set('login_hint', String(loginHint));
+    if (prompt) qs.set('prompt', String(prompt));
+
+    const res = await requestHttp(
+      'GET',
+      `/api/v1/auth/federation/${encodeURIComponent(String(provider))}/login?${qs.toString()}`,
+      { baseUrl }
+    );
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'callback') {
+    const provider = flags.provider || flags.p;
+    const code = flags.code;
+    const state = flags.state;
+
+    if (!provider) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --provider (-p) es obligatoria (google | microsoft).`);
+      process.exit(1);
+    }
+    if (!code) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --code es obligatoria.`);
+      process.exit(1);
+    }
+    if (!state) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --state es obligatoria.`);
+      process.exit(1);
+    }
+
+    const res = await requestHttp(
+      'POST',
+      `/api/v1/auth/federation/${encodeURIComponent(String(provider))}/callback`,
+      {
+        baseUrl,
+        body: {
+          code: String(code),
+          state: String(state),
+        },
+      }
+    );
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso federation. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
+}
+
 // --- FUNCIÓN PRINCIPAL (ENTRYPOINT) ---
 async function main() {
   const parsed = parseArgs(process.argv.slice(2));
@@ -746,6 +860,10 @@ async function main() {
 
     case 'session':
       await handleSessionDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    case 'federation':
+      await handleFederationDomain(parsed.action, parsed.flags, baseUrl, rawJson);
       break;
 
     default:

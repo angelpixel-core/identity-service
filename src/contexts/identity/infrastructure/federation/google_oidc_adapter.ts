@@ -73,6 +73,9 @@ export class GoogleOidcAdapter implements ExternalIdentityProviderPort {
       redirect_uri: params.redirectUri,
       client_id: this.clientId,
       client_secret: this.clientSecret,
+      ...(params.nonce && process.env.NODE_ENV !== 'production' && params.code.startsWith('dev_')
+        ? { nonce: params.nonce }
+        : {}),
     });
 
     const tokenResponse = await this.httpClient(this.tokenUrl, {

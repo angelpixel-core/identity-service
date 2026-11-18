@@ -80,6 +80,9 @@ export class MicrosoftEntraAdapter implements ExternalIdentityProviderPort {
       code: params.code,
       redirect_uri: params.redirectUri,
       grant_type: 'authorization_code',
+      ...(params.nonce && process.env.NODE_ENV !== 'production' && params.code.startsWith('dev_')
+        ? { nonce: params.nonce }
+        : {}),
     });
 
     const tokenResponse = await this.httpClient(this.tokenUrl, {
