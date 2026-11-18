@@ -415,18 +415,32 @@ GET http://localhost:4000/api/v1/auth/me
 
 Un atacante intenta inyectar sentencias SQL para eludir el aislamiento en `X-Tenant-ID`:
 
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity auth me \
+  --tenant "alpha-corp'; DROP TABLE users; --" \
+  --token "$TOKEN_ACME"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
 ```bash
 curl -i -X GET http://localhost:4000/api/v1/auth/me \
   -H "Authorization: Bearer $TOKEN_ACME" \
   -H "X-Tenant-ID: alpha-corp'; DROP TABLE users; --"
 ```
+</details>
 
-##### Respuesta de Validación Obtenida:
-```http
-HTTP/1.1 400 Bad Request
-Content-Type: application/json; charset=utf-8
+##### Respuesta de Validación Obtenida (HTTP 400 Bad Request):
+```text
+HTTP/1.1 400 Bad Request [36ms]
+GET http://localhost:4000/api/v1/auth/me
 
-{"error":"Invalid tenantId format in x-tenant-id header"}
+{
+  "error": "Invalid tenantId format in x-tenant-id header"
+}
 ```
 
 ---
