@@ -285,16 +285,30 @@ sequenceDiagram
 
 ---
 
-### 2. Recetas Interactivas cURL Paso a Paso
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
-Puedes reproducir los tres vectores de ataque directamente contra el entorno en vivo.
+Puedes reproducir los tres vectores de ataque directamente contra el entorno en vivo utilizando la CLI oficial o `cURL`:
 
 #### Paso 0: Obtención del Token de Autenticación para `acme-corp` (`$TOKEN_ACME`)
 
 Para ejecutar los vectores de prueba de seguridad, primero obtenemos un token JWT Bearer emitido legítimamente para un usuario del inquilino `acme-corp`:
 
+**Comando CLI Oficial en Tubería UNIX (`./bin/identity`):**
+
 ```bash
-# 1. Registrar usuario de prueba dinámico en acme-corp y exportar TOKEN_ACME
+export TOKEN_ACME=$(./bin/identity auth register \
+  --tenant acme-corp \
+  --email "security.tester.$(date +%s)@acme-corp.com" \
+  --password "EnterprisePassword2026!" \
+  --raw-json | jq -r .accessToken)
+
+echo "TOKEN_ACME=$TOKEN_ACME"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
 export TOKEN_ACME=$(curl -s -X POST http://localhost:4000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -H "X-Tenant-ID: acme-corp" \
@@ -303,9 +317,9 @@ export TOKEN_ACME=$(curl -s -X POST http://localhost:4000/api/v1/auth/register \
     \"password\": \"EnterprisePassword2026!\"
   }" | jq -r .accessToken)
 
-# 2. Confirmar que el token se generó correctamente
 echo "TOKEN_ACME=$TOKEN_ACME"
 ```
+</details>
 
 ##### Inspección del Payload Criptográfico del JWT:
 Al inspeccionar el JWT emitido, se observa cómo el claim `tenantId` queda fijado criptográficamente en el payload mediante la firma del servidor:

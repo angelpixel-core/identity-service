@@ -189,7 +189,7 @@ function printGeneralHelp() {
 Uso: identity <recurso> <accion> [banderas]
 
 ${colors.bold}Recursos Disponibles:${colors.reset}
-  ${colors.cyan}auth${colors.reset}       Gestión de usuarios y autenticación (register, me)
+  ${colors.cyan}auth${colors.reset}       Gestión de usuarios y autenticación (register, me, update-user)
   ${colors.cyan}client${colors.reset}     Gobernanza y validación de clientes OAuth2 (validate)
   ${colors.cyan}token${colors.reset}      Emisión y canje de tokens OAuth2 (m2m, exchange)
   ${colors.cyan}oidc${colors.reset}       Protocolo OpenID Connect (discovery, jwks, authorize)
@@ -204,6 +204,7 @@ ${colors.bold}Opciones Globales:${colors.reset}
 ${colors.bold}Ejemplos:${colors.reset}
   identity auth register --tenant acme-corp --email user@acme.com --password "Secret2026!"
   identity auth me --tenant acme-corp --token "$TOKEN"
+  identity auth update-user --tenant acme-corp --token "$TOKEN" --user-id "$USER_ID" --name "Nuevo Nombre"
   identity client validate --client-id portal-web --origin https://portal.angelpixel.io
   identity token m2m --client-id m2m-service-app --client-secret "$SECRET"
   identity token exchange --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback --code "$CODE" --verifier "$VERIFIER"
@@ -219,21 +220,29 @@ function printAuthHelp() {
   console.log(`${colors.bold}Uso: identity auth <accion> [banderas]${colors.reset}
 
 ${colors.bold}Acciones:${colors.reset}
-  ${colors.cyan}register${colors.reset}    Registra un nuevo usuario en la organización
-              Banderas:
-                --tenant <id>       ID del inquilino (Requerido)
-                --email <email>     Correo electrónico (Requerido)
-                --password <pwd>    Contraseña (Requerido)
-                --name <name>       Nombre completo (Opcional)
+  ${colors.cyan}register${colors.reset}     Registra un nuevo usuario en la organización
+               Banderas:
+                 --tenant <id>       ID del inquilino (Requerido)
+                 --email <email>     Correo electrónico (Requerido)
+                 --password <pwd>    Contraseña (Requerido)
+                 --name <name>       Nombre completo (Opcional)
 
-  ${colors.cyan}me${colors.reset}          Consulta el perfil del usuario autenticado (Cache-Aside)
-              Banderas:
-                --tenant <id>       ID del inquilino (Requerido)
-                --token <jwt>       Token de acceso Bearer (Requerido)
+  ${colors.cyan}me${colors.reset}           Consulta el perfil del usuario autenticado (Cache-Aside)
+               Banderas:
+                 --tenant <id>       ID del inquilino (Requerido)
+                 --token <jwt>       Token de acceso Bearer (Requerido)
+
+  ${colors.cyan}update-user${colors.reset}  Actualiza atributos de un usuario por ID (Sujeto a guardia RLS y Cross-Tenant)
+               Banderas:
+                 --tenant <id>       ID del inquilino (Requerido)
+                 --token <jwt>       Token de acceso Bearer (Requerido)
+                 --user-id <uuid>    ID del usuario objetivo (Requerido)
+                 --name <name>       Nuevo nombre a aplicar (Opcional)
 
 ${colors.bold}Ejemplos:${colors.reset}
   identity auth register --tenant acme-corp --email dev@acme.com --password "EnterprisePassword2026!"
   identity auth me --tenant acme-corp --token eyJhbGciOi...
+  identity auth update-user --tenant acme-corp --token "$TOKEN" --user-id 4476ffac-2423-444b-8342-efbfe4dbaeba --name "Mutacion"
 `);
 }
 
@@ -245,7 +254,7 @@ async function handleAuthDomain(action, flags, baseUrl, rawJson) {
   }
 
   if (action === 'register') {
-    const tenant = flags.tenant || flags.t;
+    const tenant = flags.tenant || flags['tenant-id'] || flags.t;
     const email = flags.email || flags.e;
     const password = flags.password || flags.p;
     const name = flags.name || flags.n;
@@ -279,7 +288,7 @@ async function handleAuthDomain(action, flags, baseUrl, rawJson) {
   }
 
   if (action === 'me') {
-    const tenant = flags.tenant || flags.t;
+    const tenant = flags.tenant || flags['tenant-id'] || flags.t;
     const token = flags.token;
 
     if (!tenant) {
@@ -297,6 +306,38 @@ async function handleAuthDomain(action, flags, baseUrl, rawJson) {
         'X-Tenant-ID': String(tenant),
         Authorization: `Bearer ${String(token).replace(/^Bearer\s+/i, '')}`,
       },
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'update-user') {
+    const tenant = flags.tenant || flags['tenant-id'] || flags.t;
+    const token = flags.token;
+    const userId = flags['user-id'] || flags.id || flags.u;
+    const name = flags.name || flags.n;
+
+    if (!tenant) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --tenant es obligatoria para actualizar un usuario.`);
+      process.exit(1);
+    }
+    if (!token) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --token es obligatoria para actualizar un usuario.`);
+      process.exit(1);
+    }
+    if (!userId) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --user-id es obligatoria para actualizar un usuario.`);
+      process.exit(1);
+    }
+
+    const res = await requestHttp('PATCH', `/api/v1/users/${encodeURIComponent(String(userId))}`, {
+      baseUrl,
+      headers: {
+        'X-Tenant-ID': String(tenant),
+        Authorization: `Bearer ${String(token).replace(/^Bearer\s+/i, '')}`,
+      },
+      body: { name: name ? String(name) : 'Updated User' },
     });
 
     renderResponse(res, rawJson);
