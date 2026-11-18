@@ -381,9 +381,20 @@ sequenceDiagram
 
 ---
 
-### 2. Recetas Interactivas cURL Paso a Paso
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
-#### Modo 1: Autenticación con Payload JSON en el Body
+#### Modo 1: Autenticación con Payload JSON en el Body (HTTP 200 OK)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity token m2m \
+  --client-id m2m-service-app \
+  --client-secret "ValidSecret123!_SuperSecureSecretForTesting_2026"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
@@ -394,9 +405,13 @@ curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
     "client_secret": "ValidSecret123!_SuperSecureSecretForTesting_2026"
   }'
 ```
+</details>
 
 ##### Respuesta Real Obtenida (HTTP 200 OK):
-```json
+```text
+HTTP/1.1 200 OK [112ms]
+POST http://localhost:4000/api/v1/oauth2/token
+
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJtMm0tc2VydmljZS1hcHAiLCJpc3MiOiJodHRwczovL2F1dGguYW5nZWxwaXhlbC5pbyIsImF1ZCI6Imh0dHBzOi8vYXBpLmFuZ2VscGl4ZWwuaW8iLCJzdWIiOiJtMm0tc2VydmljZS1hcHAiLCJjbGllbnRfaWQiOiJtMm0tc2VydmljZS1hcHAiLCJ0b2tlbl90eXBlIjoiQmVhcmVyIiwianRpIjoiYzVhMmQzZGQtNzNkOS00OTFjLTlkNzktODljMTljYjA3MDMyIiwic2NvcGUiOiJpZGVudGl0eTpyZWFkIGlkZW50aXR5OndyaXRlIGF1ZGl0OmxvZyIsImlhdCI6MTc5NDkzNDAwOCwiZXhwIjoxNzk0OTM3NjA4fQ.aMSO06Cct1_cDTEnOXlbCzemxjLSJ39aKO75sJYWEd8",
   "token_type": "Bearer",
