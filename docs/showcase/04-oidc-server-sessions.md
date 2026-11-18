@@ -11,7 +11,7 @@ user_stories:
     status: "completed"
   - id: "US-09"
     name: "Rotación de Refresh Tokens & Revocación de Sesiones"
-    status: "pending"
+    status: "completed"
 architecture_pattern: "Vertical Slice + Hexagonal (DDD) + ADR-0006"
 security_standards:
   - "OpenID Connect Core 1.0 & Discovery (RFC 8414)"
@@ -37,7 +37,7 @@ tags:
 [![RFC 8414](https://img.shields.io/badge/RFC%208414-Discovery%20Metadata-blue.svg)](#)
 [![RFC 7517](https://img.shields.io/badge/RFC%207517-JWKS%20RS256-green.svg)](#)
 [![Security Standard](https://img.shields.io/badge/Security-Stateless%20Verification-red.svg)](#)
-[![Status](https://img.shields.io/badge/Status-In%20Progress-yellow.svg)](#)
+[![Status](https://img.shields.io/badge/Status-Completed-success.svg)](#)
 
 Este capítulo documenta la implementación de `identity-service` como un **Proveedor de Identidad OpenID Connect (IdP / OIDC Authorization Server)** conforme a los estándares de la industria. Provee interoperabilidad completa sin acoplamiento técnico, delegando la emisión y verificación de identidades en primitivas criptográficas asimétricas y flujos de autorización modernos.
 
@@ -49,7 +49,7 @@ Este capítulo documenta la implementación de `identity-service` como un **Prov
 | :--- | :--- | :---: |
 | **US-07** | Servidor OIDC, Gestión Criptográfica de Claves y Endpoints de Descubrimiento JWKS | ✅ En Producción |
 | **US-08** | Flujo de Autorización OAuth2 con PKCE y Consentimiento de Usuario | ✅ En Producción |
-| **US-09** | Rotación Deslizante de Refresh Tokens con Cookies Seguras HttpOnly | ⏳ Planificado |
+| **US-09** | Rotación Deslizante de Refresh Tokens con Cookies Seguras HttpOnly | ✅ En Producción |
 
 ---
 
@@ -584,6 +584,88 @@ npx jest tests/acceptance/step_defs/test_oauth2_pkce_flow_steps.ts
 - **Invariante 1:** Rechazo obligatorio del método degradado `plain`, admitiendo exclusivamente `S256`.
 - **Invariante 2:** Validación en tiempo constante (`crypto.timingSafeEqual`) del par `code_verifier` / `code_challenge`.
 - **Invariante 3:** Consumo atómico de un solo uso (*Single-Use*) y expiración estricta a los 60 segundos.
+
+---
+
+## 🔄 US-09: Rotación Deslizante de Refresh Tokens (RFC 6819) & Revocación de Sesiones (RFC 7009)
+
+### 1. Arquitectura de Rotación 1-a-1, Detección de Reúso y Cookies HttpOnly
+
+Para preservar una experiencia de usuario fluida sin sacrificar la seguridad mediante Access Tokens de larga duración, `identity-service` combina **Access Tokens efímeros (TTL de 15 minutos / 900 segundos)** con **Refresh Tokens sometidos a Rotación Estricta 1-a-1 (Refresh Token Rotation - RTR)** conforme a **RFC 6749 §6** y **RFC 6819 §5.2.2.3**:
+
+1. **Almacenamiento por Hash SHA-256:** El servidor jamás persiste el Refresh Token en texto plano; calcula su huella `SHA-256` y la indexa en el agregado `RefreshSession` vinculada a un identificador de linaje (`familyId`).
+2. **Rotación Estricta 1-a-1:** Cada vez que un cliente presenta un Refresh Token activo en `POST /api/v1/oauth2/refresh`, la sesión actual transiciona irreversiblemente a estado `consumed` y se emite una sesión hija (`status: 'active'`) dentro de la misma `familyId`.
+3. **Detección Automática de Compromiso (Token Family Revocation):** Si un token ya marcado como `consumed` vuelve a presentarse (indicando que el token fue exfiltrado y tanto el atacante como el usuario legítimo intentaron usarlo), el servidor invalida de forma inmediata **toda la familia de sesiones** (`revokeFamily`), forzando la re-autenticación total y registrando una alerta de auditoría forense (`refresh_token_reuse_detected`).
+4. **Transporte Blindado contra XSS (RFC 6265bis):** El nuevo Refresh Token rotado se inyecta en la cabecera `Set-Cookie: refresh_token=<token>; Path=/api/v1/oauth2; HttpOnly; SameSite=Strict`, impidiendo su lectura desde JavaScript malicioso en el navegador.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Cliente (SPA / CLI)
+    participant Gateway as Express API Gateway
+    participant SessionCtrl as OAuth2SessionController
+    participant RotateHandler as RotateRefreshTokenCommandHandler
+    participant RevokeHandler as RevokeSessionCommandHandler
+    participant SessionRepo as RefreshSessionRepository
+    participant KeyProvider as AsymmetricKeyProvider (RS256)
+
+    Note over Client,KeyProvider: Flujo 1: Rotación Normal 1-a-1 (Sesión Activa)
+    Client->>Gateway: POST /api/v1/oauth2/refresh (refresh_token_1, client_id)
+    Gateway->>SessionCtrl: refresh(req, res)
+    SessionCtrl->>RotateHandler: execute({ refreshToken, clientId })
+    RotateHandler->>SessionRepo: findByTokenHash(SHA256(refresh_token_1))
+    SessionRepo-->>RotateHandler: RefreshSession (status: active, family: fam-01)
+    RotateHandler->>SessionRepo: save(parent: consumed) & save(child_2: active)
+    RotateHandler->>KeyProvider: signToken(accessPayload, ttl: 900s)
+    KeyProvider-->>SessionCtrl: HTTP 200 OK (access_token + Set-Cookie: refresh_token_2 HttpOnly)
+
+    Note over Client,KeyProvider: Flujo 2: Detección de Reúso y Revocación de Familia (RFC 6819)
+    Client->>Gateway: POST /api/v1/oauth2/refresh (Replay de refresh_token_1 ya consumido)
+    Gateway->>RotateHandler: execute({ refreshToken: refresh_token_1 })
+    RotateHandler->>SessionRepo: findByTokenHash(SHA256(refresh_token_1))
+    SessionRepo-->>RotateHandler: RefreshSession (status: consumed, family: fam-01)
+    RotateHandler->>SessionRepo: revokeFamily("fam-01", "reuse_detected")
+    RotateHandler-->>Client: HTTP 401 Unauthorized (invalid_grant: Session compromised and revoked)
+
+    Note over Client,KeyProvider: Flujo 3: Cierre de Sesión Explícito (Logout RFC 7009)
+    Client->>Gateway: POST /api/v1/oauth2/revoke (refresh_token, reason: "user_logout")
+    Gateway->>RevokeHandler: execute({ refreshToken, reason })
+    RevokeHandler->>SessionRepo: revokeFamily(familyId, "user_logout")
+    RevokeHandler-->>Client: HTTP 200 OK (Clear-Cookie + "Session revoked successfully")
+```
+
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Client` (Cliente SPA / CLI)** | `actor` | Aplicación cliente o herramienta `./bin/identity` que solicita la renovación de credenciales o el cierre explícito de la sesión. |
+| **`Gateway` (Express API Gateway)** | `participant` | Pasarela HTTP que enruta las peticiones hacia `/api/v1/oauth2/refresh` y `/api/v1/oauth2/revoke`. |
+| **`SessionCtrl` (`OAuth2SessionController`)** | `participant` | Controlador REST encargado de extraer cookies/body y gestionar las cabeceras seguras `Set-Cookie` (`HttpOnly`, `SameSite=Strict`) y `Clear-Cookie`. |
+| **`RotateHandler` (`RotateRefreshTokenCommandHandler`)** | `participant` | Caso de uso que implementa la máquina de estados de rotación 1-a-1 y dispara la revocación de familia ante detección de reúso. |
+| **`RevokeHandler` (`RevokeSessionCommandHandler`)** | `participant` | Caso de uso que ejecuta la revocación idempotente de credenciales conforme al estándar RFC 7009. |
+| **`SessionRepo` (`RefreshSessionRepository`)** | `participant` | Repositorio con indexación dual (`id` y `tokenHash`) y operación atómica `revokeFamily(familyId)` para invalidar árboles completos de sesiones. |
+| **`KeyProvider` (`AsymmetricKeyProvider` RS256)** | `participant` | Proveedor criptográfico RSA que firma los nuevos `access_token` e `id_token` emitidos tras cada rotación legítima. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 18)
+
+1. **Paso 1 (`Client -> Gateway`):** El cliente envía `POST /api/v1/oauth2/refresh` presentando su `refresh_token_1` activo (vía cookie `HttpOnly` o cuerpo JSON).
+2. **Paso 2 (`Gateway -> SessionCtrl`):** La pasarela transfiere la solicitud al método `refresh` del controlador de sesiones.
+3. **Paso 3 (`SessionCtrl -> RotateHandler`):** El controlador invoca `RotateRefreshTokenCommandHandler` con el token recibido y metadatos de red (`ip`, `userAgent`).
+4. **Paso 4 (`RotateHandler -> SessionRepo`):** Se calcula el hash `SHA-256` del token y se busca la sesión correspondiente en el repositorio.
+5. **Paso 5 (`SessionRepo -->> RotateHandler`):** El repositorio retorna el agregado `RefreshSession` verificándose que su estado sea `active` y no haya expirado.
+6. **Paso 6 (`RotateHandler -> SessionRepo`):** Se ejecuta `session.rotate()`, marcando el token padre como `consumed` y persistiendo un nuevo token hijo (`child_2`) como `active` dentro de la misma familia `fam-01`.
+7. **Paso 7 (`RotateHandler -> KeyProvider`):** Se solicita la firma de un nuevo `access_token` RS256 con vigencia de 900 segundos (15 minutos).
+8. **Paso 8 (`KeyProvider -->> SessionCtrl`):** El controlador despacha `HTTP 200 OK` con el nuevo JWT en el cuerpo y el nuevo `refresh_token_2` encapsulado en la cabecera `Set-Cookie` (`HttpOnly; SameSite=Strict`).
+9. **Paso 9 (`Client -> Gateway` [Escenario de Reúso]):** Un atacante (o cliente desincronizado) intenta reutilizar el `refresh_token_1` que ya fue consumido en el Paso 6.
+10. **Paso 10 (`Gateway -> RotateHandler`):** La solicitud llega al manejador de rotación.
+11. **Paso 11 (`RotateHandler -> SessionRepo`):** Se busca la sesión por el hash de `refresh_token_1`.
+12. **Paso 12 (`SessionRepo -->> RotateHandler`):** El repositorio devuelve la sesión con estado `status: 'consumed'`.
+13. **Paso 13 (`RotateHandler -> SessionRepo`):** Al detectar `session.isConsumed() === true`, el manejador ejecuta inmediatamente `revokeFamily("fam-01", "reuse_detected")`, invalidando también a `child_2` y cualquier descendiente activo.
+14. **Paso 14 (`RotateHandler -->> Client`):** Se rechaza la petición con `HTTP 401 Unauthorized` (`invalid_grant: Refresh token has already been consumed. Session compromised and revoked.`).
+15. **Paso 15 (`Client -> Gateway` [Cierre de Sesión RFC 7009]):** Cuando el usuario cierra sesión explícitamente, envía `POST /api/v1/oauth2/revoke` con su token y la razón `"user_logout"`.
+16. **Paso 16 (`Gateway -> RevokeHandler`):** El Gateway delega la solicitud en el caso de uso `RevokeSessionCommandHandler`.
+17. **Paso 17 (`RevokeHandler -> SessionRepo`):** El manejador revoca la sesión y ejecuta `revokeFamily(familyId, "user_logout")` sobre toda la familia de tokens.
+18. **Paso 18 (`RevokeHandler -->> Client`):** El controlador emite la instrucción `Clear-Cookie` sobre `refresh_token` y responde de forma idempotente con `HTTP 200 OK` (`{ message: "Session revoked successfully" }`).
 
 ---
 
