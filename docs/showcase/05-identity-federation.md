@@ -239,4 +239,81 @@ npx jest tests/unit/identity/infrastructure/federation/ tests/unit/identity/appl
 
 ---
 
+## 🔗 US-11: Vinculación Automática de Cuentas (Account Linking) & Aprovisionamiento JIT
+
+### 1. Arquitectura del Árbol de Resolución de Identidad y Defensa Anti-Pre-Hijacking
+
+Una vez que `ProcessFederatedCallbackCommandHandler` valida la firma RS256 del `id_token` externo y el `state` anti-CSRF, el caso de uso **`LinkOrProvisionFederatedUserCommandHandler`** ejecuta un árbol determinista de tres vías para traducir la identidad externa en una sesión nativa multi-inquilino:
+
+1. **Barrera Anti-Pre-Hijacking (`email_verified === true`):** Nunca se vincula ni aprovisiona una cuenta si el proveedor externo informa `email_verified: false`. Esto bloquea ataques de secuestro previo de cuentas (*Pre-Account Takeover*), donde un atacante registra un correo ajeno sin verificar en un IdP externo.
+2. **Rama A — Identidad Federada Preexistente (`isNewUser: false, linked: false`):** Si el par `(provider, externalSubjectId)` ya existe en la tabla `federated_identities`, se verifica que pertenezca al mismo `tenantId` (bloqueando violaciones cross-tenant) y se autentica directamente al usuario vinculado.
+3. **Rama B — Vinculación Automática por Correo Verificado / Account Linking (`isNewUser: false, linked: true`):** Si es la primera vez que se presenta ese `(provider, externalSubjectId)`, pero ya existe un usuario local en el mismo inquilino con el mismo correo electrónico verificado, el sistema crea el vínculo `FederatedIdentity` apuntando al `userId` existente sin duplicar el registro de usuario. Un mismo usuario puede vincular simultáneamente Google y Microsoft.
+4. **Rama C — Aprovisionamiento Just-In-Time / JIT Provisioning (`isNewUser: true, linked: true`):** Si no existe ni el vínculo federado ni el correo en el inquilino activo, se instancia automáticamente el agregado `User.createFederatedUser({ email, tenantId })` (con marcador `EXTERNAL_FEDERATED_IDENTITY_NO_LOCAL_PASSWORD`), se persiste el vínculo en `federated_identities` bajo protección PostgreSQL RLS y se emite la sesión nativa (`access_token` + `RefreshSession` HttpOnly).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Controller as FederationController (/callback)
+    participant LinkHandler as LinkOrProvisionFederatedUserCommandHandler
+    participant FedRepo as FederatedIdentityRepository (RLS)
+    participant UserRepo as UserRepository (RLS)
+    participant TokenProvider as JwtTokenAdapter
+    participant SessionRepo as RefreshSessionRepository
+
+    Controller->>LinkHandler: execute({ userProfile, tenantId, clientId, ip })
+    LinkHandler->>LinkHandler: Validar userProfile.emailVerified === true (Guardia Anti-Pre-Hijacking)
+    LinkHandler->>FedRepo: findByProviderAndSubject(provider, externalSubjectId)
+    FedRepo-->>LinkHandler: existingIdentity | null
+
+    alt Rama A: Vínculo Federado Preexistente
+        LinkHandler->>UserRepo: findById(existingIdentity.userId, tenantId)
+        UserRepo-->>LinkHandler: User Aggregate (isNewUser: false, linked: false)
+    else Sin Vínculo Previo (Consultar por Email en el Inquilino)
+        LinkHandler->>UserRepo: findByEmail(email, tenantId)
+        UserRepo-->>LinkHandler: existingUserByEmail | null
+        alt Rama B: Account Linking (Usuario Local Existente)
+            LinkHandler->>FedRepo: save(FederatedIdentity { userId: existingUser.id }) [isNewUser: false, linked: true]
+        else Rama C: Just-In-Time (JIT) Provisioning (Nuevo Usuario)
+            LinkHandler->>UserRepo: save(User.createFederatedUser({ email, tenantId }))
+            LinkHandler->>FedRepo: save(FederatedIdentity { userId: newUser.id }) [isNewUser: true, linked: true]
+        end
+    end
+
+    LinkHandler->>TokenProvider: generateToken(accessPayload con claim provider)
+    TokenProvider-->>LinkHandler: access_token (JWT)
+    LinkHandler->>SessionRepo: save(RefreshSession) [Sliding Session 30d]
+    LinkHandler-->>Controller: { accessToken, refreshToken, user, isNewUser, linked }
+```
+
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Controller` (`FederationController`)** | `actor` | Controlador REST que recibe el perfil externo verificado desde `ProcessFederatedCallbackCommandHandler` y gestiona la cookie `HttpOnly` de sesión. |
+| **`LinkHandler` (`LinkOrProvisionFederatedUserCommandHandler`)** | `participant` | Orquestador de aplicación que ejecuta las reglas de dominio de vinculación de cuentas, aprovisionamiento JIT y aislamiento de inquilinos. |
+| **`FedRepo` (`FederatedIdentityRepository`)** | `participant` | Repositorio PostgreSQL de la tabla `federated_identities` con índices únicos `(provider, external_subject_id)` y `(user_id, provider)` bajo política RLS. |
+| **`UserRepo` (`UserRepository`)** | `participant` | Repositorio PostgreSQL de la tabla `users` aislado por `tenant_id` mediante Row-Level Security. |
+| **`TokenProvider` (`JwtTokenAdapter`)** | `participant` | Motor de firma que emite el `access_token` nativo incluyendo los claims `tenant_id`, `client_id` y `provider`. |
+| **`SessionRepo` (`RefreshSessionRepository`)** | `participant` | Almacén de sesiones deslizantes que registra el `RefreshSession` inicial de la familia para permitir rotaciones posteriores (US-09). |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 15)
+
+1. **Paso 1 (`Controller -> LinkHandler`):** Tras validar el callback OIDC, el controlador invoca `LinkOrProvisionFederatedUserCommandHandler` con el `userProfile` verificado y el `tenantId` extraído del `state`.
+2. **Paso 2 (`LinkHandler -> LinkHandler`):** Se verifica la invariante crítica `userProfile.emailVerified === true`. Si es falsa, se registra el evento de auditoría `federation_callback_failed` y se aborta el flujo con `HTTP 401 invalid_grant`.
+3. **Paso 3 (`LinkHandler -> FedRepo`):** Se consulta `findByProviderAndSubject(provider, externalSubjectId)` para determinar si la identidad externa ya fue vinculada anteriormente.
+4. **Paso 4 (`FedRepo -->> LinkHandler`):** El repositorio retorna el agregado `FederatedIdentity` o `null`.
+5. **Paso 5 (`LinkHandler -> UserRepo` [Rama A: Vínculo Preexistente]):** Si el vínculo existe, se comprueba que pertenezca al `tenantId` activo (`belongsToTenant`) y se recupera el usuario local mediante `findById`.
+6. **Paso 6 (`UserRepo -->> LinkHandler` [Rama A]):** Se obtiene el agregado `User` existente marcando los indicadores `isNewUser = false` y `linked = false`.
+7. **Paso 7 (`LinkHandler -> UserRepo` [Ramas B/C: Sin Vínculo Previo]):** Si no existe vínculo previo para ese proveedor, se busca en el inquilino actual si existe un usuario local con el mismo correo verificado (`findByEmail(email, tenantId)`).
+8. **Paso 8 (`UserRepo -->> LinkHandler`):** El repositorio devuelve el usuario local coincidente o `null`.
+9. **Paso 9 (`LinkHandler -> FedRepo` [Rama B: Account Linking]):** Si el usuario local ya existía en el inquilino, se crea y persiste el nuevo agregado `FederatedIdentity` asociándolo al `userId` existente (`isNewUser = false, linked = true`).
+10. **Paso 10 (`LinkHandler -> UserRepo` [Rama C: JIT Provisioning]):** Si el correo no existía en el inquilino, se crea un nuevo usuario sin contraseña local mediante la factoría `User.createFederatedUser({ email, tenantId })` y se guarda en `users`.
+11. **Paso 11 (`LinkHandler -> FedRepo` [Rama C: JIT Provisioning]):** Se persiste el vínculo `FederatedIdentity` para el usuario recién aprovisionado (`isNewUser = true, linked = true`).
+12. **Paso 12 (`LinkHandler -> TokenProvider`):** Se solicita la emisión del `access_token` nativo con los claims de identidad multi-tenant y el atributo `provider`.
+13. **Paso 13 (`TokenProvider -->> LinkHandler`):** El proveedor devuelve el JWT firmado.
+14. **Paso 14 (`LinkHandler -> SessionRepo`):** Se crea y almacena una nueva `RefreshSession` activa (TTL 30 días) para habilitar la rotación de tokens (US-09).
+15. **Paso 15 (`LinkHandler -->> Controller`):** Se retorna el resultado completo (`accessToken`, `refreshToken`, `user`, `isNewUser`, `linked`) y el controlador inyecta la cookie `HttpOnly; SameSite=Strict`.
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
