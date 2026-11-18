@@ -316,4 +316,241 @@ sequenceDiagram
 
 ---
 
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
+
+#### Paso 0: Generar Token `state` Criptográfico Activo (`$STATE_GOOGLE`)
+
+```bash
+export STATE_GOOGLE=$(./bin/identity federation login \
+  --provider google \
+  --tenant acme-corp \
+  --client-id portal-web \
+  --redirect-uri https://portal.angelpixel.io/callback \
+  --raw-json | jq -r .state)
+
+echo "STATE_GOOGLE=$STATE_GOOGLE"
+```
+
+---
+
+#### Escenario A: Aprovisionamiento Just-In-Time (JIT Provisioning) de Nuevo Usuario (`HTTP 200 OK`)
+
+Al recibir el callback para `valeria.mendoza@acme-corp.com` (quien ingresa por primera vez mediante Google SSO), el sistema crea automáticamente el usuario en `acme-corp`, vincula su `externalSubjectId` y emite una sesión nativa:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity federation callback \
+  --provider google \
+  --code "dev_google_jit_2026" \
+  --state "$STATE_GOOGLE"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/auth/federation/google/callback \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"code\": \"dev_google_jit_2026\",
+    \"state\": \"$STATE_GOOGLE\"
+  }"
+```
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK — `isNewUser: true, linked: true`):
+```text
+HTTP/1.1 200 OK [194ms]
+POST http://localhost:4000/api/v1/auth/federation/google/callback
+
+{
+  "status": "success",
+  "tokens": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "refresh_token": "02aec16c912e5a36a4faba69ce429dc28599ad635b1c147f2fa69f67cbfcc223"
+  },
+  "user": {
+    "id": "40f44b9e-d314-4dce-b11a-58eb360f1ddd",
+    "email": "valeria.mendoza@acme-corp.com",
+    "tenantId": "acme-corp"
+  },
+  "isNewUser": true,
+  "linked": true,
+  "userProfile": {
+    "provider": "google",
+    "externalSubjectId": "google-sub-jit-2026",
+    "email": "valeria.mendoza@acme-corp.com",
+    "emailVerified": true,
+    "name": "Valeria Mendoza (Google SSO)"
+  },
+  "statePayload": {
+    "tenantId": "acme-corp",
+    "clientId": "portal-web",
+    "redirectUri": "https://portal.angelpixel.io/callback",
+    "provider": "google"
+  }
+}
+```
+
+---
+
+#### Escenario B: Vinculación Automática a Cuenta Local Preexistente — Account Linking (`HTTP 200 OK`)
+
+Cuando `lead.architect@acme-corp.com` (usuario local registrado previamente en el Capítulo 01) inicia sesión con Google y correo verificado, el sistema vincula la identidad externa a su `userId` existente sin duplicar la cuenta (`isNewUser: false, linked: true`):
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity federation callback \
+  --provider google \
+  --code "dev_google_link_2026" \
+  --state "$STATE_GOOGLE"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/auth/federation/google/callback \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"code\": \"dev_google_link_2026\",
+    \"state\": \"$STATE_GOOGLE\"
+  }"
+```
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK — `isNewUser: false, linked: true`):
+```text
+HTTP/1.1 200 OK [115ms]
+POST http://localhost:4000/api/v1/auth/federation/google/callback
+
+{
+  "status": "success",
+  "tokens": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "refresh_token": "926115c7413cda0021731f024288b69d99a87d5141d15f2188722bc5064195c6"
+  },
+  "user": {
+    "id": "8efe4d17-eb52-47da-b166-bf04a1465639",
+    "email": "lead.architect@acme-corp.com",
+    "tenantId": "acme-corp"
+  },
+  "isNewUser": false,
+  "linked": true,
+  "userProfile": {
+    "provider": "google",
+    "externalSubjectId": "google-sub-linked-2026",
+    "email": "lead.architect@acme-corp.com",
+    "emailVerified": true,
+    "name": "Sofia Valenzuela (Linked Google)"
+  },
+  "statePayload": {
+    "tenantId": "acme-corp",
+    "clientId": "portal-web",
+    "redirectUri": "https://portal.angelpixel.io/callback",
+    "provider": "google"
+  }
+}
+```
+
+---
+
+#### Escenario C: Seguridad Negativa — Bloqueo Anti-Pre-Hijacking por Correo No Verificado (`HTTP 401 Unauthorized`)
+
+Si el `id_token` externo reporta `email_verified: false`, el servidor bloquea la vinculación y el aprovisionamiento:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity federation callback \
+  --provider google \
+  --code "dev_unverified_2026" \
+  --state "$STATE_GOOGLE"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/auth/federation/google/callback \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"code\": \"dev_unverified_2026\",
+    \"state\": \"$STATE_GOOGLE\"
+  }"
+```
+</details>
+
+##### Respuesta de Seguridad Obtenida (HTTP 401 Unauthorized):
+```text
+HTTP/1.1 401 Unauthorized [38ms]
+POST http://localhost:4000/api/v1/auth/federation/google/callback
+
+{
+  "error": "invalid_grant",
+  "error_description": "Google account email is not verified"
+}
+```
+
+---
+
+#### Escenario D: Seguridad Negativa — Rechazo por Firma `state` Anti-CSRF Alterada (`HTTP 400 Bad Request`)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity federation callback \
+  --provider google \
+  --code "dev_google_jit_2026" \
+  --state "tampered_payload.forged_hmac_signature"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST http://localhost:4000/api/v1/auth/federation/google/callback \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "dev_google_jit_2026",
+    "state": "tampered_payload.forged_hmac_signature"
+  }'
+```
+</details>
+
+##### Respuesta de Seguridad Obtenida (HTTP 400 Bad Request):
+```text
+HTTP/1.1 400 Bad Request [21ms]
+POST http://localhost:4000/api/v1/auth/federation/google/callback
+
+{
+  "error": "invalid_request",
+  "error_description": "Invalid state signature"
+}
+```
+
+---
+
+### 3. Cobertura de Pruebas Automatizadas (US-11)
+
+```bash
+# Suite Unitaria (Agregado FederatedIdentity y Caso de Uso JIT / Account Linking)
+npx jest tests/unit/identity/domain/federation/test_federated_identity_aggregate.ts tests/unit/identity/application/federation/test_link_or_provision_handler.ts
+
+# Especificación Ejecutable BDD / Gherkin
+npx jest tests/acceptance/step_defs/test_federated_account_linking_steps.ts
+```
+
+- **Invariante 1:** Creación Just-In-Time (JIT) sin duplicidad y con emisión de sesión nativa (`AccessToken` + `RefreshSession`).
+- **Invariante 2:** Vinculación multi-proveedor (Google + Microsoft Entra ID) hacia una misma identidad local por correo electrónico verificado.
+- **Invariante 3:** Rechazo estricto de correos con `email_verified: false` y bloqueo de violaciones cross-tenant con registro de auditoría forense.
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
