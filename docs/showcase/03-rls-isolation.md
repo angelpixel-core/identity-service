@@ -343,21 +343,36 @@ Al inspeccionar el JWT emitido, se observa cómo el claim `tenantId` queda fijad
 
 Un usuario legítimo del inquilino `acme-corp` intenta actualizar o consultar un ID de usuario que pertenece al inquilino `beta-corp`:
 
+**Comando CLI Oficial (`./bin/identity`):**
+
 ```bash
-# Token emitido para acme-corp consultando un ID ajeno
+./bin/identity auth update-user \
+  --tenant acme-corp \
+  --token "$TOKEN_ACME" \
+  --user-id "4476ffac-2423-444b-8342-efbfe4dbaeba" \
+  --name "Intento de Mutacion Ajena"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
 curl -i -X PATCH http://localhost:4000/api/v1/users/4476ffac-2423-444b-8342-efbfe4dbaeba \
   -H "Authorization: Bearer $TOKEN_ACME" \
   -H "X-Tenant-ID: acme-corp" \
   -H "Content-Type: application/json" \
   -d '{"name": "Intento de Mutacion Ajena"}'
 ```
+</details>
 
-##### Respuesta Real Obtenida:
-```http
-HTTP/1.1 404 Not Found
-Content-Type: application/json; charset=utf-8
+##### Respuesta Real Obtenida (HTTP 404 Not Found):
+```text
+HTTP/1.1 404 Not Found [166ms]
+PATCH http://localhost:4000/api/v1/users/4476ffac-2423-444b-8342-efbfe4dbaeba
 
-{"error":"User not found"}
+{
+  "error": "User not found"
+}
 ```
 
 ---
