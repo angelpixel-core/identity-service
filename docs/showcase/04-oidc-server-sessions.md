@@ -123,15 +123,31 @@ La siguiente captura en alta resolución certifica la respuesta estructurada de 
 
 ---
 
-### 3. Recetas Interactivas cURL Paso a Paso
+### 3. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
-Puedes interactuar directamente con los endpoints criptográficos expuestos en el entorno en vivo:
+Puedes interactuar directamente con los endpoints criptográficos expuestos en el entorno en vivo utilizando la CLI oficial o `cURL`:
 
 #### Receta 1: Inspeccionar el Documento de Descubrimiento OIDC (`GET /.well-known/openid-configuration`)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity oidc discovery
+```
+
+Para automatización en tuberías UNIX (extrayendo por ejemplo la URI del catálogo JWKS):
+
+```bash
+./bin/identity oidc discovery --raw-json | jq -r .jwks_uri
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
 curl -i http://localhost:4000/.well-known/openid-configuration
 ```
+</details>
 
 ##### Respuesta Real Obtenida (HTTP 200 OK):
 ```http
