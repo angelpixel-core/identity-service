@@ -472,6 +472,17 @@ Content-Length: 591
 
 #### Modo 3: Seguridad Negativa — Secreto Erróneo (HTTP 401 Unauthorized)
 
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity token m2m \
+  --client-id m2m-service-app \
+  --client-secret "ClaveCompletamenteErronea123!"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
   -H "Content-Type: application/json" \
@@ -481,9 +492,13 @@ curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
     "client_secret": "ClaveCompletamenteErronea123!"
   }'
 ```
+</details>
 
-##### Respuesta de Seguridad Obtenida:
-```json
+##### Respuesta de Seguridad Obtenida (HTTP 401 Unauthorized):
+```text
+HTTP/1.1 401 Unauthorized [98ms]
+POST http://localhost:4000/api/v1/oauth2/token
+
 {
   "error": "invalid_client",
   "error_description": "Client authentication failed: invalid client credentials"
