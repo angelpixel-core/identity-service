@@ -9,7 +9,7 @@ import { UserDatabaseModel } from '../../models/user/model';
  * Interfaz genérica para clientes de base de datos relacionales (pg.Pool, pg.Client).
  */
 export interface DatabaseClient {
-  query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }>;
+  query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[]; rowCount?: number | null }>;
 }
 
 /**
@@ -91,5 +91,19 @@ export class PostgresUserRepository implements UserRepositoryPort {
     }
 
     return UserMapper.toDomain(row);
+  }
+
+  /**
+   * Elimina físicamente un usuario por su id único dentro del contexto del tenant.
+   * Retorna true si una fila fue eliminada, false en caso contrario.
+   */
+  public async delete(id: string, tenantId: TenantId): Promise<boolean> {
+    const sql = `
+      DELETE FROM users
+      WHERE id = $1 AND tenant_id = $2;
+    `;
+    const params = [id, tenantId.getValue()];
+    const result = await this.db.query(sql, params);
+    return (result.rowCount ?? 0) > 0;
   }
 }

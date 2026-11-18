@@ -29,6 +29,7 @@ describe('Application Command Handler: UpdateUserProfileCommandHandler', () => {
       save: jest.fn(),
       findById: jest.fn(),
       findByEmail: jest.fn(),
+      delete: jest.fn(),
     };
 
     cacheProvider = {

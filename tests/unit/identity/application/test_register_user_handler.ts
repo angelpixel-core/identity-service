@@ -28,6 +28,7 @@ describe('Application Command Handler: RegisterUserCommandHandler', () => {
       save: jest.fn().mockResolvedValue(undefined),
       findById: jest.fn().mockResolvedValue(null),
       findByEmail: jest.fn().mockResolvedValue(null),
+      delete: jest.fn().mockResolvedValue(true),
     };
 
     hashProvider = {

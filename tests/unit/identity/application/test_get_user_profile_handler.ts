@@ -35,6 +35,7 @@ describe('Application Query Handler: GetUserProfileQueryHandler', () => {
       save: jest.fn(),
       findById: jest.fn(),
       findByEmail: jest.fn(),
+      delete: jest.fn(),
     };
 
     cacheProvider = {

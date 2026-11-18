@@ -29,6 +29,14 @@ describe('Application Secondary Ports (SPIs) Contracts', () => {
           null
         );
       }
+
+      async delete(id: string, tenantId: TenantId): Promise<boolean> {
+        const initialLength = this.users.length;
+        this.users = this.users.filter(
+          (u) => !(u.getId() === id && u.getTenantId().equals(tenantId))
+        );
+        return this.users.length < initialLength;
+      }
     }
 
     const repo: UserRepositoryPort = new InMemoryUserRepository();

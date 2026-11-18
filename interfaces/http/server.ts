@@ -106,6 +106,11 @@ class InMemoryUserRepository implements UserRepositoryPort {
     const key = `${tenantId.getValue()}:${id}`;
     return this.users.get(key) ?? null;
   }
+
+  public async delete(id: string, tenantId: TenantId): Promise<boolean> {
+    const key = `${tenantId.getValue()}:${id}`;
+    return this.users.delete(key);
+  }
 }
 
 export interface AppDependencies {

@@ -26,6 +26,7 @@ describe('Application Command Handler: LinkOrProvisionFederatedUserCommandHandle
       save: jest.fn().mockResolvedValue(undefined),
       findById: jest.fn().mockResolvedValue(null),
       findByEmail: jest.fn().mockResolvedValue(null),
+      delete: jest.fn().mockResolvedValue(true),
     };
 
     federatedIdentityRepo = new InMemoryFederatedIdentityRepository();
