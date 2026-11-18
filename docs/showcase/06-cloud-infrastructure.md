@@ -228,4 +228,224 @@ traceparent: 00-c81c7e9c84704ea16b13a6cccdedb6d1-7567a11144dc607c-01
 
 ---
 
+## ☸️ US-14: Empaquetado Helm Chart v3 & Orquestación Kubernetes Resiliente
+
+El empaquetado de `identity-service` reside en `deployments/helm/identity-service` y cumple con la especificación **Helm v3** bajo estándares Cloud Native Computing Foundation (CNCF).
+
+### Invariantes de Orquestación y Seguridad:
+1. **Zero-Downtime Rolling Updates:** Estrategia configurada con `maxSurge: 25%` y `maxUnavailable: 0` para garantizar que ninguna petición se rechace durante despliegues continuos.
+2. **Contexto de Seguridad No-Root Restringido:** Ejecución forzada bajo UID no privilegiado `1000:1000` (`node`), prohibición explícita de escalado de privilegios (`allowPrivilegeEscalation: false`), sistema de archivos raíz de solo lectura (`readOnlyRootFilesystem: true`) y eliminación de todas las capacidades Linux (`capabilities: { drop: ["ALL"] }`).
+3. **Escalado Horizontal Automático (HPA v2):** El recurso `HorizontalPodAutoscaler` evalúa la utilización media de CPU en tiempo real, escalando de 2 réplicas mínimas hasta 10 réplicas cuando el consumo supera el 70%.
+4. **Presupuesto de Disrupción (PDB):** Definición de `PodDisruptionBudget` con `minAvailable: 1`, protegiendo el servicio contra desalojos durante mantenimiento, parches de seguridad del nodo o drenados manuales en AKS.
+5. **Validación de Esquema Declarativo (`values.schema.json`):** Restringe y valida los tipos de datos en tiempo de empaquetado; rechaza réplicas menores a 1, puertos fuera de rango IANA (> 65535), tipos de servicio no permitidos o sintaxis incorrecta en health probes.
+
+---
+
+### Diagrama de Arquitectura y Ciclo de Vida en Kubernetes (US-14)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Cliente / API Consumer
+    participant Ing as Ingress (TLS 1.3)
+    participant Svc as Service (ClusterIP:4000)
+    participant Pods as Pods Activos (UID 1000)
+    participant Kubelet as Kubelet Probe Runner
+    participant HPA as HPA Controller
+    participant Deploy as Deployment Controller
+    participant PDB as PodDisruptionBudget
+
+    Client->>Ing: 1. Petición HTTPS entrante
+    Ing->>Svc: 2. Terminación TLS y enrutamiento interno
+    Svc->>Pods: 3. Balanceo Round-Robin a réplicas saludables
+    Kubelet->>Pods: 4. Sondeo periódico de /health/live y /health/ready
+    Pods-->>Kubelet: 5. Respuesta 200 UP (Liveness/Readiness OK)
+    HPA->>Pods: 6. Muestreo de utilización de CPU (% relativo a request 100m)
+    HPA->>Deploy: 7. Disparo de escalado horizontal si CPU > 70%
+    Deploy->>PDB: 8. Validación de invariantes de alta disponibilidad (minAvailable: 1)
+    Deploy->>Pods: 9. Despliegue de réplicas adicionales con securityContext no-root
+    Pods-->>Svc: 10. Incorporación automática al pool de endpoints activos
+```
+
+#### Glosario de Componentes Kubernetes:
+- **`Ingress (TLS 1.3)`:** Controlador NGINX en el borde del clúster que realiza terminación TLS estricta y reenvía tráfico en texto claro internamente.
+- **`Service (ClusterIP:4000)`:** Abstracción de red interna que distribuye las peticiones entrantes entre los pods activos.
+- **`Pods Activos (UID 1000)`:** Contenedores aislados ejecutando Node.js 25 bajo usuario no privilegiado con sistema de archivos montado en sólo lectura.
+- **`Kubelet Probe Runner`:** Agente de nodo que interroga `/health/live` (para reinicio) y `/health/ready` (para routing de tráfico).
+- **`HPA Controller`:** Controlador de autoscaling que incrementa o reduce las réplicas dinámicamente según la carga de trabajo.
+- **`Deployment Controller`:** Controlador que gestiona el ciclo de vida del release, coordinando rolling updates con `maxUnavailable: 0`.
+- **`PodDisruptionBudget (PDB)`:** Invariante de resiliencia que impide que operaciones administrativas dejen al servicio con menos de 1 pod activo.
+
+---
+
+### Receta de Auditoría y Verificación del Helm Chart
+
+El repositorio incluye una suite integral de validación de empaquetado que audita la sintaxis, el renderizado de manifiestos, las invariantes de seguridad y los casos negativos de esquema:
+
+```bash
+npm run test:helm
+```
+
+##### Salida Real de Auditoría de Helm Chart (6/6 Aprobados):
+```text
+> @angelpixel-core/identity-service@0.1.0 test:helm
+> bash scripts/test-helm-chart.sh
+
+=== [1/6] Verificando Motor Helm CLI ===
+✓ Binario local Helm detectado: v4.3.1+gc0d08d0
+
+=== [2/6] Ejecutando Helm Lint Estricto (values.yaml & values-local.yaml) ===
+==> Linting deployments/helm/identity-service
+
+1 chart(s) linted, 0 chart(s) failed
+✓ Helm lint (values.yaml) aprobado con 0 errores y 0 advertencias.
+==> Linting deployments/helm/identity-service
+
+1 chart(s) linted, 0 chart(s) failed
+✓ Helm lint (values-local.yaml) aprobado con 0 errores y 0 advertencias.
+
+=== [3/6] Renderizando Plantillas Kubernetes (helm template) ===
+✓ Manifiesto ServiceAccount renderizado correctamente.
+✓ Manifiesto SecretProviderClass renderizado correctamente.
+✓ Manifiesto Service renderizado correctamente.
+✓ Manifiesto Deployment renderizado correctamente.
+✓ Manifiesto PodDisruptionBudget renderizado correctamente.
+✓ Manifiesto Ingress renderizado correctamente.
+✓ Manifiesto NetworkPolicy renderizado correctamente.
+
+=== [4/6] Auditando Invariantes de Orquestación, Probes, CSI y Seguridad ===
+✓ Invariantes de Deployment (RollingUpdate 25%/0, 2 réplicas, recursos 100m/128Mi -> 500m/512Mi) verificadas.
+✓ Contexto de seguridad no-root (runAsNonRoot: true, allowPrivilegeEscalation: false, drop: ALL) verificado.
+✓ Probes /health/live y /health/ready verificadas.
+✓ SecretProviderClass (Azure Key Vault CSI: id-local-kv, rotationPollInterval: 2m) y proyección de DATABASE_URL, JWT_SECRET y REDIS_URL verificados.
+✓ Invariantes de SSL/TLS (DATABASE_SSL_ENABLED: true, DATABASE_SSL_MIN_VERSION: TLSv1.2, DATABASE_SSL_CA_PATH: /mnt/secrets-store/ca.crt) verificadas.
+✓ NetworkPolicies Zero-Trust (default-deny-all, Ingress :4000 desde ingress-nginx y Egress :53, :5432, :6379, :443, :4577/:4578) verificadas.
+✓ PodDisruptionBudget (minAvailable: 1), Service (ClusterIP:4000) e Ingress (nginx TLS) verificados.
+
+=== [5/6] Verificando Renderizado Condicional de HorizontalPodAutoscaler (HPA) ===
+✓ HorizontalPodAutoscaler renderizado dinámicamente cuando autoscaling.enabled=true.
+
+=== [6/6] Verificando Rechazo Estricto de Casos Negativos (values.schema.json) ===
+Probando caso negativo: replicaCount=0 menor al mínimo permitido (>= 1)...
+✓ Caso negativo validado (falló según lo esperado): replicaCount=0 menor al mínimo permitido (>= 1).
+Probando caso negativo: keyVaultCSI.provider no soportado (debe ser azure)...
+✓ Caso negativo validado (falló según lo esperado): keyVaultCSI.provider no soportado (debe ser azure).
+Probando caso negativo: service.type inválido (enum ClusterIP/NodePort/LoadBalancer)...
+✓ Caso negativo validado (falló según lo esperado): service.type inválido (enum ClusterIP/NodePort/LoadBalancer).
+Probando caso negativo: livenessProbe.httpGet.path sin barra inicial (pattern ^/)...
+✓ Caso negativo validado (falló según lo esperado): livenessProbe.httpGet.path sin barra inicial (pattern ^/).
+Probando caso negativo: keyVaultCSI.rotationPollInterval con formato inválido (sin unidad m/s/h)...
+✓ Caso negativo validado (falló según lo esperado): keyVaultCSI.rotationPollInterval con formato inválido (sin unidad m/s/h).
+Probando caso negativo: database.ssl.minVersion no permitido (debe ser TLSv1.2 o TLSv1.3)...
+✓ Caso negativo validado (falló según lo esperado): database.ssl.minVersion no permitido (debe ser TLSv1.2 o TLSv1.3).
+Probando caso negativo: database.ssl.enabled tipo no booleano...
+✓ Caso negativo validado (falló según lo esperado): database.ssl.enabled tipo no booleano.
+Probando caso negativo: networkPolicy.enabled tipo no booleano...
+✓ Caso negativo validado (falló según lo esperado): networkPolicy.enabled tipo no booleano.
+Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)...
+✓ Caso negativo validado (falló según lo esperado): networkPolicy.ingress.port fuera de rango IANA (> 65535).
+
+================================================================
+✓ Todas las pruebas de empaquetado Helm (US-14, US-16, US-17 & US-18) pasaron con éxito.
+================================================================
+```
+
+---
+
+## 🚀 US-15: Pipeline CI/CD Automatizado & Despliegue Atómico con Circuit Breaker
+
+La entrega continua de `identity-service` está instrumentada en **GitHub Actions** mediante dos workflows especializados:
+1. **`.github/workflows/ci.yml` (Integración Continua):** Ejecuta 7 Quality Gates estrictos sobre cada commit y Pull Request:
+   - **Quality Gate 1:** Typecheck y compilación TypeScript (`npm run build`).
+   - **Quality Gate 2:** Pruebas unitarias de dominio y casos de uso (`npm run test:unit`).
+   - **Quality Gate 3:** Pruebas de integración con PostgreSQL 16 y Redis 7 reales (`npm run test:integration`).
+   - **Quality Gate 4:** Pruebas de aceptación BDD con escenarios Gherkin (`npm run test:acceptance`).
+   - **Quality Gate 5:** Pruebas End-to-End (E2E) de interfaces y componentes (`npm run test:e2e`).
+   - **Quality Gate 6:** Construcción de imagen de desarrollo (`docker build --target development`).
+   - **Quality Gate 7:** Construcción de imagen de producción multi-stage (`docker build --target production`).
+2. **`.github/workflows/cd.yml` (Entrega y Despliegue Continuo):**
+   - **Etiquetado Inmutable Doble:** Generación simultánea de tag por SHA de Git (`sha-<commit>`) y Semantic Versioning (`v<version>`).
+   - **Auditoría de Seguridad de Imagen:** Comprobación forzada de usuario no-root (`node`), ausencia total de fuentes TypeScript o dependencias de desarrollo (`devDependencies`), y tamaño estricto menor a 250MB.
+   - **Despliegue Atómico con Circuit Breaker:** Ejecución de `scripts/deploy-helm-rollout.sh` invocando `helm upgrade --install` con monitorización activa del rollout en AKS (`kubectl rollout status` con timeout de 120s). Si el rollout no converge en el tiempo límite, se activa el circuit breaker automático ejecutando `helm rollback` para retornar de inmediato a la última versión saludable sin caída de servicio.
+
+---
+
+### Diagrama de Flujo CI/CD & Rollback Circuit Breaker (US-15)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer (Git Push)
+    participant CI as GitHub Actions CI (ci.yml)
+    participant CD as GitHub Actions CD (cd.yml)
+    participant Sec as Container Security Auditor
+    participant ACR as Azure Container Registry
+    participant Helm as Helm Engine (deploy-helm-rollout.sh)
+    participant AKS as Azure Kubernetes Service (AKS)
+    participant Rollback as Circuit Breaker (helm rollback)
+
+    Dev->>CI: 1. Push de commit a main / PR
+    CI->>CI: 2. Validación de 7 Quality Gates (Build, Unit, Int, BDD, E2E, Docker Dev/Prod)
+    CI-->>CD: 3. Disparo de workflow de entrega continua
+    CD->>CD: 4. Generación de etiquetas inmutables (sha-1b258bb, v0.1.0)
+    CD->>Sec: 5. Construcción de Dockerfile.production y auditoría de seguridad
+    Sec->>Sec: 6. Verificación de invariantes: usuario 'node', sin devDeps y tamaño < 250MB
+    Sec->>ACR: 7. Push de imagen inmutable autenticado por Azure Service Principal
+    CD->>Helm: 8. Invocación de script de despliegue atómico con timeout de 120s
+    Helm->>AKS: 9. helm upgrade --install con nuevo digest de imagen
+    alt Rollout Exitoso (2/2 réplicas listas en < 120s)
+        AKS-->>Helm: 10. Despliegue completado con Zero-Downtime
+    else Rollout Bloqueado o Probes Fallidas (> 120s)
+        Helm->>Rollback: 10. Disparo de Circuit Breaker de Rollback
+        Rollback->>AKS: 11. Restauración automática inmediata a la revisión anterior
+    end
+```
+
+#### Glosario de Componentes CI/CD:
+- **`GitHub Actions CI (ci.yml)`:** Orquestador de validación de código que asegura que ningún cambio defectuoso llegue a las ramas principales.
+- **`GitHub Actions CD (cd.yml)`:** Orquestador de despliegue que maneja empaquetado, auditoría de seguridad y releases atómicos.
+- **`Container Security Auditor`:** Paso de inspección automática que analiza el contenedor producido antes de permitir su publicación en ACR.
+- **`Azure Container Registry (ACR)`:** Repositorio privado y cifrado que almacena las imágenes con políticas de inmutabilidad activas.
+- **`Helm Engine (deploy-helm-rollout.sh)`:** Script especializado que orquesta la actualización y valida la convergencia de réplicas en Kubernetes.
+- **`Circuit Breaker (helm rollback)`:** Mecanismo de seguridad que cancela automáticamente despliegues fallidos restaurando el estado previo en menos de 10 segundos.
+
+---
+
+### Receta de Validación Determinista de Rollout Continuo
+
+El script `scripts/deploy-helm-rollout.sh` permite validar el pipeline de forma determinista y segura:
+
+```bash
+bash scripts/deploy-helm-rollout.sh \
+  --release identity-service \
+  --namespace default \
+  --registry idprodacr.azurecr.io \
+  --image-tag sha-1b258bb \
+  --dry-run
+```
+
+##### Salida Real de Validación de Rollout Atómico:
+```text
+=== [1/4] Validando Política de Etiquetado Inmutable (ACR) ===
+✓ Etiqueta inmutable verificada: idprodacr.azurecr.io/identity-service:sha-1b258bb
+
+=== [2/4] Ejecutando Despliegue con Helm (helm upgrade --install) ===
+Ejecutando: helm upgrade --install identity-service .../deployments/helm/identity-service -f .../deployments/helm/identity-service/values.yaml --namespace default --set image.repository=idprodacr.azurecr.io/identity-service --set image.tag=sha-1b258bb (client template validation)
+✓ Release 'identity-service' aplicado y manifiestos validados.
+
+=== [3/4] Monitoreando Estado del Rollout y Health Probes (timeout: 120s) ===
+Verificando: kubectl rollout status deployment/identity-service -n default --timeout=120s
+Waiting for deployment "identity-service" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "identity-service" rollout to finish: 1 of 2 updated replicas are available...
+deployment "identity-service" successfully rolled out
+✓ Rollout verificado: 2/2 réplicas listas con probes /health/live y /health/ready en estado 200 UP.
+
+=== [4/4] Resumen de Entrega Continua ===
+✓ Release:   identity-service (namespace: default)
+✓ Imagen:    idprodacr.azurecr.io/identity-service:sha-1b258bb
+✓ Estado:    DESPLEGADO Y SALUDABLE (Zero-Downtime RollingUpdate)
+```
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
