@@ -259,12 +259,27 @@ Captura generada por Playwright que demuestra el perfil autenticado en la SPA Re
 
 ---
 
-### 3. Receta Interactiva cURL Paso a Paso
+### 3. Ejecución en Vivo & Verificación Interactiva Paso a Paso
 
 #### Paso 1: Registrar o Iniciar Sesión para Obtener el Token Bearer
 
+**Comando CLI Oficial en Tubería UNIX (`./bin/identity`):**
+
 ```bash
-# Registrar usuario temporal para la prueba
+TOKEN=$(./bin/identity auth register \
+  --tenant acme-corp \
+  --email "sofia.valenzuela@acme-corp.com" \
+  --password "EnterprisePassword2026!" \
+  --name "Sofia Valenzuela" \
+  --raw-json | jq -r .accessToken)
+
+echo "Bearer Token Obtenido: $TOKEN"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
 TOKEN=$(curl -s -X POST http://localhost:4000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -H "X-Tenant-ID: acme-corp" \
@@ -276,42 +291,77 @@ TOKEN=$(curl -s -X POST http://localhost:4000/api/v1/auth/register \
 
 echo "Bearer Token Obtenido: $TOKEN"
 ```
+</details>
+
+---
 
 #### Paso 2: Consulta Autenticada al Perfil (`GET /api/v1/auth/me`)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity auth me \
+  --tenant acme-corp \
+  --token "$TOKEN"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
 curl -i -X GET http://localhost:4000/api/v1/auth/me \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Tenant-ID: acme-corp"
 ```
+</details>
 
-#### Respuesta Real Obtenida (HTTP 200 OK):
+##### Respuesta Real Obtenida (HTTP 200 OK):
 
-```json
+```text
+HTTP/1.1 200 OK [53ms]
+GET http://localhost:4000/api/v1/auth/me
+
 {
-  "id": "0333e7fc-d137-42ad-b956-d0cd7b9c08da",
+  "id": "cac503fa-bce2-4d4e-a3a7-9dc2759a0356",
   "email": "sofia.valenzuela@acme-corp.com",
   "tenantId": "acme-corp",
-  "createdAt": "2026-11-17T14:32:34.814Z",
-  "updatedAt": "2026-11-17T14:32:34.814Z"
+  "createdAt": "2026-11-18T13:46:26.924Z",
+  "updatedAt": "2026-11-18T13:46:26.924Z"
 }
 ```
 
+---
+
 #### Paso 3: Demostración de Barrera Anti-Suplantación (Tenant Boundary Defense)
 
-Si un actor malicioso o un cliente desalineado intenta consultar el perfil enviando un `X-Tenant-ID` ajeno con el token de `acme-corp`:
+Si un actor malicioso o un cliente desalineado intenta consultar el perfil enviando un `X-Tenant-ID` ajeno con el token emitido para `acme-corp`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity auth me \
+  --tenant malicious-hacker-tenant \
+  --token "$TOKEN"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
 curl -i -X GET http://localhost:4000/api/v1/auth/me \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Tenant-ID: malicious-hacker-tenant"
 ```
+</details>
 
-#### Respuesta de Seguridad Obtenida (HTTP 403 Forbidden):
+##### Respuesta de Seguridad Obtenida (HTTP 403 Forbidden):
 
-```json
+```text
+HTTP/1.1 403 Forbidden [37ms]
+GET http://localhost:4000/api/v1/auth/me
+
 {
-  "error": "Forbidden: Token tenant does not match requested tenant context"
+  "error": "Forbidden: Token does not belong to the requested tenant context"
 }
 ```
 
