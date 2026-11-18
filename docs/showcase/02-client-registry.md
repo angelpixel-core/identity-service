@@ -511,6 +511,18 @@ POST http://localhost:4000/api/v1/oauth2/token
 
 Si el cliente intenta solicitar privilegios que exceden su rol autorizado en el catálogo (e.g. `admin:superpower`):
 
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity token m2m \
+  --client-id m2m-service-app \
+  --client-secret "ValidSecret123!_SuperSecureSecretForTesting_2026" \
+  --scope "admin:superpower"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
   -H "Content-Type: application/json" \
@@ -521,9 +533,13 @@ curl -i -X POST http://localhost:4000/api/v1/oauth2/token \
     "scope": "admin:superpower"
   }'
 ```
+</details>
 
-##### Respuesta de Seguridad Obtenida:
-```json
+##### Respuesta de Seguridad Obtenida (HTTP 400 Bad Request):
+```text
+HTTP/1.1 400 Bad Request [42ms]
+POST http://localhost:4000/api/v1/oauth2/token
+
 {
   "error": "invalid_scope",
   "error_description": "Requested scope \"admin:superpower\" is not authorized for client \"m2m-service-app\""
