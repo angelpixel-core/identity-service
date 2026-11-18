@@ -182,6 +182,17 @@ POST http://localhost:4000/api/v1/oauth2/clients/validate
 
 Si un atacante aloja una aplicación maliciosa en otro dominio e intenta utilizar el `client_id` legítimo de la organización:
 
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity client validate \
+  --client-id portal-web \
+  --origin https://malicious-phishing-site.com
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "Content-Type: application/json" \
@@ -189,9 +200,13 @@ curl -i -X POST http://localhost:4000/api/v1/oauth2/clients/validate \
   -H "X-Client-ID: portal-web" \
   -d '{"clientId": "portal-web"}'
 ```
+</details>
 
-##### Respuesta de Seguridad Obtenida:
-```json
+##### Respuesta de Seguridad Obtenida (HTTP 403 Forbidden):
+```text
+HTTP/1.1 403 Forbidden [29ms]
+POST http://localhost:4000/api/v1/oauth2/clients/validate
+
 {
   "error": "unauthorized_client_origin",
   "message": "Origin https://malicious-phishing-site.com is not authorized for client portal-web."
