@@ -114,9 +114,24 @@ La captura de pantalla a continuación fue generada de manera automatizada media
 
 ---
 
-### 3. Ejecución en Vivo & Receta Interactiva cURL
+### 3. Ejecución en Vivo & Verificación Interactiva
 
-Puedes probar el endpoint de registro inmediatamente contra el stack local ejecutando el siguiente comando en tu terminal:
+Puedes probar el endpoint de registro inmediatamente contra el stack local utilizando la CLI oficial del proyecto o mediante `cURL`:
+
+#### Escenario A: Registro Exitoso de Usuario Multi-Tenant (HTTP 201 Created)
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity auth register \
+  --tenant acme-corp \
+  --email "lead.architect@acme-corp.com" \
+  --password "EnterprisePassword2026!" \
+  --name "Sofia Valenzuela"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
 curl -i -X POST http://localhost:4000/api/v1/auth/register \
@@ -128,17 +143,21 @@ curl -i -X POST http://localhost:4000/api/v1/auth/register \
     "name": "Sofia Valenzuela"
   }'
 ```
+</details>
 
-#### Respuesta Real Obtenida (HTTP 200 / 201 OK):
+##### Respuesta Real Obtenida (HTTP 201 Created):
 
-```json
+```text
+HTTP/1.1 201 Created [143ms]
+POST http://localhost:4000/api/v1/auth/register
+
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlMjU4Y2I5ZC00YmVkLTQ3ZTItYmMzNy1jMzM3Zjc4Yjc2NWUiLCJlbWFpbCI6InNob3djYXNlLnZlcmlmeS4xNzk0OTE5OTg2QGFjbWUtY29ycC5jb20iLCJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsImlhdCI6MTc5NDkxOTk4NiwiZXhwIjoxNzk0OTIzNTg2fQ.cPMHpuLqAd5ypi42rwHEzgr0ooKKnpQl74PyEV1irzY",
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlMjU4Y2I5ZC00YmVkLTQ3ZTItYmMzNy1jMzM3Zjc4Yjc2NWUiLCJlbWFpbCI6InNob3djYXNlLnZlcmlmeS4xNzk0OTE5OTg2QGFjbWUtY29ycC5jb20iLCJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsImlhdCI6MTc5NDkxOTk4NiwiZXhwIjoxNzk0OTIzNTg2fQ.cPMHpuLqAd5ypi42rwHEzgr0ooKKnpQl74PyEV1irzY",
-  "userId": "e258cb9d-4bed-47e2-bc37-c337f78b765e",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjYWM1MDNmYS1iY2UyLTRkNGUtYTNhNy05ZGMyNzU5YTAzNTYiLCJlbWFpbCI6ImxlYWQuYXJjaGl0ZWN0QGFjbWUtY29ycC5jb20iLCJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsImlhdCI6MTc5NTAwOTU4NiwiZXhwIjoxNzk1MDEzMTg2fQ.aYxGsKGYfGHuPIwFxlBSaWi1O0xr9p2dtdddGkdJVH4",
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjYWM1MDNmYS1iY2UyLTRkNGUtYTNhNy05ZGMyNzU5YTAzNTYiLCJlbWFpbCI6ImxlYWQuYXJjaGl0ZWN0QGFjbWUtY29ycC5jb20iLCJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsImlhdCI6MTc5NTAwOTU4NiwiZXhwIjoxNzk1MDEzMTg2fQ.aYxGsKGYfGHuPIwFxlBSaWi1O0xr9p2dtdddGkdJVH4",
+  "userId": "cac503fa-bce2-4d4e-a3a7-9dc2759a0356",
   "email": "lead.architect@acme-corp.com",
   "tenantId": "acme-corp",
-  "createdAt": "2026-11-17T12:53:06.953Z"
+  "createdAt": "2026-11-18T13:46:26.930Z"
 }
 ```
 
