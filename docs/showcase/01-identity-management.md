@@ -406,7 +406,67 @@ GET http://localhost:4000/api/v1/auth/me
 
 ---
 
-### 4. Cobertura de Pruebas Automatizadas
+#### Paso 4: Teardown y Limpieza de Recursos (US-06 Physical Delete)
+
+Para garantizar la reproducibilidad continua y evitar la acumulación de datos residuales tras la demostración, el usuario creado se elimina físicamente mediante `DELETE /api/v1/users/:userId`. Esta operación atómica:
+1. Ejecuta el borrado físico en PostgreSQL (`DELETE FROM users WHERE id = $1 AND tenant_id = $2`), liberando la restricción de unicidad del correo electrónico.
+2. Invalida inmediatamente la entrada de perfil en la caché Redis (`user_profile:{tenantId}:{userId}`).
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity auth delete-user \
+  --tenant "$TENANT_ID" \
+  --token "$TOKEN" \
+  --user-id "$USER_ID"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X DELETE "$BASE_URL/api/v1/users/$USER_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Tenant-ID: $TENANT_ID"
+```
+</details>
+
+##### Respuesta Obtenida (HTTP 204 No Content):
+
+```text
+HTTP/1.1 204 No Content [32ms]
+DELETE http://localhost:4000/api/v1/users/cac503fa-bce2-4d4e-a3a7-9dc2759a0356
+
+{
+  "status": 204,
+  "message": "User deleted successfully",
+  "userId": "cac503fa-bce2-4d4e-a3a7-9dc2759a0356",
+  "tenantId": "acme-corp"
+}
+```
+
+##### Comprobación de No-Existencia (Anti-Enumeration 404):
+
+Una consulta posterior al perfil confirma que el recurso ha sido purgado de forma definitiva tanto en la base de datos como en memoria caché:
+
+```bash
+./bin/identity auth me \
+  --tenant "$TENANT_ID" \
+  --token "$TOKEN"
+```
+
+```text
+HTTP/1.1 404 Not Found [28ms]
+GET http://localhost:4000/api/v1/auth/me
+
+{
+  "error": "User not found in tenant acme-corp"
+}
+```
+
+---
+
+### 5. Cobertura de Pruebas Automatizadas
 
 El slice de consulta y el patrón Cache-Aside están garantizados por pruebas de integración y unitarias:
 

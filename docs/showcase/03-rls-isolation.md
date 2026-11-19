@@ -327,6 +327,7 @@ USER_B_RESP=$(./bin/identity auth register \
   --password "EnterprisePassword2026!" \
   --raw-json)
 
+export TOKEN_BETA=$(echo "$USER_B_RESP" | jq -r .accessToken)
 export USER_BETA_ID=$(echo "$USER_B_RESP" | jq -r .userId)
 
 echo "USER_BETA_ID=$USER_BETA_ID (Usuario real persistido en Tenant B)"
@@ -357,6 +358,7 @@ USER_B_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
     \"password\": \"EnterprisePassword2026!\"
   }")
 
+export TOKEN_BETA=$(echo "$USER_B_RESP" | jq -r .accessToken)
 export USER_BETA_ID=$(echo "$USER_B_RESP" | jq -r .userId)
 
 echo "TOKEN_ACME=$TOKEN_ACME"
@@ -530,7 +532,49 @@ Ante la detección de una anomalía o discrepancia cross-tenant, el sistema emit
 
 ---
 
-### 4. Cobertura de Pruebas Automatizadas
+### 4. Teardown y Limpieza de Recursos Multi-Tenant
+
+Para no dejar usuarios de prueba huérfanos en las particiones de PostgreSQL ni en la memoria caché Redis, procedemos al borrado físico de los usuarios creados en ambos inquilinos utilizando sus respectivos tokens de contexto:
+
+**1. Borrar Usuario de Inquilino A (`$TENANT_A`):**
+
+```bash
+./bin/identity auth delete-user \
+  --tenant "$TENANT_A" \
+  --token "$TOKEN_ACME" \
+  --user-id "$USER_ACME_ID"
+```
+
+**2. Borrar Usuario de Inquilino B (`$TENANT_B`):**
+
+```bash
+./bin/identity auth delete-user \
+  --tenant "$TENANT_B" \
+  --token "$TOKEN_BETA" \
+  --user-id "$USER_BETA_ID"
+```
+
+<details>
+<summary><b>Ver Recetas Equivalentes con cURL</b></summary>
+
+```bash
+# Borrar Usuario en Tenant A
+curl -i -X DELETE "$BASE_URL/api/v1/users/$USER_ACME_ID" \
+  -H "Authorization: Bearer $TOKEN_ACME" \
+  -H "X-Tenant-ID: $TENANT_A"
+
+# Borrar Usuario en Tenant B
+curl -i -X DELETE "$BASE_URL/api/v1/users/$USER_BETA_ID" \
+  -H "Authorization: Bearer $TOKEN_BETA" \
+  -H "X-Tenant-ID: $TENANT_B"
+```
+</details>
+
+Ambas operaciones retornan `HTTP/1.1 204 No Content`, garantizando que la base de datos PostgreSQL y la caché Redis quedan libres de residuos sin afectar el aislamiento de ningún otro inquilino.
+
+---
+
+### 5. Cobertura de Pruebas Automatizadas
 
 La suite de penetración y pruebas de estrés valida los 5 vectores de ataque:
 

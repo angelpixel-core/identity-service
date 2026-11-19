@@ -598,7 +598,29 @@ El JWT generado para comunicaciones M2M posee una estructura estricta según las
 
 ---
 
-### 4. Cobertura de Pruebas Automatizadas
+### 4. Teardown y Validación de Integridad del Catálogo de Clientes
+
+Las aplicaciones clientes pre-registradas (`portal-web`, `m2m-service-app`, `legacy-app`, `deactivated-worker`) constituyen el catálogo de gobernanza base y son inmutables durante las pruebas normales del showcase.
+
+Si como operador deseas restaurar la base de datos PostgreSQL y la caché Redis a su estado limpio inicial exactamente como al desplegar el servicio por primera vez:
+
+```bash
+# Opción 1: Comando NPM estándar
+npm run db:reset
+
+# Opción 2: Vía CLI oficial
+./bin/identity ops db-reset
+```
+
+> [!NOTE]
+> Si deseas levantar una base de datos completamente limpia sin clientes semilla iniciales, puedes pasar la bandera `--no-seeds`:
+> ```bash
+> ./bin/identity ops db-reset --no-seeds
+> ```
+
+---
+
+### 5. Cobertura de Pruebas Automatizadas
 
 El flujo completo de Client Credentials M2M está certificado por la suite de pruebas de integración:
 

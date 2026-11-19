@@ -915,7 +915,48 @@ POST http://localhost:4000/api/v1/oauth2/refresh
 
 ---
 
-### 3. Cobertura de Pruebas Automatizadas
+### 3. Teardown y Re-sembrado de Sesiones Dev (RFC 7009 & Reseed Ops)
+
+Como resultado de la prueba de seguridad previa (detección de reúso de refresh token y revocación en cascada), toda la familia de sesiones `fam-portal-web-dev` quedó legítimamente invalidada en el repositorio de sesiones.
+
+Para que las herramientas frontend (`portal-web`), pruebas end-to-end o desarrolladores puedan continuar interactuando en caliente sin reiniciar el proceso del backend, se provee el endpoint operacional de re-sembrado:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity ops reseed-dev-sessions
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -X POST "$BASE_URL/api/v1/ops/reseed-dev-sessions"
+```
+</details>
+
+##### Respuesta Obtenida (HTTP 200 OK):
+
+```text
+HTTP/1.1 200 OK [36ms]
+POST http://localhost:4000/api/v1/ops/reseed-dev-sessions
+
+{
+  "message": "Dev refresh session re-seeded successfully",
+  "client_id": "portal-web",
+  "refresh_token": "seed_refresh_token_portal_web_dev_2026"
+}
+```
+
+> [!TIP]
+> Si deseas reiniciar simultáneamente la base de datos PostgreSQL, purgar la caché Redis y re-sembrar todas las configuraciones base, ejecuta el comando de reinicio integral:
+> ```bash
+> ./bin/identity ops db-reset
+> ```
+
+---
+
+### 4. Cobertura de Pruebas Automatizadas
 
 El ciclo de vida de sesiones deslizantes, rotación 1-a-1 y revocación en cascada está certificado por las suites unitarias, de integración y de aceptación:
 
