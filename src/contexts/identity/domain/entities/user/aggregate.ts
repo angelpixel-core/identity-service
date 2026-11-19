@@ -8,12 +8,14 @@ export interface UserCreateProps {
   email: Email;
   tenantId: TenantId;
   passwordHash: string;
+  roles?: string[];
 }
 
 export interface FederatedUserCreateProps {
   id?: string;
   email: Email;
   tenantId: TenantId;
+  roles?: string[];
 }
 
 export interface UserReconstituteProps {
@@ -21,6 +23,7 @@ export interface UserReconstituteProps {
   email: Email;
   tenantId: TenantId;
   passwordHash: string;
+  roles?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,6 +38,7 @@ export class User {
   private email: Email;
   private readonly tenantId: TenantId;
   private passwordHash: string;
+  private readonly roles: readonly string[];
   private readonly createdAt: Date;
   private updatedAt: Date;
 
@@ -46,6 +50,12 @@ export class User {
     this.email = props.email;
     this.tenantId = props.tenantId;
     this.passwordHash = props.passwordHash.trim();
+    const rawRoles = props.roles && props.roles.length > 0 ? props.roles : ['member'];
+    this.roles = Object.freeze(
+      rawRoles
+        .map((r) => r.trim().toLowerCase())
+        .filter((r) => r.length > 0)
+    );
     this.createdAt = new Date(props.createdAt.getTime());
     this.updatedAt = new Date(props.updatedAt.getTime());
   }
@@ -57,6 +67,7 @@ export class User {
       email: props.email,
       tenantId: props.tenantId,
       passwordHash: props.passwordHash,
+      roles: props.roles,
       createdAt: now,
       updatedAt: now,
     });
@@ -70,6 +81,7 @@ export class User {
       email: props.email,
       tenantId: props.tenantId,
       passwordHash: unmatchablePasswordHash,
+      roles: props.roles,
     });
   }
 
@@ -103,6 +115,21 @@ export class User {
 
   public getUpdatedAt(): Date {
     return new Date(this.updatedAt.getTime());
+  }
+
+  public getRoles(): string[] {
+    return [...this.roles];
+  }
+
+  public hasRole(role: string): boolean {
+    if (!role || typeof role !== 'string') {
+      return false;
+    }
+    return this.roles.includes(role.trim().toLowerCase());
+  }
+
+  public isSuperadmin(): boolean {
+    return this.tenantId.isRoot() && this.hasRole('superadmin');
   }
 
   public changePassword(newPasswordHash: string): void {
