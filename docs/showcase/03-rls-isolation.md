@@ -300,37 +300,42 @@ Para comprobar que el aislamiento RLS no depende de UUIDs ficticios sino de enti
 export BASE_URL="http://localhost:4000"
 export TENANT_A="acme-corp"
 export TENANT_B="beta-corp"
+export USER_PASS='EnterprisePassword2026!'
 ```
 
-**1. Registrar Usuario en Tenant A (`$TENANT_A`) y extraer `$TOKEN_ACME` y `$USER_ACME_ID`:**
+**1. Registrar Usuario en Tenant A (`${TENANT_A}`) y extraer `${TOKEN_ACME}` y `${USER_ACME_ID}`:**
 
 ```bash
+export USER_A_EMAIL="security.tester.$(date +%s)@acme-corp.com"
+
 USER_A_RESP=$(./bin/identity auth register \
-  --tenant "$TENANT_A" \
-  --email "security.tester.$(date +%s)@acme-corp.com" \
-  --password "EnterprisePassword2026!" \
+  --tenant "${TENANT_A}" \
+  --email "${USER_A_EMAIL}" \
+  --password "${USER_PASS}" \
   --raw-json)
 
-export TOKEN_ACME=$(echo "$USER_A_RESP" | jq -r .accessToken)
-export USER_ACME_ID=$(echo "$USER_A_RESP" | jq -r .userId)
+export TOKEN_ACME=$(echo "${USER_A_RESP}" | jq -r .accessToken)
+export USER_ACME_ID=$(echo "${USER_A_RESP}" | jq -r .userId)
 
-echo "TOKEN_ACME=$TOKEN_ACME"
-echo "USER_ACME_ID=$USER_ACME_ID"
+echo "TOKEN_ACME=${TOKEN_ACME}"
+echo "USER_ACME_ID=${USER_ACME_ID}"
 ```
 
-**2. Registrar Usuario Legítimo en Tenant B (`$TENANT_B`) y extraer `$USER_BETA_ID`:**
+**2. Registrar Usuario Legítimo en Tenant B (`${TENANT_B}`) y extraer `${USER_BETA_ID}`:**
 
 ```bash
+export USER_B_EMAIL="victim.user.$(date +%s)@beta-corp.com"
+
 USER_B_RESP=$(./bin/identity auth register \
-  --tenant "$TENANT_B" \
-  --email "victim.user.$(date +%s)@beta-corp.com" \
-  --password "EnterprisePassword2026!" \
+  --tenant "${TENANT_B}" \
+  --email "${USER_B_EMAIL}" \
+  --password "${USER_PASS}" \
   --raw-json)
 
-export TOKEN_BETA=$(echo "$USER_B_RESP" | jq -r .accessToken)
-export USER_BETA_ID=$(echo "$USER_B_RESP" | jq -r .userId)
+export TOKEN_BETA=$(echo "${USER_B_RESP}" | jq -r .accessToken)
+export USER_BETA_ID=$(echo "${USER_B_RESP}" | jq -r .userId)
 
-echo "USER_BETA_ID=$USER_BETA_ID (Usuario real persistido en Tenant B)"
+echo "USER_BETA_ID=${USER_BETA_ID} (Usuario real persistido en Tenant B)"
 ```
 
 <details>
@@ -338,32 +343,37 @@ echo "USER_BETA_ID=$USER_BETA_ID (Usuario real persistido en Tenant B)"
 
 ```bash
 # 1. Tenant A
-USER_A_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
+export USER_A_EMAIL="security.tester.$(date +%s)@acme-corp.com"
+
+USER_A_RESP=$(curl -s -X POST "${BASE_URL}/api/v1/auth/register" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: $TENANT_A" \
+  -H "X-Tenant-ID: ${TENANT_A}" \
   -d "{
-    \"email\": \"security.tester.$(date +%s)@acme-corp.com\",
-    \"password\": \"EnterprisePassword2026!\"
+    \"email\": \"${USER_A_EMAIL}\",
+    \"password\": \"${USER_PASS}\"
   }")
 
-export TOKEN_ACME=$(echo "$USER_A_RESP" | jq -r .accessToken)
-export USER_ACME_ID=$(echo "$USER_A_RESP" | jq -r .userId)
+export TOKEN_ACME=$(echo "${USER_A_RESP}" | jq -r .accessToken)
+export USER_ACME_ID=$(echo "${USER_A_RESP}" | jq -r .userId)
 
 # 2. Tenant B
-USER_B_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
+export USER_B_EMAIL="victim.user.$(date +%s)@beta-corp.com"
+
+USER_B_RESP=$(curl -s -X POST "${BASE_URL}/api/v1/auth/register" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: $TENANT_B" \
+  -H "X-Tenant-ID: ${TENANT_B}" \
   -d "{
-    \"email\": \"victim.user.$(date +%s)@beta-corp.com\",
-    \"password\": \"EnterprisePassword2026!\"
+    \"email\": \"${USER_B_EMAIL}\",
+    \"password\": \"${USER_PASS}\"
   }")
 
-export TOKEN_BETA=$(echo "$USER_B_RESP" | jq -r .accessToken)
-export USER_BETA_ID=$(echo "$USER_B_RESP" | jq -r .userId)
+export TOKEN_BETA=$(echo "${USER_B_RESP}" | jq -r .accessToken)
+export USER_BETA_ID=$(echo "${USER_B_RESP}" | jq -r .userId)
 
-echo "TOKEN_ACME=$TOKEN_ACME"
-echo "USER_BETA_ID=$USER_BETA_ID"
+echo "TOKEN_ACME=${TOKEN_ACME}"
+echo "USER_BETA_ID=${USER_BETA_ID}"
 ```
+
 </details>
 
 ##### Inspección del Payload Criptográfico del JWT:

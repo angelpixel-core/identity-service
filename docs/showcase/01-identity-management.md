@@ -126,7 +126,14 @@ Ejecuta este bloque para inicializar las variables de entorno de la sesión ante
 # ==============================================================================
 export BASE_URL="http://localhost:4000"
 export TENANT_ID="acme-corp"
+export USER_NAME="Sofia Valenzuela"
+export USER_EMAIL="lead.architect.$(date +%s)@acme-corp.com"
+export USER_PASS='EnterprisePassword2026!'
 ```
+
+> [!NOTE]
+> **Ergonomía de Terminales y Caracteres Especiales (`!`):**
+> `USER_PASS` se asigna utilizando **comillas simples (`'...'`)** de forma deliberada. En terminales interactivas Bash y Zsh, el signo de exclamación `!` dentro de comillas dobles activa *History Expansion* y arroja el error `bash: !": event not found`. Al encapsular la contraseña en comillas simples y expandirla después con llaves (`"${USER_PASS}"`), se preserva el caracter `!` de forma segura en cualquier shell.
 
 ---
 
@@ -138,41 +145,42 @@ El comando ejecuta el registro y extrae automáticamente el `accessToken` y `use
 
 ```bash
 REG_RESP=$(./bin/identity auth register \
-  --tenant "$TENANT_ID" \
-  --email "lead.architect.$(date +%s)@acme-corp.com" \
-  --password "EnterprisePassword2026!" \
-  --name "Sofia Valenzuela" \
+  --tenant "${TENANT_ID}" \
+  --email "${USER_EMAIL}" \
+  --password "${USER_PASS}" \
+  --name "${USER_NAME}" \
   --raw-json)
 
-export TOKEN=$(echo "$REG_RESP" | jq -r .accessToken)
-export USER_ID=$(echo "$REG_RESP" | jq -r .userId)
+export TOKEN=$(echo "${REG_RESP}" | jq -r .accessToken)
+export USER_ID=$(echo "${REG_RESP}" | jq -r .userId)
 
-echo "TOKEN=$TOKEN"
-echo "USER_ID=$USER_ID"
+echo "TOKEN=${TOKEN}"
+echo "USER_ID=${USER_ID}"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-REG_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
+REG_RESP=$(curl -s -X POST "${BASE_URL}/api/v1/auth/register" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: $TENANT_ID" \
+  -H "X-Tenant-ID: ${TENANT_ID}" \
   -d "{
-    \"email\": \"lead.architect.$(date +%s)@acme-corp.com\",
-    \"password\": \"EnterprisePassword2026!\",
-    \"name\": \"Sofia Valenzuela\"
+    \"email\": \"${USER_EMAIL}\",
+    \"password\": \"${USER_PASS}\",
+    \"name\": \"${USER_NAME}\"
   }")
 
-export TOKEN=$(echo "$REG_RESP" | jq -r .accessToken)
-export USER_ID=$(echo "$REG_RESP" | jq -r .userId)
+export TOKEN=$(echo "${REG_RESP}" | jq -r .accessToken)
+export USER_ID=$(echo "${REG_RESP}" | jq -r .userId)
 
-echo "TOKEN=$TOKEN"
-echo "USER_ID=$USER_ID"
+echo "TOKEN=${TOKEN}"
+echo "USER_ID=${USER_ID}"
 ```
+
 </details>
 
-##### Respuesta Real Obtenida (HTTP 201 Created):
+##### Respuesta Real Obtenida (HTTP 201 Created)
 
 ```text
 HTTP/1.1 201 Created [143ms]
@@ -190,6 +198,7 @@ POST http://localhost:4000/api/v1/auth/register
 
 > [!NOTE]
 > **Inspección de Seguridad:**
+>
 > 1. El campo `password_hash` nunca se expone en la respuesta JSON (Prevención de fuga de PII y credenciales).
 > 2. El token JWT emitido incluye el claim inmutable `tenantId: "acme-corp"`, vinculando la sesión al inquilino correspondiente.
 > 3. También puedes invocar y probar este endpoint de forma gráfica en **Swagger UI**: [`http://localhost:4000/api/docs/#/Authentication/post_api_v1_auth_register`](http://localhost:4000/api/docs/#/Authentication/post_api_v1_auth_register).
@@ -296,37 +305,42 @@ Captura generada por Playwright que demuestra el perfil autenticado en la SPA Re
 **Comando CLI Oficial en Tubería UNIX (`./bin/identity`):**
 
 ```bash
+export USER_EMAIL="sofia.valenzuela.$(date +%s)@acme-corp.com"
+
 REG_RESP=$(./bin/identity auth register \
-  --tenant "$TENANT_ID" \
-  --email "sofia.valenzuela.$(date +%s)@acme-corp.com" \
-  --password "EnterprisePassword2026!" \
-  --name "Sofia Valenzuela" \
+  --tenant "${TENANT_ID}" \
+  --email "${USER_EMAIL}" \
+  --password "${USER_PASS}" \
+  --name "${USER_NAME}" \
   --raw-json)
 
-export TOKEN=$(echo "$REG_RESP" | jq -r .accessToken)
-export USER_ID=$(echo "$REG_RESP" | jq -r .userId)
+export TOKEN=$(echo "${REG_RESP}" | jq -r .accessToken)
+export USER_ID=$(echo "${REG_RESP}" | jq -r .userId)
 
-echo "Bearer Token Obtenido: $TOKEN"
+echo "Bearer Token Obtenido: ${TOKEN}"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-REG_RESP=$(curl -s -X POST "$BASE_URL/api/v1/auth/register" \
+export USER_EMAIL="sofia.valenzuela.$(date +%s)@acme-corp.com"
+
+REG_RESP=$(curl -s -X POST "${BASE_URL}/api/v1/auth/register" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: $TENANT_ID" \
+  -H "X-Tenant-ID: ${TENANT_ID}" \
   -d "{
-    \"email\": \"sofia.valenzuela.$(date +%s)@acme-corp.com\",
-    \"password\": \"EnterprisePassword2026!\",
-    \"name\": \"Sofia Valenzuela\"
+    \"email\": \"${USER_EMAIL}\",
+    \"password\": \"${USER_PASS}\",
+    \"name\": \"${USER_NAME}\"
   }")
 
-export TOKEN=$(echo "$REG_RESP" | jq -r .accessToken)
-export USER_ID=$(echo "$REG_RESP" | jq -r .userId)
+export TOKEN=$(echo "${REG_RESP}" | jq -r .accessToken)
+export USER_ID=$(echo "${REG_RESP}" | jq -r .userId)
 
-echo "Bearer Token Obtenido: $TOKEN"
+echo "Bearer Token Obtenido: ${TOKEN}"
 ```
+
 </details>
 
 ---
@@ -337,21 +351,22 @@ echo "Bearer Token Obtenido: $TOKEN"
 
 ```bash
 ./bin/identity auth me \
-  --tenant "$TENANT_ID" \
-  --token "$TOKEN"
+  --tenant "${TENANT_ID}" \
+  --token "${TOKEN}"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X GET "$BASE_URL/api/v1/auth/me" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-Tenant-ID: $TENANT_ID"
+curl -i -X GET "${BASE_URL}/api/v1/auth/me" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "X-Tenant-ID: ${TENANT_ID}"
 ```
+
 </details>
 
-##### Respuesta Real Obtenida (HTTP 200 OK):
+##### Respuesta Real Obtenida (HTTP 200 OK)
 
 ```text
 HTTP/1.1 200 OK [53ms]
@@ -377,20 +392,21 @@ Si un actor malicioso o un cliente desalineado intenta consultar el perfil envia
 ```bash
 ./bin/identity auth me \
   --tenant malicious-hacker-tenant \
-  --token "$TOKEN"
+  --token "${TOKEN}"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X GET "$BASE_URL/api/v1/auth/me" \
-  -H "Authorization: Bearer $TOKEN" \
+curl -i -X GET "${BASE_URL}/api/v1/auth/me" \
+  -H "Authorization: Bearer ${TOKEN}" \
   -H "X-Tenant-ID: malicious-hacker-tenant"
 ```
+
 </details>
 
-##### Respuesta de Seguridad Obtenida (HTTP 403 Forbidden):
+##### Respuesta de Seguridad Obtenida (HTTP 403 Forbidden)
 
 ```text
 HTTP/1.1 403 Forbidden [37ms]
@@ -409,6 +425,7 @@ GET http://localhost:4000/api/v1/auth/me
 #### Paso 4: Teardown y Limpieza de Recursos (US-06 Physical Delete)
 
 Para garantizar la reproducibilidad continua y evitar la acumulación de datos residuales tras la demostración, el usuario creado se elimina físicamente mediante `DELETE /api/v1/users/:userId`. Esta operación atómica:
+
 1. Ejecuta el borrado físico en PostgreSQL (`DELETE FROM users WHERE id = $1 AND tenant_id = $2`), liberando la restricción de unicidad del correo electrónico.
 2. Invalida inmediatamente la entrada de perfil en la caché Redis (`user_profile:{tenantId}:{userId}`).
 
@@ -416,22 +433,23 @@ Para garantizar la reproducibilidad continua y evitar la acumulación de datos r
 
 ```bash
 ./bin/identity auth delete-user \
-  --tenant "$TENANT_ID" \
-  --token "$TOKEN" \
-  --user-id "$USER_ID"
+  --tenant "${TENANT_ID}" \
+  --token "${TOKEN}" \
+  --user-id "${USER_ID}"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X DELETE "$BASE_URL/api/v1/users/$USER_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-Tenant-ID: $TENANT_ID"
+curl -i -X DELETE "${BASE_URL}/api/v1/users/${USER_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "X-Tenant-ID: ${TENANT_ID}"
 ```
+
 </details>
 
-##### Respuesta Obtenida (HTTP 204 No Content):
+##### Respuesta Obtenida (HTTP 204 No Content)
 
 ```text
 HTTP/1.1 204 No Content [32ms]
@@ -445,14 +463,14 @@ DELETE http://localhost:4000/api/v1/users/cac503fa-bce2-4d4e-a3a7-9dc2759a0356
 }
 ```
 
-##### Comprobación de No-Existencia (Anti-Enumeration 404):
+##### Comprobación de No-Existencia (Anti-Enumeration 404)
 
 Una consulta posterior al perfil confirma que el recurso ha sido purgado de forma definitiva tanto en la base de datos como en memoria caché:
 
 ```bash
 ./bin/identity auth me \
-  --tenant "$TENANT_ID" \
-  --token "$TOKEN"
+  --tenant "${TENANT_ID}" \
+  --token "${TOKEN}"
 ```
 
 ```text
