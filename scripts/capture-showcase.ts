@@ -63,7 +63,10 @@ async function runCapture() {
     // 4. US-07: OpenID Connect Discovery Metadata Endpoint
     console.log('📸 Capturing us07_oidc_discovery.png from http://localhost:4000/.well-known/openid-configuration...');
     await page.goto('http://localhost:4000/.well-known/openid-configuration', { waitUntil: 'networkidle', timeout: 10000 });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(300);
+    // Toggle Chromium built-in JSON viewer "Pretty-print" checkbox (closed Shadow DOM at top-left)
+    await page.mouse.click(105, 12);
+    await page.waitForTimeout(300);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, 'us07_oidc_discovery.png'),
       fullPage: false,
