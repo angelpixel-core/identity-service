@@ -5,6 +5,7 @@ import { DomainValidationError } from '../../exceptions/user/error';
  * Inmutable, normalizado (trimmed) y validado para aislamiento de organizaciones.
  */
 export class TenantId {
+  public static readonly ROOT_TENANT_ID = process.env.ROOT_TENANT_ID || 'system';
   private static readonly TENANT_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
 
   private readonly value: string;
@@ -12,6 +13,20 @@ export class TenantId {
   private constructor(value: string) {
     this.value = Object.freeze(value);
     Object.freeze(this);
+  }
+
+  /**
+   * Factory para obtener una instancia inmutable del Inquilino Raíz ('system').
+   */
+  public static root(): TenantId {
+    return new TenantId(TenantId.ROOT_TENANT_ID);
+  }
+
+  /**
+   * Determina si este identificador corresponde al Inquilino Raíz de la plataforma.
+   */
+  public isRoot(): boolean {
+    return this.value === TenantId.ROOT_TENANT_ID;
   }
 
   public static create(rawTenantId: string): TenantId {

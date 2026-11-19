@@ -23,6 +23,29 @@ describe('Value Object: TenantId', () => {
     });
   });
 
+  describe('Root Tenant Recognition (ADR-0009)', () => {
+    it('should provide canonical ROOT_TENANT_ID as "system"', () => {
+      expect(TenantId.ROOT_TENANT_ID).toBe('system');
+    });
+
+    it('should instantiate Root Tenant via TenantId.root() factory', () => {
+      const rootTenant = TenantId.root();
+      expect(rootTenant.getValue()).toBe('system');
+      expect(rootTenant.isRoot()).toBe(true);
+    });
+
+    it('should identify Root Tenant when created with "system"', () => {
+      const tenant = TenantId.create('system');
+      expect(tenant.isRoot()).toBe(true);
+    });
+
+    it('should return false for isRoot() on regular client tenants', () => {
+      expect(TenantId.create('acme-corp').isRoot()).toBe(false);
+      expect(TenantId.create('globex-corp').isRoot()).toBe(false);
+      expect(TenantId.create('system-other').isRoot()).toBe(false);
+    });
+  });
+
   describe('Invalid TenantId Validation (Defensive Failures)', () => {
     it('should throw DomainValidationError for empty string or whitespace', () => {
       expect(() => TenantId.create('')).toThrow(DomainValidationError);
