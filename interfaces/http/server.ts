@@ -15,6 +15,7 @@ import {
 import { SecretWatcherService } from '../../src/contexts/identity/infrastructure/security/secret_watcher_service';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
 import { UpdateUserProfileCommandHandler } from '../../src/contexts/identity/application/commands/update_user_profile/handler';
+import { DeleteUserCommandHandler } from '../../src/contexts/identity/application/commands/delete_user/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
 import { ValidateClientOriginQueryHandler } from '../../src/contexts/identity/application/queries/validate_client_origin/handler';
 import { AuthenticateClientM2MCommandHandler } from '../../src/contexts/identity/application/commands/authenticate_client_m2m/handler';
@@ -431,6 +432,7 @@ export function createApp(deps?: AppDependencies): Express {
   );
 
   const updateUserProfileHandler = new UpdateUserProfileCommandHandler(userRepository, cacheProvider);
+  const deleteUserHandler = new DeleteUserCommandHandler(userRepository, cacheProvider);
   const getOpenIdConfigHandler = new GetOpenIdConfigurationQueryHandler(
     process.env.PUBLIC_ISSUER_URL || 'http://localhost:4000'
   );
@@ -438,7 +440,7 @@ export function createApp(deps?: AppDependencies): Express {
   const discoveryController = new DiscoveryController(getOpenIdConfigHandler, getJwksHandler);
 
   const authController = new AuthController(registerUserHandler, getProfileHandler);
-  const userController = new UserController(getProfileHandler, updateUserProfileHandler);
+  const userController = new UserController(getProfileHandler, updateUserProfileHandler, deleteUserHandler);
   const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
 
   const issueAuthCodeHandler = new IssueAuthorizationCodeCommandHandler(
@@ -736,6 +738,34 @@ export function createApp(deps?: AppDependencies): Express {
     crossTenantGuard,
     userController.updateUser
   );
+  app.delete(
+    '/api/v1/users/:userId',
+    tenantContextMiddleware,
+    authMiddleware,
+    crossTenantGuard,
+    userController.deleteUser
+  );
+
+  // Rutas de Operaciones y Reseed (Dev/Test Ops)
+  app.post('/api/v1/ops/reseed-dev-sessions', async (_req: Request, res: Response) => {
+    if (process.env.NODE_ENV === 'production') {
+      res.status(403).json({ error: 'forbidden', message: 'Not available in production environment' });
+      return;
+    }
+    const { session: devSession } = RefreshSession.create({
+      familyId: 'fam-portal-web-dev',
+      userId: 'usr_01J00000000000000000000001',
+      tenantId: 'acme-corp',
+      clientId: 'portal-web',
+      plainToken: 'seed_refresh_token_portal_web_dev_2026',
+    });
+    await refreshSessionRepository.save(devSession);
+    res.status(200).json({
+      message: 'Dev refresh session re-seeded successfully',
+      client_id: 'portal-web',
+      refresh_token: 'seed_refresh_token_portal_web_dev_2026',
+    });
+  });
 
   // Rutas OAuth2 / Client Registry v1
   app.post(
