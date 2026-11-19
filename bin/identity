@@ -195,7 +195,7 @@ ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}oidc${colors.reset}         Protocolo OpenID Connect (discovery, jwks, authorize)
   ${colors.cyan}session${colors.reset}      Gestión de sesiones y rotación de Refresh Tokens (refresh, revoke)
   ${colors.cyan}federation${colors.reset}   Federación de identidad OIDC externa (login, callback)
-  ${colors.cyan}ops${colors.reset}          Operaciones, observabilidad y cumplimiento (rotate-secret, export-audit, metrics, reseed-dev-sessions)
+  ${colors.cyan}ops${colors.reset}          Operaciones, observabilidad y cumplimiento (rotate-secret, export-audit, metrics, reseed-dev-sessions, db-reset)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -222,6 +222,7 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity ops export-audit --tenant acme-corp --severity ALERT
   identity ops metrics --filter http_requests
   identity ops reseed-dev-sessions
+  identity ops db-reset
 `);
 }
 
@@ -903,6 +904,10 @@ ${colors.bold}Acciones Operacionales & Cumplimiento FinTech:${colors.reset}
 
   ${colors.cyan}reseed-dev-sessions${colors.reset}  Re-siembra en caliente la sesión de refresco de desarrollo (portal-web)
 
+  ${colors.cyan}db-reset${colors.reset}             Reinicia por completo la base de datos PostgreSQL y purga la caché Redis
+                   Banderas:
+                     --no-seeds                 Omite la inserción de clientes iniciales de desarrollo
+
 ${colors.bold}Ejemplos:${colors.reset}
   identity ops rotate-secret --secret-type db
   identity ops rotate-secret --secret-type rsa
@@ -912,6 +917,9 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity ops metrics --filter target_info --format json
   identity ops reseed-dev-sessions
   identity ops reseed-dev-sessions --raw-json
+  identity ops db-reset
+  identity ops db-reset --no-seeds
+  identity ops db-reset --raw-json
 `);
 }
 
@@ -1254,6 +1262,46 @@ async function handleOpsDomain(action, flags, baseUrl, rawJson) {
       baseUrl,
     });
     renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'db-reset') {
+    const noSeeds = Boolean(flags['no-seeds']);
+    const { spawnSync } = await import('child_process');
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const scriptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../scripts/db-reset.ts');
+
+    const args = [scriptPath];
+    if (noSeeds) args.push('--no-seeds');
+    if (rawJson) args.push('--quiet');
+
+    const result = spawnSync('npx', ['tsx', ...args], {
+      stdio: rawJson ? 'pipe' : 'inherit',
+      env: process.env,
+    });
+
+    if (rawJson) {
+      const isSuccess = result.status === 0;
+      console.log(
+        JSON.stringify(
+          {
+            status: isSuccess ? 200 : 500,
+            success: isSuccess,
+            noSeeds,
+            message: isSuccess
+              ? 'Database reset completed successfully'
+              : 'Database reset failed',
+          },
+          null,
+          2
+        )
+      );
+    }
+
+    if (result.status !== 0) {
+      process.exitCode = result.status || 1;
+    }
     return;
   }
 

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev:api": "tsx watch interfaces/http/server.ts",
+    "db:reset": "tsx scripts/db-reset.ts",
     "dev:web": "vite",
     "build:web": "vite build",
     "storybook": "storybook dev -p 6006 --ci",
