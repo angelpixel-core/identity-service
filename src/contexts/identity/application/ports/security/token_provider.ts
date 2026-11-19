@@ -5,6 +5,8 @@ export interface AuthTokenClaims {
   readonly userId: string;
   readonly email?: string;
   readonly tenantId?: string;
+  readonly roles?: string[];
+  readonly actorType?: 'user' | 'service_agent' | 'platform_operator';
   readonly claims?: Record<string, unknown>;
 }
 

@@ -34,6 +34,8 @@ export class JwtTokenAdapter implements TokenProviderPort {
           userId: claims.userId,
           ...(claims.email ? { email: claims.email } : {}),
           ...(claims.tenantId ? { tenantId: claims.tenantId } : {}),
+          ...(claims.roles ? { roles: claims.roles } : {}),
+          ...(claims.actorType ? { actorType: claims.actorType } : {}),
           ...(claims.claims || {}),
         },
         this.secretKey,
@@ -68,11 +70,15 @@ export class JwtTokenAdapter implements TokenProviderPort {
           return reject(new Error('Token payload missing required claims'));
         }
 
-        resolve({
+        const result: AuthTokenClaims = {
           userId: payload.userId,
           email: payload.email,
           tenantId: payload.tenantId,
-        });
+          ...(payload.roles && Array.isArray(payload.roles) ? { roles: payload.roles } : {}),
+          ...(payload.actorType ? { actorType: payload.actorType } : {}),
+        };
+
+        resolve(result);
       });
     });
   }

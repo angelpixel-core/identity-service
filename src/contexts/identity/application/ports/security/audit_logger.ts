@@ -18,6 +18,7 @@ export type SecurityAuditEventType =
   | 'REFRESH_TOKEN_REUSE_DETECTED'
   | 'FEDERATION_CALLBACK_PROCESSED'
   | 'FEDERATION_CALLBACK_FAILED'
+  | 'PLATFORM_OPERATOR_CROSS_TENANT_ACTION'
   // Compatibilidad hacia atrás (legacy snake_case)
   | 'client_authenticated'
   | 'client_authentication_failed'
@@ -28,15 +29,16 @@ export type SecurityAuditEventType =
   | 'federation_callback_processed'
   | 'federation_callback_failed'
   | 'secret_rotation_success'
-  | 'secret_rotation_failure';
+  | 'secret_rotation_failure'
+  | 'platform_operator_cross_tenant_action';
 
 export type SecurityAuditSeverity = 'INFO' | 'WARN' | 'ERROR' | 'ALERT' | 'CRITICAL';
 
-export type SecurityAuditStatus = 'SUCCESS' | 'FAILURE' | 'DENIED' | 'ERROR';
+export type SecurityAuditStatus = 'SUCCESS' | 'FAILURE' | 'DENIED' | 'ERROR' | 'GRANTED_ELEVATED';
 
 export interface SecurityAuditActor {
   readonly userId?: string;
-  readonly type?: 'USER' | 'CLIENT' | 'SYSTEM';
+  readonly type?: 'USER' | 'CLIENT' | 'SYSTEM' | 'OPERATOR';
   readonly ip?: string;
 }
 

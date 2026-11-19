@@ -162,4 +162,122 @@ describe('HTTP Interface Middleware: createCrossTenantGuard', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });
+
+  describe('Root Tenant & Platform Operator Delegation (ADR-0009 & Zero-Trust)', () => {
+    it('should grant cross-tenant access to Root Superadmin and log platform_operator_cross_tenant_action', async () => {
+      const req = {
+        tenantId: 'system',
+        userId: 'admin-root-001',
+        userRoles: ['superadmin'],
+        body: { tenantId: 'tenant-target-corp' },
+        params: {},
+        query: {},
+        ip: '10.0.0.100',
+        originalUrl: '/api/v1/users',
+        method: 'POST',
+      } as unknown as Request;
+      const res = createMockRes();
+      const next = jest.fn();
+
+      await guard(req, res, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
+      expect(auditLogger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'platform_operator_cross_tenant_action',
+          severity: 'WARN',
+          status: 'GRANTED_ELEVATED',
+          tenantId: 'tenant-target-corp',
+          reason: 'PLATFORM_OPERATOR_CROSS_TENANT_ACTION',
+          metadata: expect.objectContaining({
+            operatorTenantId: 'system',
+            targetTenantId: 'tenant-target-corp',
+            userId: 'admin-root-001',
+          }),
+        })
+      );
+    });
+
+    it('should grant cross-tenant access when req.isRootAdmin is true and roles include superadmin', async () => {
+      const req = {
+        tenantId: 'tenant-delegated',
+        isRootAdmin: true,
+        userRoles: ['superadmin'],
+        body: { tenantId: 'tenant-other' },
+        params: {},
+        query: {},
+        ip: '10.0.0.101',
+      } as unknown as Request;
+      const res = createMockRes();
+      const next = jest.fn();
+
+      await guard(req, res, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
+      expect(auditLogger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'platform_operator_cross_tenant_action',
+          status: 'GRANTED_ELEVATED',
+        })
+      );
+    });
+
+    it('should BLOCK commercial tenant user who has superadmin role when accessing another tenant (Zero-Trust Invariant)', async () => {
+      const req = {
+        tenantId: 'tenant-commercial',
+        userId: 'commercial-admin-001',
+        userRoles: ['superadmin'], // Role superadmin in commercial tenant MUST NOT bypass isolation
+        body: { tenantId: 'tenant-victim' },
+        params: {},
+        query: {},
+        ip: '192.168.1.10',
+      } as unknown as Request;
+      const res = createMockRes();
+      const next = jest.fn();
+
+      await guard(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(auditLogger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'cross_tenant_violation',
+          severity: 'ALERT',
+          status: 'DENIED',
+          metadata: expect.objectContaining({
+            activeTenantId: 'tenant-commercial',
+            attemptedTenantId: 'tenant-victim',
+          }),
+        })
+      );
+    });
+
+    it('should BLOCK system tenant user WITHOUT superadmin role from cross-tenant access', async () => {
+      const req = {
+        tenantId: 'system',
+        userId: 'system-regular-user',
+        userRoles: ['member'],
+        body: { tenantId: 'tenant-beta' },
+        params: {},
+        query: {},
+        ip: '10.0.0.105',
+      } as unknown as Request;
+      const res = createMockRes();
+      const next = jest.fn();
+
+      await guard(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(auditLogger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'cross_tenant_violation',
+          severity: 'ALERT',
+          status: 'DENIED',
+        })
+      );
+    });
+  });
 });

@@ -46,6 +46,25 @@ describe('Infrastructure Adapter: JwtTokenAdapter', () => {
       expect(decodedClaims.email).toBe(validClaims.email);
       expect(decodedClaims.tenantId).toBe(validClaims.tenantId);
     });
+
+    it('should correctly preserve roles and actorType claims when provided', async () => {
+      const claimsWithRoles: AuthTokenClaims = {
+        userId: 'admin-uuid-001',
+        email: 'admin@angelpixel.io',
+        tenantId: 'system',
+        roles: ['superadmin', 'auditor'],
+        actorType: 'platform_operator',
+      };
+
+      const token = await adapter.generateToken(claimsWithRoles);
+      const decoded = await adapter.verifyToken(token);
+
+      expect(decoded.userId).toBe(claimsWithRoles.userId);
+      expect(decoded.email).toBe(claimsWithRoles.email);
+      expect(decoded.tenantId).toBe('system');
+      expect(decoded.roles).toEqual(['superadmin', 'auditor']);
+      expect(decoded.actorType).toBe('platform_operator');
+    });
   });
 
   describe('Token Verification (verifyToken)', () => {
