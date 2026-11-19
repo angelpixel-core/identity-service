@@ -191,6 +191,7 @@ Uso: identity <recurso> <accion> [banderas]
 ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}auth${colors.reset}         Gestión de usuarios y autenticación (register, me, update-user, delete-user, create-root-admin)
   ${colors.cyan}users${colors.reset}        Gobernanza de usuarios y Root Admin (create-root-admin, get, delete)
+  ${colors.cyan}tenant${colors.reset}       Operaciones de contexto multi-tenant y PostgreSQL RLS (list-users, insert-user)
   ${colors.cyan}client${colors.reset}       Gobernanza y validación de clientes OAuth2 (validate)
   ${colors.cyan}token${colors.reset}        Emisión y canje de tokens OAuth2 (m2m, exchange)
   ${colors.cyan}oidc${colors.reset}         Protocolo OpenID Connect (discovery, jwks, authorize)
@@ -514,6 +515,96 @@ async function handleUsersDomain(action, flags, baseUrl, rawJson) {
 
   console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso users. Usa --help para ver las acciones disponibles.`);
   process.exit(1);
+}
+
+function printTenantHelp() {
+  console.log(`${colors.bold}Uso: identity tenant <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones:${colors.reset}
+  ${colors.cyan}list-users${colors.reset}   Consulta usuarios en PostgreSQL bajo el rol restringido 'identity_app' (RLS)
+               Banderas:
+                 --tenant <id>           ID del inquilino para SET LOCAL app.current_tenant_id (Opcional; omitirlo activa Fail-Closed)
+                 --limit <n>             Cantidad máxima de filas a retornar (def: 10)
+
+  ${colors.cyan}insert-user${colors.reset}  Inserta un registro de usuario bajo una sesión de inquilino en PostgreSQL (RLS WITH CHECK)
+               Banderas:
+                 --session-tenant <id>   Inquilino activo en la sesión (SET LOCAL app.current_tenant_id) (Requerido)
+                 --tenant <id>           Valor de tenant_id asignado a la fila a insertar (Requerido)
+                 --email <email>         Correo electrónico del usuario (Requerido)
+                 --id <uuid>             UUID explícito opcional para la fila
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity tenant list-users --tenant acme-corp --limit 3
+  identity tenant list-users
+  identity tenant insert-user --session-tenant acme-corp --tenant beta-corp --email hacker@beta-corp.com
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO TENANT (POSTGRESQL RLS) ---
+async function handleTenantDomain(action, flags, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printTenantHelp();
+    return;
+  }
+
+  if (action !== 'list-users' && action !== 'insert-user') {
+    console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso tenant. Usa --help para ver las acciones disponibles.`);
+    process.exit(1);
+  }
+
+  const { spawnSync } = await import('child_process');
+  const path = await import('path');
+  const { fileURLToPath } = await import('url');
+  const scriptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../scripts/tenant-rls.ts');
+
+  const args = [scriptPath, action];
+
+  if (action === 'list-users') {
+    const tenant = flags.tenant || flags['tenant-id'] || flags.t;
+    const limit = flags.limit || flags.l;
+    if (tenant && typeof tenant === 'string') {
+      args.push('--tenant', tenant);
+    }
+    if (limit) {
+      args.push('--limit', String(limit));
+    }
+  } else if (action === 'insert-user') {
+    const sessionTenant = flags['session-tenant'] || flags.s;
+    const tenant = flags.tenant || flags['tenant-id'] || flags.t;
+    const email = flags.email || flags.e;
+    const id = flags.id;
+
+    if (!sessionTenant) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --session-tenant es obligatoria para insert-user.`);
+      process.exit(1);
+    }
+    if (!tenant) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --tenant es obligatoria para insert-user.`);
+      process.exit(1);
+    }
+    if (!email) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --email es obligatoria para insert-user.`);
+      process.exit(1);
+    }
+
+    args.push('--session-tenant', String(sessionTenant), '--tenant', String(tenant), '--email', String(email));
+    if (id) {
+      args.push('--id', String(id));
+    }
+  }
+
+  if (rawJson) {
+    args.push('--raw-json');
+  }
+
+  const result = spawnSync('npx', ['tsx', ...args], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (result.status !== 0) {
+    process.exitCode = result.status || 1;
+  }
 }
 
 function printClientHelp() {
@@ -1444,6 +1535,10 @@ async function main() {
 
     case 'users':
       await handleUsersDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    case 'tenant':
+      await handleTenantDomain(parsed.action, parsed.flags, rawJson);
       break;
 
     case 'client':

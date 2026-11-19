@@ -133,42 +133,73 @@ sequenceDiagram
 
 ---
 
-### 2. Evidencia Forense en Vivo: Terminal SQL de PostgreSQL 16
+### 2. Evidencia Forense en Vivo: Terminal SQL & CLI de PostgreSQL 16
 
-Las siguientes evidencias fueron capturadas directamente ejecutando consultas interactivas con `psql` sobre el contenedor Docker `identity-db` en ejecución:
+Ejecuta este bloque una sola vez para inicializar las variables de sesión interactivas utilizadas en las demostraciones de **US-05** y **US-06**:
+
+```bash
+# ==============================================================================
+# Variables de Sesión Interactiva para Aislamiento RLS & Cross-Tenant Guard
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export TENANT_A="acme-corp"
+export TENANT_B="beta-corp"
+export USER_PASS='EnterprisePassword2026!'
+```
+
+Las siguientes evidencias se ejecutan mediante la CLI oficial `./bin/identity tenant` conectándose directamente con el rol restringido **`identity_app`** (`NOSUPERUSER NOBYPASSRLS`) sobre PostgreSQL 16:
 
 #### Demostración 1: Filtrado Transaccional por Inquilino
 
-Al establecer `app.current_tenant_id = 'acme-corp'`, una consulta abierta `SELECT id, email, tenant_id FROM users;` devuelve exclusivamente los usuarios de `acme-corp`:
+Al consultar usuarios declarando `--tenant "${TENANT_A}"`, la CLI abre una transacción y fija `app.current_tenant_id` mediante consulta parametrizada; el kernel PostgreSQL devuelve exclusivamente los usuarios de `${TENANT_A}`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity tenant list-users \
+  --tenant "${TENANT_A}" \
+  --limit 3
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con psql (Docker)</b></summary>
 
 ```bash
 docker compose exec -T db psql -U identity_app -d identity_db -c "
 BEGIN;
-SET LOCAL app.current_tenant_id = 'acme-corp';
+SET LOCAL app.current_tenant_id = '${TENANT_A}';
 SELECT id, email, tenant_id FROM users LIMIT 3;
 COMMIT;
 "
 ```
 
-##### Salida Real de PostgreSQL:
-```text
-BEGIN
-SET
-                  id                  |                     email                      | tenant_id 
---------------------------------------+------------------------------------------------+-----------
- 2d7787ee-67fa-407c-abe0-1acba23c8191 | showcase.architect.1794919730773@acme-corp.com | acme-corp
- e258cb9d-4bed-47e2-bc37-c337f78b765e | showcase.verify.1794919986@acme-corp.com       | acme-corp
- 14f52980-5920-4e73-acd6-a78580b40bbe | showcase.architect.1794922057608@acme-corp.com | acme-corp
-(3 rows)
+</details>
 
-COMMIT
+##### Salida Real Obtenida (PostgreSQL RLS):
+```text
+PostgreSQL RLS Query [role: identity_app | 13ms]
+Session Context: app.current_tenant_id = 'acme-corp'
+
+ id                                   | email                                   | tenant_id
+--------------------------------------+-----------------------------------------+-----------
+ e351637a-65da-42aa-970d-1b68769624ac | lead.architect.1795118663@acme-corp.com | acme-corp
+(1 row)
 ```
 
 ---
 
 #### Demostración 2: Principio Fail-Closed (Seguridad por Defecto)
 
-Si un actor malicioso o un error en la aplicación ejecuta una consulta directa sin configurar la variable de sesión de inquilino:
+Si se ejecuta la misma acción `list-users` **omitiendo la bandera `--tenant`** (sin inicializar la variable de sesión `app.current_tenant_id`):
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity tenant list-users
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con psql (Docker)</b></summary>
 
 ```bash
 docker compose exec -T db psql -U identity_app -d identity_db -c "
@@ -176,9 +207,14 @@ SELECT id, email, tenant_id FROM users;
 "
 ```
 
-##### Salida Real de PostgreSQL (Cero Filas Retornadas):
+</details>
+
+##### Salida Real Obtenida (Cero Filas Retornadas):
 ```text
- id | email | tenant_id 
+PostgreSQL RLS Query [role: identity_app | 6ms]
+Session Context: <unset> (Fail-Closed RLS)
+
+ id | email | tenant_id
 ----+-------+-----------
 (0 rows)
 ```
@@ -190,26 +226,41 @@ SELECT id, email, tenant_id FROM users;
 
 #### Demostración 3: Protección de Integridad `WITH CHECK` (Anti-Inyección Cross-Tenant)
 
-Si dentro de una sesión legítima del inquilino `alpha-corp`, un atacante intenta forzar la inserción de un registro asignado a `beta-corp`:
+Si dentro de una sesión legítima del inquilino `${TENANT_A}` se intenta insertar un registro asignado a `${TENANT_B}`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity tenant insert-user \
+  --session-tenant "${TENANT_A}" \
+  --tenant "${TENANT_B}" \
+  --email "hacker@beta-corp.com"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con psql (Docker)</b></summary>
 
 ```bash
 docker compose exec -T db psql -U identity_app -d identity_db -c "
 BEGIN;
-SET LOCAL app.current_tenant_id = 'alpha-corp';
+SET LOCAL app.current_tenant_id = '${TENANT_A}';
 INSERT INTO users (id, tenant_id, email, password_hash, created_at, updated_at)
-VALUES ('hacked-uuid', 'beta-corp', 'hacker@beta.com', 'dummy_hash', NOW(), NOW());
+VALUES ('hacked-uuid', '${TENANT_B}', 'hacker@beta-corp.com', 'dummy_hash', NOW(), NOW());
 COMMIT;
 "
 ```
 
+</details>
+
 ##### Rechazo Categórico a Nivel de Kernel:
 ```text
-BEGIN
-SET
-ERROR:  new row violates row-level security policy for table "users"
+✖ PostgreSQL Kernel Rejection [42501] [role: identity_app | 7ms]
+Session Context: app.current_tenant_id = 'acme-corp'
+Target Row Tenant: 'beta-corp'
+ERROR: new row violates row-level security policy for table "users"
 ```
 
-PostgreSQL rechaza la transacción con código de error **42501 (insufficient_privilege)**, abortando el bloque y protegiendo la base de datos contra contaminación de datos.
+PostgreSQL rechaza la transacción con código de error **42501 (insufficient_privilege)**, abortando el bloque mediante `ROLLBACK` y protegiendo la base de datos contra contaminación de datos.
 
 ---
 
@@ -289,19 +340,12 @@ sequenceDiagram
 
 Puedes reproducir los tres vectores de ataque directamente contra el entorno en vivo utilizando la CLI oficial o `cURL`:
 
-#### Paso 0: Preparación de la Sesión y Registro Dinámico Multi-Tenant (`$TOKEN_ACME` & `$USER_BETA_ID`)
+#### Paso 0: Registro Dinámico Multi-Tenant (`${TOKEN_ACME}` & `${USER_BETA_ID}`)
 
-Para comprobar que el aislamiento RLS no depende de UUIDs ficticios sino de entidades reales en la base de datos, inicializamos las variables de sesión, registramos un usuario en `acme-corp` y otro usuario legítimo en `beta-corp`:
+> [!TIP]
+> Si ya ejecutaste el bloque inicial de variables de **US-05** en esta misma terminal, `${BASE_URL}`, `${TENANT_A}`, `${TENANT_B}` y `${USER_PASS}` ya están cargadas. Si abres una nueva ventana, vuelve a exportarlas antes de continuar.
 
-```bash
-# ==============================================================================
-# Variables de Sesión Interactiva para Aislamiento RLS
-# ==============================================================================
-export BASE_URL="http://localhost:4000"
-export TENANT_A="acme-corp"
-export TENANT_B="beta-corp"
-export USER_PASS='EnterprisePassword2026!'
-```
+Para comprobar que el aislamiento RLS no depende de UUIDs ficticios sino de entidades reales en la base de datos, registramos un usuario en `${TENANT_A}` y otro usuario legítimo en `${TENANT_B}`:
 
 **1. Registrar Usuario en Tenant A (`${TENANT_A}`) y extraer `${TOKEN_ACME}` y `${USER_ACME_ID}`:**
 
@@ -396,15 +440,15 @@ Al inspeccionar el JWT emitido, se observa cómo el claim `tenantId` queda fijad
 
 #### Vector 1: Prevención de Enumeración de Usuarios (HTTP 404 Not Found)
 
-Un usuario legítimo del inquilino `acme-corp` intenta actualizar el perfil del usuario `$USER_BETA_ID` (que existe en PostgreSQL bajo `beta-corp`):
+Un usuario legítimo del inquilino `${TENANT_A}` intenta actualizar el perfil del usuario `${USER_BETA_ID}` (que existe en PostgreSQL bajo `${TENANT_B}`):
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
 ./bin/identity auth update-user \
-  --tenant "$TENANT_A" \
-  --token "$TOKEN_ACME" \
-  --user-id "$USER_BETA_ID" \
+  --tenant "${TENANT_A}" \
+  --token "${TOKEN_ACME}" \
+  --user-id "${USER_BETA_ID}" \
   --name "Intento de Mutacion Ajena"
 ```
 
@@ -412,12 +456,13 @@ Un usuario legítimo del inquilino `acme-corp` intenta actualizar el perfil del 
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X PATCH "$BASE_URL/api/v1/users/$USER_BETA_ID" \
-  -H "Authorization: Bearer $TOKEN_ACME" \
-  -H "X-Tenant-ID: $TENANT_A" \
+curl -i -X PATCH "${BASE_URL}/api/v1/users/${USER_BETA_ID}" \
+  -H "Authorization: Bearer ${TOKEN_ACME}" \
+  -H "X-Tenant-ID: ${TENANT_A}" \
   -H "Content-Type: application/json" \
   -d '{"name": "Intento de Mutacion Ajena"}'
 ```
+
 </details>
 
 ##### Respuesta Real Obtenida (HTTP 404 Not Found):
@@ -434,24 +479,25 @@ PATCH http://localhost:4000/api/v1/users/4476ffac-2423-444b-8342-efbfe4dbaeba
 
 #### Vector 2: Intento de Suplantación de Inquilino / Token Divergence (HTTP 403 Forbidden)
 
-Un usuario autenticado de `acme-corp` presenta su token pero declara en la cabecera `X-Tenant-ID: $TENANT_B`:
+Un usuario autenticado de `${TENANT_A}` presenta su token pero declara en la cabecera `X-Tenant-ID: ${TENANT_B}`:
 
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
 ./bin/identity auth me \
-  --tenant "$TENANT_B" \
-  --token "$TOKEN_ACME"
+  --tenant "${TENANT_B}" \
+  --token "${TOKEN_ACME}"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X GET "$BASE_URL/api/v1/auth/me" \
-  -H "Authorization: Bearer $TOKEN_ACME" \
-  -H "X-Tenant-ID: $TENANT_B"
+curl -i -X GET "${BASE_URL}/api/v1/auth/me" \
+  -H "Authorization: Bearer ${TOKEN_ACME}" \
+  -H "X-Tenant-ID: ${TENANT_B}"
 ```
+
 </details>
 
 ##### Respuesta de Seguridad Obtenida (HTTP 403 Forbidden):
@@ -473,19 +519,24 @@ Un atacante intenta inyectar sentencias SQL para eludir el aislamiento en `X-Ten
 **Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
+export SQLI_PAYLOAD="alpha-corp'; DROP TABLE users; --"
+
 ./bin/identity auth me \
-  --tenant "alpha-corp'; DROP TABLE users; --" \
-  --token "$TOKEN_ACME"
+  --tenant "${SQLI_PAYLOAD}" \
+  --token "${TOKEN_ACME}"
 ```
 
 <details>
 <summary><b>Ver Receta Equivalente con cURL</b></summary>
 
 ```bash
-curl -i -X GET "$BASE_URL/api/v1/auth/me" \
-  -H "Authorization: Bearer $TOKEN_ACME" \
-  -H "X-Tenant-ID: alpha-corp'; DROP TABLE users; --"
+export SQLI_PAYLOAD="alpha-corp'; DROP TABLE users; --"
+
+curl -i -X GET "${BASE_URL}/api/v1/auth/me" \
+  -H "Authorization: Bearer ${TOKEN_ACME}" \
+  -H "X-Tenant-ID: ${SQLI_PAYLOAD}"
 ```
+
 </details>
 
 ##### Respuesta de Validación Obtenida (HTTP 400 Bad Request):
@@ -546,22 +597,22 @@ Ante la detección de una anomalía o discrepancia cross-tenant, el sistema emit
 
 Para no dejar usuarios de prueba huérfanos en las particiones de PostgreSQL ni en la memoria caché Redis, procedemos al borrado físico de los usuarios creados en ambos inquilinos utilizando sus respectivos tokens de contexto:
 
-**1. Borrar Usuario de Inquilino A (`$TENANT_A`):**
+**1. Borrar Usuario de Inquilino A (`${TENANT_A}`):**
 
 ```bash
 ./bin/identity auth delete-user \
-  --tenant "$TENANT_A" \
-  --token "$TOKEN_ACME" \
-  --user-id "$USER_ACME_ID"
+  --tenant "${TENANT_A}" \
+  --token "${TOKEN_ACME}" \
+  --user-id "${USER_ACME_ID}"
 ```
 
-**2. Borrar Usuario de Inquilino B (`$TENANT_B`):**
+**2. Borrar Usuario de Inquilino B (`${TENANT_B}`):**
 
 ```bash
 ./bin/identity auth delete-user \
-  --tenant "$TENANT_B" \
-  --token "$TOKEN_BETA" \
-  --user-id "$USER_BETA_ID"
+  --tenant "${TENANT_B}" \
+  --token "${TOKEN_BETA}" \
+  --user-id "${USER_BETA_ID}"
 ```
 
 <details>
@@ -569,15 +620,16 @@ Para no dejar usuarios de prueba huérfanos en las particiones de PostgreSQL ni 
 
 ```bash
 # Borrar Usuario en Tenant A
-curl -i -X DELETE "$BASE_URL/api/v1/users/$USER_ACME_ID" \
-  -H "Authorization: Bearer $TOKEN_ACME" \
-  -H "X-Tenant-ID: $TENANT_A"
+curl -i -X DELETE "${BASE_URL}/api/v1/users/${USER_ACME_ID}" \
+  -H "Authorization: Bearer ${TOKEN_ACME}" \
+  -H "X-Tenant-ID: ${TENANT_A}"
 
 # Borrar Usuario en Tenant B
-curl -i -X DELETE "$BASE_URL/api/v1/users/$USER_BETA_ID" \
-  -H "Authorization: Bearer $TOKEN_BETA" \
-  -H "X-Tenant-ID: $TENANT_B"
+curl -i -X DELETE "${BASE_URL}/api/v1/users/${USER_BETA_ID}" \
+  -H "Authorization: Bearer ${TOKEN_BETA}" \
+  -H "X-Tenant-ID: ${TENANT_B}"
 ```
+
 </details>
 
 Ambas operaciones retornan `HTTP/1.1 204 No Content`, garantizando que la base de datos PostgreSQL y la caché Redis quedan libres de residuos sin afectar el aislamiento de ningún otro inquilino.
