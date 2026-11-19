@@ -189,13 +189,13 @@ function printGeneralHelp() {
 Uso: identity <recurso> <accion> [banderas]
 
 ${colors.bold}Recursos Disponibles:${colors.reset}
-  ${colors.cyan}auth${colors.reset}         Gestión de usuarios y autenticación (register, me, update-user)
+  ${colors.cyan}auth${colors.reset}         Gestión de usuarios y autenticación (register, me, update-user, delete-user)
   ${colors.cyan}client${colors.reset}       Gobernanza y validación de clientes OAuth2 (validate)
   ${colors.cyan}token${colors.reset}        Emisión y canje de tokens OAuth2 (m2m, exchange)
   ${colors.cyan}oidc${colors.reset}         Protocolo OpenID Connect (discovery, jwks, authorize)
   ${colors.cyan}session${colors.reset}      Gestión de sesiones y rotación de Refresh Tokens (refresh, revoke)
   ${colors.cyan}federation${colors.reset}   Federación de identidad OIDC externa (login, callback)
-  ${colors.cyan}ops${colors.reset}          Operaciones, observabilidad y cumplimiento (rotate-secret, export-audit, metrics)
+  ${colors.cyan}ops${colors.reset}          Operaciones, observabilidad y cumplimiento (rotate-secret, export-audit, metrics, reseed-dev-sessions)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -207,6 +207,7 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity auth register --tenant acme-corp --email user@acme.com --password "Secret2026!"
   identity auth me --tenant acme-corp --token "$TOKEN"
   identity auth update-user --tenant acme-corp --token "$TOKEN" --user-id "$USER_ID" --name "Nuevo Nombre"
+  identity auth delete-user --tenant acme-corp --token "$TOKEN" --user-id "$USER_ID"
   identity client validate --client-id portal-web --origin https://portal.angelpixel.io
   identity token m2m --client-id m2m-service-app --client-secret "$SECRET"
   identity token exchange --client-id portal-web --redirect-uri https://portal.angelpixel.io/callback --code "$CODE" --verifier "$VERIFIER"
@@ -220,6 +221,7 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity ops rotate-secret --secret-type db
   identity ops export-audit --tenant acme-corp --severity ALERT
   identity ops metrics --filter http_requests
+  identity ops reseed-dev-sessions
 `);
 }
 
@@ -246,10 +248,17 @@ ${colors.bold}Acciones:${colors.reset}
                  --user-id <uuid>    ID del usuario objetivo (Requerido)
                  --name <name>       Nuevo nombre a aplicar (Opcional)
 
+  ${colors.cyan}delete-user${colors.reset}  Elimina físicamente un usuario y purga su caché (Zero-Trust Guard)
+               Banderas:
+                 --tenant <id>       ID del inquilino (Requerido)
+                 --token <jwt>       Token de acceso Bearer (Requerido)
+                 --user-id <uuid>    ID del usuario objetivo a eliminar (Requerido)
+
 ${colors.bold}Ejemplos:${colors.reset}
   identity auth register --tenant acme-corp --email dev@acme.com --password "EnterprisePassword2026!"
   identity auth me --tenant acme-corp --token eyJhbGciOi...
   identity auth update-user --tenant acme-corp --token "$TOKEN" --user-id 4476ffac-2423-444b-8342-efbfe4dbaeba --name "Mutacion"
+  identity auth delete-user --tenant acme-corp --token "$TOKEN" --user-id 4476ffac-2423-444b-8342-efbfe4dbaeba
 `);
 }
 
@@ -346,6 +355,45 @@ async function handleAuthDomain(action, flags, baseUrl, rawJson) {
       },
       body: { name: name ? String(name) : 'Updated User' },
     });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'delete-user') {
+    const tenant = flags.tenant || flags['tenant-id'] || flags.t;
+    const token = flags.token;
+    const userId = flags['user-id'] || flags.id || flags.u;
+
+    if (!tenant) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --tenant es obligatoria para eliminar un usuario.`);
+      process.exit(1);
+    }
+    if (!token) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --token es obligatoria para eliminar un usuario.`);
+      process.exit(1);
+    }
+    if (!userId) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --user-id es obligatoria para eliminar un usuario.`);
+      process.exit(1);
+    }
+
+    const res = await requestHttp('DELETE', `/api/v1/users/${encodeURIComponent(String(userId))}`, {
+      baseUrl,
+      headers: {
+        'X-Tenant-ID': String(tenant),
+        Authorization: `Bearer ${String(token).replace(/^Bearer\s+/i, '')}`,
+      },
+    });
+
+    if (res.status === 204) {
+      res.data = {
+        status: 204,
+        message: 'User deleted successfully',
+        userId: String(userId),
+        tenantId: String(tenant),
+      };
+    }
 
     renderResponse(res, rawJson);
     return;
@@ -853,6 +901,8 @@ ${colors.bold}Acciones Operacionales & Cumplimiento FinTech:${colors.reset}
                      --filter <texto>           Filtra líneas o métricas por subcadena o expresión regular
                      --format <tipo>            Formato de salida: prometheus | json (def: prometheus)
 
+  ${colors.cyan}reseed-dev-sessions${colors.reset}  Re-siembra en caliente la sesión de refresco de desarrollo (portal-web)
+
 ${colors.bold}Ejemplos:${colors.reset}
   identity ops rotate-secret --secret-type db
   identity ops rotate-secret --secret-type rsa
@@ -860,6 +910,8 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity ops export-audit --limit 5 --format table
   identity ops metrics --filter http_requests
   identity ops metrics --filter target_info --format json
+  identity ops reseed-dev-sessions
+  identity ops reseed-dev-sessions --raw-json
 `);
 }
 
@@ -1194,6 +1246,14 @@ async function handleOpsDomain(action, flags, baseUrl, rawJson) {
         }
       }
     }
+    return;
+  }
+
+  if (action === 'reseed-dev-sessions') {
+    const res = await requestHttp('POST', '/api/v1/ops/reseed-dev-sessions', {
+      baseUrl,
+    });
+    renderResponse(res, rawJson);
     return;
   }
 
