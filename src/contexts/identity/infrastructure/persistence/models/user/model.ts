@@ -7,6 +7,7 @@ export interface UserDatabaseModel {
   readonly email: string;
   readonly password_hash: string;
   readonly tenant_id: string;
+  readonly roles?: string[] | null;
   readonly created_at: Date;
   readonly updated_at: Date;
 }

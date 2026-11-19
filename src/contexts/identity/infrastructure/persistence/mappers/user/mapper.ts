@@ -9,11 +9,13 @@ import { UserDatabaseModel } from '../../models/user/model';
  */
 export class UserMapper {
   public static toDomain(raw: UserDatabaseModel): User {
+    const roles = Array.isArray(raw.roles) && raw.roles.length > 0 ? raw.roles : ['member'];
     return User.reconstitute({
       id: raw.id,
       email: Email.create(raw.email),
       tenantId: TenantId.create(raw.tenant_id),
       passwordHash: raw.password_hash,
+      roles,
       createdAt: raw.created_at instanceof Date ? raw.created_at : new Date(raw.created_at),
       updatedAt: raw.updated_at instanceof Date ? raw.updated_at : new Date(raw.updated_at),
     });
@@ -25,6 +27,7 @@ export class UserMapper {
       email: user.getEmail().getValue(),
       password_hash: user.getPasswordHash(),
       tenant_id: user.getTenantId().getValue(),
+      roles: user.getRoles(),
       created_at: user.getCreatedAt(),
       updated_at: user.getUpdatedAt(),
     };

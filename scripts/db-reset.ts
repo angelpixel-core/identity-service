@@ -2,6 +2,7 @@ import { Client } from 'pg';
 import fs from 'fs';
 import path from 'path';
 import net from 'net';
+import bcrypt from 'bcrypt';
 
 export interface ResetOptions {
   noSeeds?: boolean;
@@ -145,14 +146,40 @@ export async function resetDatabase(options: ResetOptions = {}): Promise<void> {
       log(`${colors.green}✓ Executed migration: ${file} (${fileLatency}ms)${colors.reset}`);
     }
 
-    // 5. Verify Row Counts
+    // 5. Seed Platform Root Superadmin (if seeds enabled)
+    if (!options.noSeeds) {
+      const startSeeds = performance.now();
+      const rootUserId = 'usr_root_superadmin_000000000001';
+      const rootEmail = 'admin@angelpixel.io';
+      const rootTenantId = 'system';
+      const rootPassword = 'Admin_Root_2026!';
+      const salt = await bcrypt.genSalt(10);
+      const rootPasswordHash = await bcrypt.hash(rootPassword, salt);
+      const now = new Date();
+
+      await client.query(`
+        INSERT INTO users (id, email, password_hash, tenant_id, roles, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (id) DO UPDATE SET
+          email = EXCLUDED.email,
+          password_hash = EXCLUDED.password_hash,
+          tenant_id = EXCLUDED.tenant_id,
+          roles = EXCLUDED.roles,
+          updated_at = EXCLUDED.updated_at;
+      `, [rootUserId, rootEmail, rootPasswordHash, rootTenantId, ['superadmin', 'member'], now, now]);
+
+      const seedLatency = Math.round(performance.now() - startSeeds);
+      log(`${colors.green}✓ Seeded Platform Root Superadmin '${rootEmail}' in tenant '${rootTenantId}' (${seedLatency}ms)${colors.reset}`);
+    }
+
+    // 6. Verify Row Counts
     const usersCount = (await client.query('SELECT COUNT(*)::int as count FROM users')).rows[0].count;
     const clientsCount = (await client.query('SELECT COUNT(*)::int as count FROM registered_clients')).rows[0].count;
     const fedCount = (await client.query('SELECT COUNT(*)::int as count FROM federated_identities')).rows[0].count;
 
     log(`${colors.cyan}📊 Database Status:${colors.reset} users: ${usersCount}, registered_clients: ${clientsCount}, federated_identities: ${fedCount}`);
 
-    // 6. Redis Flush
+    // 7. Redis Flush
     const redisOk = await flushRedis(process.env.REDIS_URL || 'redis://localhost:6379');
     if (redisOk) {
       log(`${colors.green}✓ Redis cache flushed successfully (FLUSHDB)${colors.reset}`);
