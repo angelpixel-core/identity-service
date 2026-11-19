@@ -30,12 +30,13 @@ export class AuthController {
       }
 
       const tenantId = req.tenantId!;
-      const { email, password } = parseResult.data;
+      const { email, password, roles } = parseResult.data;
 
       const result = await this.registerHandler.execute({
         email,
         password,
         tenantId,
+        roles,
       });
 
       res.status(201).json({
@@ -44,6 +45,7 @@ export class AuthController {
         userId: result.userId,
         email: result.email,
         tenantId: result.tenantId,
+        roles: result.roles,
         createdAt: new Date().toISOString(),
       });
     } catch (error) {

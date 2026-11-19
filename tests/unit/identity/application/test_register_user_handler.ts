@@ -65,14 +65,51 @@ describe('Application Command Handler: RegisterUserCommandHandler', () => {
         userId: savedUser.getId(),
         email: 'user@acme.com',
         tenantId: 'acme-corp',
+        roles: ['member'],
+        actorType: 'user',
       });
 
       expect(result).toEqual({
         userId: savedUser.getId(),
         email: 'user@acme.com',
         tenantId: 'acme-corp',
+        roles: ['member'],
         accessToken: 'jwt-mock-access-token-123',
       });
+    });
+
+    it('should assign superadmin role and platform_operator actorType when registering in root tenant system', async () => {
+      const rootCommand: RegisterUserCommand = {
+        tenantId: 'system',
+        email: 'admin@angelpixel.io',
+        password: 'AdminSuperPassword2026!',
+      };
+
+      const result = await handler.execute(rootCommand);
+
+      expect(result.tenantId).toBe('system');
+      expect(result.roles).toEqual(['superadmin', 'member']);
+      expect(tokenProvider.generateToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 'system',
+          roles: ['superadmin', 'member'],
+          actorType: 'platform_operator',
+        })
+      );
+    });
+
+    it('should reject registration when superadmin role is requested in a non-root tenant (Defense-in-Depth)', async () => {
+      const maliciousCommand: RegisterUserCommand = {
+        tenantId: 'acme-corp',
+        email: 'hacker@acme.com',
+        password: 'Password123!',
+        roles: ['superadmin'],
+      };
+
+      await expect(handler.execute(maliciousCommand)).rejects.toThrow(DomainValidationError);
+      await expect(handler.execute(maliciousCommand)).rejects.toThrow(
+        'Role "superadmin" can only be assigned within the root tenant ("system")'
+      );
     });
   });
 

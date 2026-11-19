@@ -8,6 +8,7 @@ export const RegisterUserSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters long'),
   tenantId: z.string().optional(),
+  roles: z.array(z.string()).optional(),
 });
 
 export type RegisterUserPayload = z.infer<typeof RegisterUserSchema>;

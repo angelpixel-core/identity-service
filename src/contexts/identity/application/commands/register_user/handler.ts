@@ -38,6 +38,13 @@ export class RegisterUserCommandHandler {
       );
     }
 
+    const isRootTenant = tenantId.isRoot();
+    const requestedRoles = command.roles || (isRootTenant ? ['superadmin', 'member'] : ['member']);
+
+    if (requestedRoles.includes('superadmin') && !isRootTenant) {
+      throw new DomainValidationError('Role "superadmin" can only be assigned within the root tenant ("system")');
+    }
+
     const passwordHash = await this.hashProvider.hash(command.password);
 
     const userId = randomUUID();
@@ -46,6 +53,7 @@ export class RegisterUserCommandHandler {
       email,
       tenantId,
       passwordHash,
+      roles: requestedRoles,
     });
 
     await this.userRepository.save(newUser);
@@ -54,12 +62,15 @@ export class RegisterUserCommandHandler {
       userId: newUser.getId(),
       email: newUser.getEmail().getValue(),
       tenantId: newUser.getTenantId().getValue(),
+      roles: newUser.getRoles(),
+      actorType: newUser.isSuperadmin() ? 'platform_operator' : 'user',
     });
 
     return {
       userId: newUser.getId(),
       email: newUser.getEmail().getValue(),
       tenantId: newUser.getTenantId().getValue(),
+      roles: newUser.getRoles(),
       accessToken,
     };
   }

@@ -189,7 +189,8 @@ function printGeneralHelp() {
 Uso: identity <recurso> <accion> [banderas]
 
 ${colors.bold}Recursos Disponibles:${colors.reset}
-  ${colors.cyan}auth${colors.reset}         Gestión de usuarios y autenticación (register, me, update-user, delete-user)
+  ${colors.cyan}auth${colors.reset}         Gestión de usuarios y autenticación (register, me, update-user, delete-user, create-root-admin)
+  ${colors.cyan}users${colors.reset}        Gobernanza de usuarios y Root Admin (create-root-admin, get, delete)
   ${colors.cyan}client${colors.reset}       Gobernanza y validación de clientes OAuth2 (validate)
   ${colors.cyan}token${colors.reset}        Emisión y canje de tokens OAuth2 (m2m, exchange)
   ${colors.cyan}oidc${colors.reset}         Protocolo OpenID Connect (discovery, jwks, authorize)
@@ -255,11 +256,17 @@ ${colors.bold}Acciones:${colors.reset}
                  --token <jwt>       Token de acceso Bearer (Requerido)
                  --user-id <uuid>    ID del usuario objetivo a eliminar (Requerido)
 
+  ${colors.cyan}create-root-admin${colors.reset} Registra un superadministrador en el root tenant 'system'
+               Banderas:
+                 --email <email>     Correo del operador (Requerido)
+                 --password <pwd>    Contraseña segura (Requerido)
+
 ${colors.bold}Ejemplos:${colors.reset}
   identity auth register --tenant acme-corp --email dev@acme.com --password "EnterprisePassword2026!"
   identity auth me --tenant acme-corp --token eyJhbGciOi...
   identity auth update-user --tenant acme-corp --token "$TOKEN" --user-id 4476ffac-2423-444b-8342-efbfe4dbaeba --name "Mutacion"
   identity auth delete-user --tenant acme-corp --token "$TOKEN" --user-id 4476ffac-2423-444b-8342-efbfe4dbaeba
+  identity auth create-root-admin --email admin@angelpixel.io --password "SuperAdmin_2026!"
 `);
 }
 
@@ -400,7 +407,112 @@ async function handleAuthDomain(action, flags, baseUrl, rawJson) {
     return;
   }
 
+  if (action === 'create-root-admin') {
+    return handleUsersDomain('create-root-admin', flags, baseUrl, rawJson);
+  }
+
   console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso auth. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
+}
+
+function printUsersHelp() {
+  console.log(`${colors.bold}Uso: identity users <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones:${colors.reset}
+  ${colors.cyan}create-root-admin${colors.reset} Registra un superadministrador en el root tenant ('system')
+               Banderas:
+                 --email <email>     Correo del operador (Requerido)
+                 --password <pwd>    Contraseña segura (Requerido)
+
+  ${colors.cyan}get${colors.reset}               Consulta el perfil de un usuario por su ID
+               Banderas:
+                 --tenant <id>       ID del inquilino objetivo (Requerido)
+                 --user-id <uuid>    ID del usuario objetivo (Requerido)
+                 --token <jwt>       Token de acceso Bearer (Requerido)
+
+  ${colors.cyan}delete${colors.reset}            Elimina físicamente un usuario por su ID
+               Banderas:
+                 --tenant <id>       ID del inquilino objetivo (Requerido)
+                 --user-id <uuid>    ID del usuario objetivo (Requerido)
+                 --token <jwt>       Token de acceso Bearer (Requerido)
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity users create-root-admin --email admin@angelpixel.io --password "SuperAdmin_2026!"
+  identity users get --tenant acme-corp --user-id 4476ffac-2423-444b-8342-efbfe4dbaeba --token "$TOKEN"
+  identity users delete --tenant acme-corp --user-id 4476ffac-2423-444b-8342-efbfe4dbaeba --token "$TOKEN"
+`);
+}
+
+async function handleUsersDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printUsersHelp();
+    return;
+  }
+
+  if (action === 'create-root-admin') {
+    const email = flags.email || flags.e;
+    const password = flags.password || flags.p;
+
+    if (!email) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --email es obligatoria para crear un root admin.`);
+      process.exit(1);
+    }
+    if (!password) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --password es obligatoria para crear un root admin.`);
+      process.exit(1);
+    }
+
+    const res = await requestHttp('POST', '/api/v1/auth/register', {
+      baseUrl,
+      headers: {
+        'X-Tenant-ID': 'system',
+      },
+      body: {
+        email,
+        password,
+        roles: ['superadmin', 'member'],
+      },
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'get') {
+    const tenant = flags.tenant || flags['tenant-id'] || flags.t;
+    const token = flags.token;
+    const userId = flags['user-id'] || flags.id || flags.u;
+
+    if (!tenant) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --tenant es obligatoria para consultar un usuario.`);
+      process.exit(1);
+    }
+    if (!token) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --token es obligatoria para consultar un usuario.`);
+      process.exit(1);
+    }
+    if (!userId) {
+      console.error(`${colors.red}Error:${colors.reset} La bandera --user-id es obligatoria para consultar un usuario.`);
+      process.exit(1);
+    }
+
+    const res = await requestHttp('GET', `/api/v1/users/${encodeURIComponent(String(userId))}`, {
+      baseUrl,
+      headers: {
+        'X-Tenant-ID': String(tenant),
+        Authorization: `Bearer ${String(token).replace(/^Bearer\s+/i, '')}`,
+      },
+    });
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'delete') {
+    return handleAuthDomain('delete-user', flags, baseUrl, rawJson);
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso users. Usa --help para ver las acciones disponibles.`);
   process.exit(1);
 }
 
@@ -1328,6 +1440,10 @@ async function main() {
   switch (parsed.resource) {
     case 'auth':
       await handleAuthDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    case 'users':
+      await handleUsersDomain(parsed.action, parsed.flags, baseUrl, rawJson);
       break;
 
     case 'client':
