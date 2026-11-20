@@ -3,6 +3,7 @@ import { AuthSession, UserProfile } from './contexts/identity/domain/types';
 import { BoundedShell, resolveSurfaceFromPath } from './shell/BoundedShell';
 import { AuthPortalView } from './contexts/auth/ui/AuthPortalView';
 import { TenantConsoleView } from './contexts/tenant/ui/TenantConsoleView';
+import { PlatformConsoleView } from './contexts/platform/ui/PlatformConsoleView';
 
 export function App() {
   const [session, setSession] = useState<AuthSession | null>(() => {
@@ -55,7 +56,9 @@ export function App() {
 
   return (
     <BoundedShell session={session}>
-      {session && surface === 'tenant' ? (
+      {session && surface === 'platform' ? (
+        <PlatformConsoleView session={session} />
+      ) : session && surface === 'tenant' ? (
         <TenantConsoleView session={session} />
       ) : (
         <AuthPortalView
