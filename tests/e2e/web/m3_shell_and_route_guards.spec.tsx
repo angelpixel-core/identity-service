@@ -48,4 +48,26 @@ describe('Web UI E2E Spec: US-23 Material Design 3 Shell & Bounded Contexts', ()
     expect(deniedBanner).toHaveTextContent(/system:superadmin/i);
     expect(screen.queryByTestId('platform-surface')).not.toBeInTheDocument();
   });
+
+  it('Scenario 3: renders /platform workspace with Navigation Rail and system · superadmin badge for Root Superadmin (ADR-0009)', () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'mock-root-jwt',
+        userId: 'usr_root_01',
+        email: 'secadmin@angelpixel.io',
+        tenantId: 'system',
+        roles: ['superadmin', 'member'],
+      })
+    );
+    window.history.pushState({}, '', '/platform');
+
+    render(<App />);
+
+    expect(screen.getByTestId('platform-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('platform-nav-rail')).toBeInTheDocument();
+    const roleBadge = screen.getByTestId('platform-role-badge');
+    expect(roleBadge).toHaveTextContent('system · superadmin');
+    expect(screen.queryByTestId('platform-access-denied')).not.toBeInTheDocument();
+  });
 });

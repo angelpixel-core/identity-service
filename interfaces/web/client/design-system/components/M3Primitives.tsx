@@ -83,3 +83,44 @@ export function M3AlertBanner({
     </div>
   );
 }
+
+export interface M3NavItem {
+  readonly id: string;
+  readonly label: string;
+  readonly shortCode: string;
+  readonly href: string;
+  readonly active?: boolean;
+}
+
+export interface M3NavigationRailProps {
+  ariaLabel: string;
+  items: readonly M3NavItem[];
+  testId?: string;
+}
+
+export function M3NavigationRail({
+  ariaLabel,
+  items,
+  testId,
+}: M3NavigationRailProps) {
+  return (
+    <nav aria-label={ariaLabel} className="m3-nav-rail" data-testid={testId}>
+      <ul className="m3-nav-rail__list">
+        {items.map((item) => (
+          <li key={item.id}>
+            <a
+              href={item.href}
+              aria-current={item.active ? 'page' : undefined}
+              className={`m3-nav-item ${item.active ? 'm3-nav-item--active' : ''}`.trim()}
+            >
+              <span className="m3-nav-item__pill" aria-hidden="true">
+                {item.shortCode}
+              </span>
+              <span className="m3-nav-item__label">{item.label}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}

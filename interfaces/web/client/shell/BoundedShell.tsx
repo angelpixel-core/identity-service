@@ -5,6 +5,8 @@ import {
   M3Button,
   M3Card,
   M3Chip,
+  M3NavItem,
+  M3NavigationRail,
 } from '../design-system/components/M3Primitives';
 
 export type BoundedSurface = 'auth' | 'tenant' | 'platform';
@@ -117,11 +119,78 @@ export function BoundedShell({ session, pathname, children }: BoundedShellProps)
     );
   }
 
-  // Sesión activa en superficie /auth (escenarios siguientes ampliarán /tenant y /platform)
+  // Scenario 3 (US-23): Consola /platform para Root Tenant Superadmin (ADR-0009)
+  if (requestedSurface === 'platform') {
+    const platformNav: M3NavItem[] = [
+      { id: 'overview', label: 'Resumen', shortCode: 'OV', href: '/platform', active: true },
+      { id: 'secrets', label: 'Secretos & TLS', shortCode: 'KM', href: '/platform#secrets-tls' },
+      { id: 'audit', label: 'Auditoría NDJSON', shortCode: 'AU', href: '/platform#audit' },
+      { id: 'obs', label: 'Observabilidad', shortCode: 'OB', href: '/platform#observability' },
+      { id: 'posture', label: 'Postura Cloud', shortCode: 'CL', href: '/platform#posture' },
+    ];
+
+    return (
+      <div className="m3-workspace-shell" data-testid="platform-surface">
+        <M3NavigationRail
+          ariaLabel="Navegación Root Platform Governance"
+          items={platformNav}
+          testId="platform-nav-rail"
+        />
+        <div className="m3-workspace-body">
+          <header className="m3-workspace-topbar">
+            <div>
+              <h1>Platform Governance Console</h1>
+              <span className="m3-workspace-subtitle">Root Tenant Control Plane (ADR-0009)</span>
+            </div>
+            <M3Chip
+              label="system · superadmin"
+              tone="primary"
+              testId="platform-role-badge"
+            />
+          </header>
+          <main className="m3-workspace-main">
+            <M3Card variant="elevated">{children}</M3Card>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // Consola /tenant con Navigation Rail para inquilino autenticado
+  if (requestedSurface === 'tenant') {
+    const tenantNav: M3NavItem[] = [
+      { id: 'clients', label: 'Clientes M2M', shortCode: 'CL', href: '/tenant', active: true },
+      { id: 'rls', label: 'Aislamiento RLS', shortCode: 'RL', href: '/tenant#rls' },
+    ];
+
+    return (
+      <div className="m3-workspace-shell" data-testid="tenant-surface">
+        <M3NavigationRail
+          ariaLabel="Navegación Consola de Inquilino"
+          items={tenantNav}
+          testId="tenant-nav-rail"
+        />
+        <div className="m3-workspace-body">
+          <header className="m3-workspace-topbar">
+            <div>
+              <h1>Tenant Console</h1>
+              <span className="m3-workspace-subtitle">Multi-Tenant Isolation &amp; Client Registry</span>
+            </div>
+            <M3Chip label={`${session.tenantId} · Tenant`} tone="primary" />
+          </header>
+          <main className="m3-workspace-main">
+            <M3Card variant="elevated">{children}</M3Card>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // Sesión activa en superficie /auth
   return (
     <main
       className="m3-auth-shell"
-      data-testid={`${requestedSurface}-surface`}
+      data-testid="auth-surface"
     >
       <header className="m3-auth-header">
         <M3Chip label={`${session.tenantId}`} tone="primary" />
