@@ -255,6 +255,80 @@ body {
   color: var(--text-muted);
 }
 
+.m3-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.m3-field__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.m3-field__input {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--md-sys-shape-corner-small, 8px);
+  font-size: 0.925rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.m3-field__input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.16);
+}
+
+.m3-field--error .m3-field__input {
+  border-color: var(--error);
+}
+
+.m3-field__helper {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.m3-field__error {
+  font-size: 0.78rem;
+  color: var(--error);
+  font-weight: 500;
+}
+
+.m3-json-viewer {
+  border: 1px solid var(--border);
+  border-radius: var(--md-sys-shape-corner-medium, 12px);
+  background: var(--md-sys-color-surface-container-low, #f1f4f9);
+  overflow: hidden;
+}
+
+.m3-json-viewer__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.m3-json-viewer__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.m3-json-viewer__pre {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  font-family: var(--md-sys-typescale-font-mono, monospace);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  color: var(--text);
+}
+
 form {
   display: flex;
   flex-direction: column;

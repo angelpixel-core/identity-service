@@ -124,3 +124,70 @@ export function M3NavigationRail({
     </nav>
   );
 }
+
+export interface M3TextFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  id: string;
+  label: string;
+  helperText?: string;
+  errorText?: string;
+}
+
+export function M3TextField({
+  id,
+  label,
+  helperText,
+  errorText,
+  className = '',
+  ...rest
+}: M3TextFieldProps) {
+  const hasError = Boolean(errorText);
+  return (
+    <div className={`m3-field ${hasError ? 'm3-field--error' : ''} ${className}`.trim()}>
+      <label htmlFor={id} className="m3-field__label">
+        {label}
+      </label>
+      <input
+        id={id}
+        aria-invalid={hasError || undefined}
+        aria-describedby={errorText ? `${id}-error` : helperText ? `${id}-helper` : undefined}
+        className="m3-field__input"
+        {...rest}
+      />
+      {errorText ? (
+        <span id={`${id}-error`} role="alert" className="m3-field__error">
+          {errorText}
+        </span>
+      ) : helperText ? (
+        <span id={`${id}-helper`} className="m3-field__helper">
+          {helperText}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+export interface M3JsonViewerProps {
+  title?: string;
+  data: unknown;
+  badge?: string;
+  testId?: string;
+}
+
+export function M3JsonViewer({ title, data, badge, testId }: M3JsonViewerProps) {
+  const formatted =
+    typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+
+  return (
+    <div className="m3-json-viewer" data-testid={testId}>
+      {(title || badge) && (
+        <div className="m3-json-viewer__header">
+          {title && <span className="m3-json-viewer__title">{title}</span>}
+          {badge && <M3Chip label={badge} tone="primary" />}
+        </div>
+      )}
+      <pre className="m3-json-viewer__pre">
+        <code>{formatted}</code>
+      </pre>
+    </div>
+  );
+}

@@ -1,4 +1,5 @@
 import type { Preview } from '@storybook/react';
+import '../interfaces/web/client/design-system/tokens.css';
 import '../interfaces/web/client/styles.css';
 
 const preview: Preview = {
