@@ -437,12 +437,160 @@ sequenceDiagram
 
 ---
 
-### 🧪 Verificación Automatizada: Suite de Pruebas de Cifrado y Hardening (US-17)
+### 🚀 Ejecución en Vivo & Verificación Interactiva Paso a Paso (`./bin/identity secrets`)
 
-La efectividad de la protección TLS y la defensa anti-downgrade se validan mediante la siguiente suite de integración:
+Para comprobar el **Anti-Downgrade SSL Guard** en tiempo de ejecución reutilizamos las acciones de dominio de `./bin/identity secrets` introducidas en **US-16**: no existen comandos artificiales de prueba, sino que pasar parámetros de conexión degradados (`?sslmode=no-verify`, `?sslmode=prefer`, `?sslmode=disable`) dispara de forma natural la defensa perimetral PCI-DSS 4.1 / SOC 2 CC6.7.
+
+#### Paso 0: Variables de Sesión para Vectores de Downgrade SSL
+
+> [!TIP]
+> Si ya ejecutaste el **Paso 0 de US-16** en esta misma sesión de terminal (sin haber borrado aún al operador raíz), `${BASE_URL}` y `${ROOT_TOKEN}` ya se encuentran cargadas. Si abres una nueva terminal, vuelve a generar `${ROOT_TOKEN}` con `./bin/identity users create-root-admin`.
 
 ```bash
-npx jest tests/integration/identity/security/test_database_tls_hardening.ts
+# ==============================================================================
+# Variables de Sesión Interactiva para Anti-Downgrade SSL Guard (US-17)
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export DOWNGRADE_NO_VERIFY_URL="postgresql://postgres:postgres@localhost:5432/identity_db?sslmode=no-verify"
+export DOWNGRADE_PREFER_URL="postgresql://postgres:postgres@localhost:5432/identity_db?sslmode=prefer"
+```
+
+---
+
+#### Paso 1: Inspección de la Postura TLS Activa del Pool (`./bin/identity secrets status`)
+
+Consultamos la telemetría criptográfica del pool PostgreSQL para confirmar las políticas `minVersion` y `rejectUnauthorized`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity secrets status --token "${ROOT_TOKEN}" --raw-json | jq '.databasePool'
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X GET "${BASE_URL}/api/v1/secrets/status" \
+  -H "Authorization: Bearer ${ROOT_TOKEN}" | jq '.databasePool'
+```
+
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+
+```json
+{
+  "mode": "DYNAMIC_POSTGRES_POOL",
+  "activeGeneration": 1,
+  "retiringPoolsCount": 0,
+  "totalConnections": 2,
+  "idleConnections": 2,
+  "waitingClients": 0,
+  "ssl": {
+    "enabled": true,
+    "minVersion": "TLSv1.2",
+    "rejectUnauthorized": true,
+    "caConfigured": true
+  }
+}
+```
+
+---
+
+#### Paso 2: Bloqueo Anti-Downgrade ante `?sslmode=no-verify` (HTTP 422 `BLOCKED_ANTI_DOWNGRADE`)
+
+Intentamos rotar las credenciales de base de datos con una cadena que omite la verificación criptográfica del certificado CA (`sslmode=no-verify`):
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity secrets rotate-db-credentials \
+  --token "${ROOT_TOKEN}" \
+  --database-url "${DOWNGRADE_NO_VERIFY_URL}"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X POST "${BASE_URL}/api/v1/secrets/rotate-db-credentials" \
+  -H "Authorization: Bearer ${ROOT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"databaseUrl\": \"${DOWNGRADE_NO_VERIFY_URL}\"}" | jq .
+```
+
+</details>
+
+##### Respuesta de Defensa Obtenida (HTTP 422 — `BLOCKED_ANTI_DOWNGRADE`):
+
+```json
+{
+  "status": "BLOCKED_ANTI_DOWNGRADE",
+  "operation": "ZERO_DOWNTIME_DB_POOL_SWAP",
+  "failSafePreserved": true,
+  "activeGeneration": 1,
+  "reason": "SSL_DOWNGRADE_BLOCKED",
+  "error": "Anti-Downgrade SSL Guard blocked insecure candidate; active pool Generation 1 preserved without downtime: Insecure sslmode 'no-verify' is forbidden. Encrypted transport must enforce full certificate verification.",
+  "compliance": {
+    "pciRequirement": "4.1",
+    "soc2Criteria": "CC6.7",
+    "auditEventEmitted": "SECRET_ROTATION_FAILURE"
+  }
+}
+```
+
+---
+
+#### Paso 3: Bloqueo ante `?sslmode=prefer` & Verificación de Continuidad (`/health/ready`)
+
+Repetimos el vector con `sslmode=prefer` (modo oportunista prohibido bajo PCI-DSS 4.1) y confirmamos que el pool seguro activo sigue atendiendo peticiones sin interrupción:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity secrets rotate-db-credentials \
+  --token "${ROOT_TOKEN}" \
+  --database-url "${DOWNGRADE_PREFER_URL}"
+
+# Confirmar continuidad total de servicio en /health/ready
+curl -s "${BASE_URL}/health/ready" | jq .
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X POST "${BASE_URL}/api/v1/secrets/rotate-db-credentials" \
+  -H "Authorization: Bearer ${ROOT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"databaseUrl\": \"${DOWNGRADE_PREFER_URL}\"}" | jq .
+
+curl -s "${BASE_URL}/health/ready" | jq .
+```
+
+</details>
+
+##### Continuidad Confirmada (`/health/ready` — HTTP 200 OK):
+
+```json
+{
+  "status": "UP",
+  "checks": {
+    "database": "OK",
+    "cache": "OK"
+  }
+}
+```
+
+---
+
+### 🧪 Verificación Automatizada: Suites de Cifrado y Hardening (US-17)
+
+La efectividad de la protección TLS, la postura reportada por `/api/v1/secrets/status` y la defensa anti-downgrade se validan mediante las suites unitarias y de integración dedicadas:
+
+```bash
+npx jest tests/unit/identity/infrastructure/database/test_postgres_ssl_config.ts tests/integration/identity/security/test_database_tls_hardening.ts tests/integration/identity/security/test_secrets_rotation_api.ts
 ```
 
 ##### Salida Real de Verificación Automatizada (6/6 Escenarios Aprobados):
