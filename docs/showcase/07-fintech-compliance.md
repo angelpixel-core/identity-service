@@ -427,29 +427,46 @@ sequenceDiagram
     participant PG as PostgreSQL Flexible Server (TLS 1.2+)
     participant Audit as Logger de Auditoría NDJSON
 
-    Client->>App: 1. Petición que requiere persistencia segura
-    App->>PoolMgr: 2. Solicitud de conexión cliente del pool
-    PoolMgr->>SSLGuard: 3. Validación de opciones SSL (rejectUnauthorized=true, TLS 1.2+)
+    Client->>App: Petición que requiere persistencia segura
+    App->>PoolMgr: Solicitud de conexión cliente del pool
+    PoolMgr->>SSLGuard: Validación de opciones SSL (rejectUnauthorized=true, TLS 1.2+)
     alt Handshake Seguro con CA Válido
-        SSLGuard->>PG: 4. Establecimiento de túnel TLS con verificación de CA (/mnt/secrets-store/ca.crt)
-        PG-->>PoolMgr: 5. Handshake completado exitosamente (Cifrado Activo)
-        PoolMgr-->>App: 6. Conexión entregada y ejecución de transacción cifrada
-        App-->>Client: 7. Respuesta exitosa 200 OK con datos protegidos
+        SSLGuard->>PG: Establecimiento de túnel TLS con verificación de CA (/mnt/secrets-store/ca.crt)
+        PG-->>PoolMgr: Handshake completado exitosamente (Cifrado Activo)
+        PoolMgr-->>App: Conexión entregada y ejecución de transacción cifrada
+        App-->>Client: Respuesta exitosa 200 OK con datos protegidos
     else Intento de Rotación Insegura (sslmode=disable / MitM)
-        SSLGuard->>SSLGuard: 4. Detección de degradación criptográfica o certificado no confiable
-        SSLGuard->>Audit: 5. Emisión de alerta de seguridad crítica (SECURITY_VIOLATION)
-        SSLGuard-->>PoolMgr: 6. Rechazo de inicialización y preservación del pool seguro anterior
-        PoolMgr-->>App: 7. Sonda /health/ready reporta 503 DOWN para proteger el tráfico
+        SSLGuard->>SSLGuard: Detección de degradación criptográfica o certificado no confiable
+        SSLGuard->>Audit: Emisión de alerta de seguridad crítica (SECURITY_VIOLATION)
+        SSLGuard-->>PoolMgr: Rechazo de inicialización y preservación del pool seguro anterior
+        PoolMgr-->>App: Sonda /health/ready reporta 503 DOWN para proteger el tráfico
     end
 ```
 
-#### Glosario de Componentes US-17:
-- **`Cliente / Transacción API`:** Usuario o aplicación externa ejecutando una operación autenticada (ej. registro, login o emisión de tokens).
-- **`Aplicación (Server HTTP)`:** Instancia de `identity-service` que atiende peticiones en el puerto `:4000`.
-- **`DynamicPostgresPoolManager`:** Administrador generacional de pools de conexión PostgreSQL con soporte estricto de SSL.
-- **`Anti-Downgrade SSL Guard`:** Componente de defensa perimetral en memoria que valida las opciones criptográficas antes de cualquier operación de red.
-- **`PostgreSQL Flexible Server (TLS 1.2+)`:** Instancia de base de datos en Azure configurada con `ssl_enforcement_enabled = true` y `ssl_minimal_tls_version_enforced = TLSv1.2`.
-- **`Logger de Auditoría NDJSON`:** Módulo emisor de eventos de seguridad que envía trazas enriquecidas con severidad `CRITICAL` hacia stdout.
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Client` (Cliente / Transacción API)** | `actor` | Usuario final, aplicación SPA o cliente M2M que ejecuta una operación autenticada (registro, login, rotación o emisión de tokens). |
+| **`App` (Aplicación — Server HTTP)** | `participant` | Instancia de `identity-service` (`:4000`) que atiende peticiones de negocio y expone las sondas `/health/live` y `/health/ready`. |
+| **`PoolMgr` (`DynamicPostgresPoolManager`)** | `participant` | Administrador generacional de pools PostgreSQL que coordina la creación de candidatos, el swap atómico y la preservación *Fail-Safe*. |
+| **`SSLGuard` (Anti-Downgrade SSL Guard)** | `participant` | Validador criptográfico en memoria que exige `rejectUnauthorized: true`, versión mínima TLS 1.2+ y bloquea `sslmode=disable` / `no-verify` / `prefer`. |
+| **`PG` (PostgreSQL Flexible Server)** | `participant` | Instancia administrada en Azure endurecida con `require_secure_transport = on` y `ssl_min_protocol_version = TLSv1.2`. |
+| **`Audit` (Logger de Auditoría NDJSON)** | `participant` | Emisor 12-Factor hacia `stdout` que registra eventos `CRITICAL` (`SECURITY_VIOLATION`) etiquetados con PCI-DSS 4.1 y SOC 2 CC6.7. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 11)
+
+1. **Paso 1 (`Client -> App`):** Un cliente envía una petición HTTP autenticada que requiere lectura o escritura en PostgreSQL.
+2. **Paso 2 (`App -> PoolMgr`):** El servidor solicita una conexión activa (o evalúa un pool candidato durante una rotación) a `DynamicPostgresPoolManager`.
+3. **Paso 3 (`PoolMgr -> SSLGuard`):** Antes de abrir el socket, el gestor somete las opciones de conexión al `Anti-Downgrade SSL Guard` para exigir `rejectUnauthorized=true` y versión mínima TLS 1.2+.
+4. **Paso 4 — Rama `alt` Handshake Seguro (`SSLGuard -> PG`):** Validadas las opciones, se negocia el túnel TLS 1.2+/1.3 verificando la cadena de confianza del servidor contra el certificado raíz montado en `/mnt/secrets-store/ca.crt`.
+5. **Paso 5 — Rama `alt` Handshake Seguro (`PG -->> PoolMgr`):** PostgreSQL completa el handshake criptográfico y confirma el canal cifrado activo.
+6. **Paso 6 — Rama `alt` Handshake Seguro (`PoolMgr -->> App`):** El pool entrega la conexión segura y la transacción SQL se ejecuta protegida en tránsito.
+7. **Paso 7 — Rama `alt` Handshake Seguro (`App -->> Client`):** El servicio devuelve `HTTP 200 OK` al cliente con la respuesta de negocio.
+8. **Paso 8 — Rama `else` Degradación / MitM (`SSLGuard -> SSLGuard`):** Ante un parámetro de downgrade (`sslmode=disable`, `no-verify`, `prefer`) o un certificado inválido/autofirmado, la guardia aborta la operación en memoria (`BLOCKED_ANTI_DOWNGRADE`).
+9. **Paso 9 — Rama `else` Degradación / MitM (`SSLGuard -> Audit`):** Se emite de inmediato un registro estructurado NDJSON de severidad `CRITICAL` (`SECURITY_VIOLATION`) para correlación en SIEM.
+10. **Paso 10 — Rama `else` Degradación / MitM (`SSLGuard -->> PoolMgr`):** Se rechaza el pool candidato preservando intacta la generación segura previa en modo *Fail-Safe*.
+11. **Paso 11 — Rama `else` Degradación / MitM (`PoolMgr -->> App`):** Si el fallo afecta la conectividad activa por certificado inválido, `/health/ready` reporta `503 DOWN` para aislar tráfico sin provocar reinicios destructivos (`/health/live` permanece `200 OK`).
 
 ---
 
