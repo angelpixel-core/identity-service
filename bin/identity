@@ -193,12 +193,13 @@ ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}users${colors.reset}        Gobernanza de usuarios y Root Admin (create-root-admin, get, delete)
   ${colors.cyan}tenant${colors.reset}       Operaciones de contexto multi-tenant y PostgreSQL RLS (list-users, insert-user)
   ${colors.cyan}secrets${colors.reset}      Rotación de secretos en caliente y telemetría CSI (status, rotate-signing-key, rotate-db-credentials)
+  ${colors.cyan}audit${colors.reset}        Auditoría estructurada de seguridad y exportación NDJSON (events)
   ${colors.cyan}client${colors.reset}       Gobernanza y validación de clientes OAuth2 (validate)
   ${colors.cyan}token${colors.reset}        Emisión y canje de tokens OAuth2 (m2m, exchange)
   ${colors.cyan}oidc${colors.reset}         Protocolo OpenID Connect (discovery, jwks, authorize)
   ${colors.cyan}session${colors.reset}      Gestión de sesiones y rotación de Refresh Tokens (refresh, revoke)
   ${colors.cyan}federation${colors.reset}   Federación de identidad OIDC externa (login, callback)
-  ${colors.cyan}ops${colors.reset}          Operaciones, observabilidad y cumplimiento (export-audit, metrics, reseed-dev-sessions, db-reset)
+  ${colors.cyan}ops${colors.reset}          Operaciones y observabilidad (metrics, reseed-dev-sessions, db-reset)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -224,7 +225,7 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity secrets status --token "$ROOT_TOKEN"
   identity secrets rotate-signing-key --token "$ROOT_TOKEN"
   identity secrets rotate-db-credentials --token "$ROOT_TOKEN"
-  identity ops export-audit --tenant acme-corp --severity ALERT
+  identity audit events --token "$ROOT_TOKEN" --severity ALERT --format ndjson
   identity ops metrics --filter http_requests
   identity ops reseed-dev-sessions
   identity ops db-reset
@@ -1166,19 +1167,114 @@ async function handleFederationDomain(action, flags, baseUrl, rawJson) {
   process.exit(1);
 }
 
+// --- MENÚ DE AYUDA DEL DOMINIO AUDIT ---
+function printAuditHelp() {
+  console.log(`${colors.bold}Uso: identity audit <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones de Auditoría Estructurada de Seguridad (US-19 & ADR-0009):${colors.reset}
+  ${colors.cyan}events${colors.reset}       Consulta y exporta en vivo eventos canónicos de auditoría (GET /api/v1/audit/events)
+               Requiere operador del Root Tenant ('system' + rol 'superadmin').
+               Banderas:
+                 --token <jwt>              JWT de operador Root Superadmin (Requerido)
+                 --tenant <id>              Filtrar por espacio de tenencia (Opcional)
+                 --severity <nivel>         Filtrar por severidad: INFO | WARN | ERROR | ALERT | CRITICAL (Opcional)
+                 --event-type <tipo>        Filtrar por tipo de evento canónico (Opcional)
+                 --limit <n>                Límite de registros a retornar, 1..200 (def: 20)
+                 --format <tipo>            Formato de salida: json | ndjson | table (def: json)
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity audit events --token "$ROOT_TOKEN"
+  identity audit events --token "$ROOT_TOKEN" --severity ALERT --format ndjson
+  identity audit events --token "$ROOT_TOKEN" --tenant alpha-corp --limit 10 --format table
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO AUDIT ---
+async function handleAuditDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printAuditHelp();
+    return;
+  }
+
+  if (action === 'events') {
+    const token = flags.token || flags.t;
+    if (!token) {
+      console.error(`${colors.red}Error:${colors.reset} Se requiere --token <jwt> de un operador Root Superadmin ('system').`);
+      process.exit(1);
+    }
+
+    const format = String(flags.format || 'json').toLowerCase();
+    if (!['json', 'ndjson', 'table'].includes(format)) {
+      console.error(`${colors.red}Error:${colors.reset} Formato inválido "${format}". Usa: json | ndjson | table.`);
+      process.exit(1);
+    }
+
+    const params = new URLSearchParams();
+    if (flags.tenant) params.set('tenantId', String(flags.tenant));
+    if (flags.severity || flags.s) params.set('severity', String(flags.severity || flags.s).toUpperCase());
+    if (flags['event-type']) params.set('eventType', String(flags['event-type']).toUpperCase());
+    params.set('limit', String(flags.limit || '20'));
+    params.set('format', format === 'ndjson' ? 'ndjson' : 'json');
+
+    const res = await requestHttp('GET', `/api/v1/audit/events?${params.toString()}`, {
+      baseUrl,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: format === 'ndjson' ? 'application/x-ndjson, application/json' : 'application/json',
+      },
+    });
+
+    if (res.status !== 200) {
+      renderResponse(res, rawJson);
+      return;
+    }
+
+    if (format === 'ndjson') {
+      const text = typeof res.data === 'string' ? res.data.trimEnd() : '';
+      if (text) {
+        console.log(text);
+      }
+      return;
+    }
+
+    if (format === 'table' && !rawJson) {
+      const events = Array.isArray(res.data?.events) ? res.data.events : [];
+      console.log(`\n${colors.bold}REGISTROS DE AUDITORÍA DE SEGURIDAD EN VIVO (US-19 — WORM COMPLIANCE):${colors.reset}`);
+      console.log(`${colors.dim}-------------------------------------------------------------------------------------------------------${colors.reset}`);
+      console.log(`${colors.bold}${'TIMESTAMP (UTC)'.padEnd(25)} ${'EVENT TYPE'.padEnd(28)} ${'SEVERITY'.padEnd(10)} ${'TENANT'.padEnd(14)} ${'STATUS'.padEnd(9)} ${'PCI-REQ'}${colors.reset}`);
+      console.log(`${colors.dim}-------------------------------------------------------------------------------------------------------${colors.reset}`);
+      for (const ev of events) {
+        let sevColor = colors.green;
+        if (ev.severity === 'ALERT' || ev.severity === 'CRITICAL') sevColor = colors.red;
+        else if (ev.severity === 'WARN') sevColor = colors.yellow;
+
+        console.log(
+          `${colors.dim}${String(ev.timestamp || '').padEnd(25)}${colors.reset} ` +
+          `${colors.cyan}${String(ev.eventType || '').padEnd(28)}${colors.reset} ` +
+          `${sevColor}${String(ev.severity || '').padEnd(10)}${colors.reset} ` +
+          `${String(ev.tenantId || '-').padEnd(14)} ` +
+          `${String(ev.status || '').padEnd(9)} ` +
+          `${colors.magenta}${String(ev.compliance?.pciRequirement || '-')}${colors.reset}`
+        );
+      }
+      console.log(`${colors.dim}-------------------------------------------------------------------------------------------------------${colors.reset}`);
+      console.log(`${colors.green}✓ ${events.length} evento(s) real(es) recuperado(s) del proceso. Retención WORM en Azure Log Analytics: 365 días.${colors.reset}\n`);
+      return;
+    }
+
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso audit. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
+}
+
 // --- MENÚ DE AYUDA DEL DOMINIO OPS ---
 function printOpsHelp() {
   console.log(`${colors.bold}Uso: identity ops <accion> [banderas]${colors.reset}
 
-${colors.bold}Acciones Operacionales & Cumplimiento FinTech:${colors.reset}
-  ${colors.cyan}export-audit${colors.reset}     Exporta e inspecciona registros estructurados de auditoría NDJSON (US-19: PCI-DSS 10.2 / SOC 2 CC6.8)
-                   Banderas:
-                     --tenant <id>              Filtrar por espacio de tenencia (Opcional)
-                     --severity <nivel>         Filtrar por severidad: INFO | WARN | ALERT | CRITICAL (Opcional)
-                     --limit <n>                Límite de registros a exportar (def: 10)
-                     --event-type <tipo>        Filtrar por tipo de evento canónico (Opcional)
-                     --format <tipo>            Formato de salida: ndjson | table (def: ndjson)
-
+${colors.bold}Acciones Operacionales & Observabilidad:${colors.reset}
   ${colors.cyan}metrics${colors.reset}          Inspecciona y filtra métricas Prometheus expuestas en tiempo real (US-21)
                    Banderas:
                      --filter <texto>           Filtra líneas o métricas por subcadena o expresión regular
@@ -1191,8 +1287,6 @@ ${colors.bold}Acciones Operacionales & Cumplimiento FinTech:${colors.reset}
                      --no-seeds                 Omite la inserción de clientes iniciales de desarrollo
 
 ${colors.bold}Ejemplos:${colors.reset}
-  identity ops export-audit --tenant acme-corp --severity ALERT
-  identity ops export-audit --limit 5 --format table
   identity ops metrics --filter http_requests
   identity ops metrics --filter target_info --format json
   identity ops reseed-dev-sessions
@@ -1207,158 +1301,6 @@ ${colors.bold}Ejemplos:${colors.reset}
 async function handleOpsDomain(action, flags, baseUrl, rawJson) {
   if (!action || flags.help || flags.h) {
     printOpsHelp();
-    return;
-  }
-
-  if (action === 'export-audit') {
-    const tenantFilter = flags.tenant || flags.t;
-    const severityFilter = flags.severity || flags.s;
-    const limit = parseInt(flags.limit || '10', 10);
-    const eventTypeFilter = flags['event-type'];
-    const format = String(flags.format || 'ndjson').toLowerCase();
-
-    // Generar eventos de auditoría canónicos conforme al esquema PCI-DSS / SOC 2
-    const now = Date.now();
-    const candidateEvents = [
-      {
-        timestamp: new Date(now - 120000).toISOString(),
-        logType: 'SECURITY_AUDIT',
-        eventType: 'CROSS_TENANT_VIOLATION',
-        severity: 'ALERT',
-        tenantId: tenantFilter ? String(tenantFilter) : 'alpha-corp',
-        actor: { userId: 'usr_attacker_99', type: 'USER', ip: '192.168.1.100' },
-        trace: {
-          requestId: crypto.randomUUID().replace(/-/g, ''),
-          correlationId: crypto.randomUUID().replace(/-/g, ''),
-          traceId: crypto.randomBytes(16).toString('hex'),
-          spanId: crypto.randomBytes(8).toString('hex'),
-        },
-        compliance: { pciRequirement: '10.2.5', soc2Criteria: 'CC7.2', retentionCategory: 'AUDIT_IMMUTABLE' },
-        action: 'user_update_blocked',
-        status: 'DENIED',
-        details: { reason: 'Cross-tenant payload tampering detected', targetTenant: 'beta-corp' },
-      },
-      {
-        timestamp: new Date(now - 90000).toISOString(),
-        logType: 'SECURITY_AUDIT',
-        eventType: 'M2M_AUTH_FAILURE',
-        severity: 'WARN',
-        tenantId: tenantFilter ? String(tenantFilter) : 'system',
-        actor: { userId: 'client_unknown_svc', type: 'CLIENT', ip: '10.244.0.12' },
-        trace: {
-          requestId: crypto.randomUUID().replace(/-/g, ''),
-          correlationId: crypto.randomUUID().replace(/-/g, ''),
-          traceId: crypto.randomBytes(16).toString('hex'),
-          spanId: crypto.randomBytes(8).toString('hex'),
-        },
-        compliance: { pciRequirement: '10.2.1', soc2Criteria: 'CC6.8', retentionCategory: 'AUDIT_IMMUTABLE' },
-        action: 'token_exchange_rejected',
-        status: 'FAILURE',
-        details: { reason: 'Invalid client credentials', client_secret: '[REDACTED]' },
-      },
-      {
-        timestamp: new Date(now - 60000).toISOString(),
-        logType: 'SECURITY_AUDIT',
-        eventType: 'SECRET_ROTATION_SUCCESS',
-        severity: 'INFO',
-        tenantId: 'system',
-        actor: { userId: 'csi_secrets_store_driver', type: 'SYSTEM', ip: '127.0.0.1' },
-        trace: {
-          requestId: crypto.randomUUID().replace(/-/g, ''),
-          correlationId: crypto.randomUUID().replace(/-/g, ''),
-          traceId: crypto.randomBytes(16).toString('hex'),
-          spanId: crypto.randomBytes(8).toString('hex'),
-        },
-        compliance: { pciRequirement: '10.2.6', soc2Criteria: 'CC6.1', retentionCategory: 'AUDIT_IMMUTABLE' },
-        action: 'database_pool_reloaded',
-        status: 'SUCCESS',
-        details: { swapGeneration: 'Gen 1 -> Gen 2', preFlightCheck: 'SELECT 1 PASSED' },
-      },
-      {
-        timestamp: new Date(now - 30000).toISOString(),
-        logType: 'SECURITY_AUDIT',
-        eventType: 'AUTH_LOGIN_SUCCESS',
-        severity: 'INFO',
-        tenantId: tenantFilter ? String(tenantFilter) : 'acme-corp',
-        actor: { userId: 'usr_admin_01', type: 'USER', ip: '10.240.1.5' },
-        trace: {
-          requestId: crypto.randomUUID().replace(/-/g, ''),
-          correlationId: crypto.randomUUID().replace(/-/g, ''),
-          traceId: crypto.randomBytes(16).toString('hex'),
-          spanId: crypto.randomBytes(8).toString('hex'),
-        },
-        compliance: { pciRequirement: '10.2.1', soc2Criteria: 'CC6.1', retentionCategory: 'AUDIT_IMMUTABLE' },
-        action: 'password_authenticated',
-        status: 'SUCCESS',
-        details: { password: '[REDACTED]', authMethod: 'PASSWORD_HASH_ARGON2ID' },
-      },
-      {
-        timestamp: new Date(now - 10000).toISOString(),
-        logType: 'SECURITY_AUDIT',
-        eventType: 'TOKEN_ISSUED',
-        severity: 'INFO',
-        tenantId: tenantFilter ? String(tenantFilter) : 'acme-corp',
-        actor: { userId: 'portal-web', type: 'CLIENT', ip: '10.240.1.5' },
-        trace: {
-          requestId: crypto.randomUUID().replace(/-/g, ''),
-          correlationId: crypto.randomUUID().replace(/-/g, ''),
-          traceId: crypto.randomBytes(16).toString('hex'),
-          spanId: crypto.randomBytes(8).toString('hex'),
-        },
-        compliance: { pciRequirement: '10.2.5', soc2Criteria: 'CC6.1', retentionCategory: 'AUDIT_IMMUTABLE' },
-        action: 'jwt_access_token_issued',
-        status: 'SUCCESS',
-        details: { grantType: 'authorization_code', tokenType: 'Bearer', scope: 'openid profile email' },
-      },
-    ];
-
-    let filtered = candidateEvents;
-    if (tenantFilter) {
-      filtered = filtered.filter((e) => e.tenantId === String(tenantFilter) || e.tenantId === 'system');
-    }
-    if (severityFilter) {
-      filtered = filtered.filter((e) => e.severity === String(severityFilter).toUpperCase());
-    }
-    if (eventTypeFilter) {
-      filtered = filtered.filter((e) => e.eventType === String(eventTypeFilter).toUpperCase());
-    }
-
-    filtered = filtered.slice(0, limit);
-
-    if (rawJson || format === 'ndjson') {
-      for (const event of filtered) {
-        console.log(JSON.stringify(event));
-      }
-      return;
-    }
-
-    if (format === 'table') {
-      console.log(`\n${colors.bold}REGISTROS DE AUDITORÍA DE SEGURIDAD (WORM COMPLIANCE):${colors.reset}`);
-      console.log(`${colors.dim}-------------------------------------------------------------------------------------------------------${colors.reset}`);
-      console.log(`${colors.bold}${'TIMESTAMP (UTC)'.padEnd(25)} ${'EVENT TYPE'.padEnd(28)} ${'SEVERITY'.padEnd(10)} ${'TENANT'.padEnd(14)} ${'STATUS'.padEnd(9)} ${'PCI-REQ'}${colors.reset}`);
-      console.log(`${colors.dim}-------------------------------------------------------------------------------------------------------${colors.reset}`);
-      for (const ev of filtered) {
-        let sevColor = colors.green;
-        if (ev.severity === 'ALERT' || ev.severity === 'CRITICAL') sevColor = colors.red;
-        else if (ev.severity === 'WARN') sevColor = colors.yellow;
-
-        console.log(
-          `${colors.dim}${ev.timestamp.padEnd(25)}${colors.reset} ` +
-          `${colors.cyan}${ev.eventType.padEnd(28)}${colors.reset} ` +
-          `${sevColor}${ev.severity.padEnd(10)}${colors.reset} ` +
-          `${(ev.tenantId || '').padEnd(14)} ` +
-          `${ev.status.padEnd(9)} ` +
-          `${colors.magenta}${ev.compliance.pciRequirement}${colors.reset}`
-        );
-      }
-      console.log(`${colors.dim}-------------------------------------------------------------------------------------------------------${colors.reset}`);
-      console.log(`${colors.green}✓ ${filtered.length} evento(s) exportado(s). Retención garantizada por 365 días en Azure Log Analytics (WORM).${colors.reset}\n`);
-      return;
-    }
-
-    for (const event of filtered) {
-      console.log(highlightJson(JSON.stringify(event, null, 2)));
-    }
     return;
   }
 
@@ -1506,6 +1448,10 @@ async function main() {
 
     case 'secrets':
       await handleSecretsDomain(parsed.action, parsed.flags, baseUrl, rawJson);
+      break;
+
+    case 'audit':
+      await handleAuditDomain(parsed.action, parsed.flags, baseUrl, rawJson);
       break;
 
     case 'client':
