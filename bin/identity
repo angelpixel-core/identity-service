@@ -214,7 +214,7 @@ ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}oidc${colors.reset}         Protocolo OpenID Connect (discovery, jwks, authorize)
   ${colors.cyan}session${colors.reset}      Gestión de sesiones y rotación de Refresh Tokens (refresh, revoke)
   ${colors.cyan}federation${colors.reset}   Federación de identidad OIDC externa (login, callback)
-  ${colors.cyan}ops${colors.reset}          Operaciones y observabilidad (metrics, reseed-dev-sessions, db-reset)
+  ${colors.cyan}ops${colors.reset}          Operaciones y observabilidad (health, metrics, reseed-dev-sessions, db-reset)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>        URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -244,6 +244,7 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity secrets rotate-signing-key --token "$ROOT_TOKEN"
   identity secrets rotate-db-credentials --token "$ROOT_TOKEN"
   identity audit events --token "$ROOT_TOKEN" --severity ALERT --format ndjson
+  identity ops health --probe ready
   identity ops metrics --filter http_requests
   identity ops reseed-dev-sessions
   identity ops db-reset
@@ -1293,6 +1294,10 @@ function printOpsHelp() {
   console.log(`${colors.bold}Uso: identity ops <accion> [banderas]${colors.reset}
 
 ${colors.bold}Acciones Operacionales & Observabilidad:${colors.reset}
+  ${colors.cyan}health${colors.reset}           Consulta las sondas Kubernetes de liveness, readiness o diagnóstico consolidado (US-22)
+                   Banderas:
+                     --probe <tipo>             Sonda a consultar: live | ready | all (def: all)
+
   ${colors.cyan}metrics${colors.reset}          Inspecciona y filtra métricas Prometheus expuestas en tiempo real (US-21)
                    Banderas:
                      --filter <texto>           Filtra líneas o métricas por subcadena o expresión regular
@@ -1305,6 +1310,9 @@ ${colors.bold}Acciones Operacionales & Observabilidad:${colors.reset}
                      --no-seeds                 Omite la inserción de clientes iniciales de desarrollo
 
 ${colors.bold}Ejemplos:${colors.reset}
+  identity ops health --probe live
+  identity ops health --probe ready
+  identity ops health --probe all --raw-json
   identity ops metrics --filter http_requests
   identity ops metrics --filter target_info --format json
   identity ops reseed-dev-sessions
@@ -1319,6 +1327,25 @@ ${colors.bold}Ejemplos:${colors.reset}
 async function handleOpsDomain(action, flags, baseUrl, rawJson) {
   if (!action || flags.help || flags.h) {
     printOpsHelp();
+    return;
+  }
+
+  if (action === 'health') {
+    const probe = String(flags.probe || flags.p || 'all').toLowerCase();
+    const probePaths = {
+      live: '/health/live',
+      liveness: '/health/live',
+      ready: '/health/ready',
+      readiness: '/health/ready',
+      all: '/health',
+    };
+    const targetPath = probePaths[probe];
+    if (!targetPath) {
+      console.error(`${colors.red}Error:${colors.reset} Sonda inválida "${probe}". Usa: live | ready | all.`);
+      process.exit(1);
+    }
+    const res = await requestHttp('GET', targetPath, { baseUrl });
+    renderResponse(res, rawJson);
     return;
   }
 
