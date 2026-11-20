@@ -79,6 +79,8 @@ import { FederatedIdentityRepositoryPort } from '../../src/contexts/identity/dom
 import { PostgresFederatedIdentityRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/federated_identity/postgres_federated_identity_repository';
 import { InMemoryFederatedIdentityRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/federated_identity/in_memory_federated_identity_repository';
 import { FederationController } from './rest/v1/federation/federation_controller';
+import { createRequireRootAdminMiddleware } from './middlewares/require_root_admin';
+import { SecretsController } from './rest/v1/secrets/secrets_controller';
 
 /**
  * Implementación en memoria del repositorio para testing e inicialización desacoplada.
@@ -744,6 +746,29 @@ export function createApp(deps?: AppDependencies): Express {
     authMiddleware,
     crossTenantGuard,
     userController.deleteUser
+  );
+
+  // Rutas de Gobernanza de Secretos en Caliente (US-16 & ADR-0009 — Root Superadmin Only)
+  const requireRootAdmin = createRequireRootAdminMiddleware(auditLogger);
+  const secretsController = new SecretsController({
+    asymmetricKeyProvider,
+    getPool,
+    getDefaultDatabaseUrl: () => resolvedDbUrl || process.env.DATABASE_URL,
+    auditLogger,
+  });
+
+  app.get('/api/v1/secrets/status', authMiddleware, requireRootAdmin, secretsController.getStatus);
+  app.post(
+    '/api/v1/secrets/rotate-signing-key',
+    authMiddleware,
+    requireRootAdmin,
+    secretsController.rotateSigningKey
+  );
+  app.post(
+    '/api/v1/secrets/rotate-db-credentials',
+    authMiddleware,
+    requireRootAdmin,
+    secretsController.rotateDbCredentials
   );
 
   // Rutas de Operaciones y Reseed (Dev/Test Ops)
