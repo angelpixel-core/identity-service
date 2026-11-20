@@ -54,10 +54,107 @@ async function runCapture() {
     }
 
     await page.click('button[type="submit"]');
-    await page.waitForSelector('.session-toolbar, .portal-card button', { timeout: 10000 });
-    await page.waitForTimeout(1200); // Allow cache hit/profile data to settle
+    await page.waitForSelector('button:has-text("Cerrar sesión"), .session-toolbar, .portal-card button', { timeout: 10000 });
+    await page.waitForTimeout(1000); // Allow cache hit/profile data to settle
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, 'us02_user_profile.png'),
+      fullPage: false,
+    });
+
+    // 3b. EPIC-09 / US-24: M3 /auth Portal tabs (Account, OIDC/JWKS, PKCE/Sessions, Federation)
+    console.log('📸 Capturing /auth M3 UI surfaces...');
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_auth_account.png'),
+      fullPage: false,
+    });
+
+    await page.click('button[role="tab"]:has-text("OIDC & JWKS")');
+    await page.waitForTimeout(800);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_auth_oidc_jwks.png'),
+      fullPage: false,
+    });
+
+    await page.click('button[role="tab"]:has-text("PKCE & Sesiones")');
+    await page.waitForTimeout(600);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_auth_pkce_sessions.png'),
+      fullPage: false,
+    });
+
+    await page.click('button[role="tab"]:has-text("Federación")');
+    await page.waitForTimeout(600);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_auth_federation.png'),
+      fullPage: false,
+    });
+
+    // 3c. EPIC-09 / US-25: M3 /tenant Console (Clients & CORS, RLS Lab)
+    console.log('📸 Capturing /tenant M3 UI surfaces...');
+    await page.goto('http://localhost:3000/tenant', { waitUntil: 'networkidle', timeout: 15000 });
+    await page.waitForSelector('button[role="tab"]:has-text("Clientes & CORS")', { timeout: 10000 });
+    await page.waitForTimeout(800);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_tenant_clients_m2m.png'),
+      fullPage: false,
+    });
+
+    await page.click('button[role="tab"]:has-text("Laboratorio RLS")');
+    await page.waitForTimeout(600);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_tenant_rls_lab.png'),
+      fullPage: false,
+    });
+
+    // 3d. EPIC-09 / US-26: M3 /platform Console (Root Superadmin in system tenant)
+    console.log('📸 Provisioning Root Superadmin session and capturing /platform M3 UI surfaces...');
+    const rootEmail = `showcase.root.${Date.now()}@angelpixel.io`;
+    const rootRegRes = await fetch('http://localhost:4000/api/v1/auth/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        email: rootEmail,
+        password: 'RootShowcasePassword2026!',
+      }),
+    });
+    const rootSessionPayload = await rootRegRes.json();
+    await page.evaluate((sess) => {
+      localStorage.setItem(
+        'identity_session',
+        JSON.stringify({
+          token: sess.token,
+          userId: sess.userId,
+          email: sess.email,
+          tenantId: 'system',
+          roles: ['superadmin', 'member'],
+        })
+      );
+    }, rootSessionPayload);
+
+    await page.goto('http://localhost:3000/platform', { waitUntil: 'networkidle', timeout: 15000 });
+    await page.waitForSelector('[data-testid="platform-posture-summary"]', { timeout: 10000 });
+    await page.waitForTimeout(600);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_platform_posture.png'),
+      fullPage: false,
+    });
+
+    await page.click('button[role="tab"]:has-text("Bóveda Criptográfica")');
+    await page.waitForSelector('[data-testid="vault-status-summary"]', { timeout: 10000 });
+    await page.waitForTimeout(600);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_platform_vault_audit.png'),
+      fullPage: false,
+    });
+
+    await page.click('button[role="tab"]:has-text("Observabilidad SRE")');
+    await page.waitForSelector('[data-testid="sre-observability-summary"]', { timeout: 10000 });
+    await page.waitForTimeout(600);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'ui_platform_sre.png'),
       fullPage: false,
     });
 
