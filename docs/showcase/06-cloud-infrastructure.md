@@ -23,7 +23,7 @@ security_standards:
   - "Zero-Downtime RollingUpdate & PodDisruptionBudget"
   - "Multi-Stage Distroless/Alpine Container Hardening"
 created_at: "2026-11-18"
-updated_at: "2026-11-18"
+updated_at: "2026-11-19"
 tags:
   - terraform
   - azure
@@ -704,16 +704,54 @@ sequenceDiagram
 
 ---
 
-### Receta de Validación Determinista de Rollout Continuo
+### Receta de Auditoría Integral CI/CD & Rollout Continuo
 
-El script `scripts/deploy-helm-rollout.sh` permite validar el pipeline de forma determinista y segura:
+#### 1. Suite Automatizada Completa (`npm run test:cicd`)
+
+El repositorio incluye una verificación de 5 etapas ([`scripts/test-cicd-pipeline.sh`](../../scripts/test-cicd-pipeline.sh)) que construye `Dockerfile.production`, audita seguridad de contenedor (`node` UID 1000, 0 `.ts`, 0 `devDependencies`, tamaño `< 250MB`), valida los workflows `.github/workflows/cd.yml` y `.circleci/config.yml`, verifica el rechazo de etiquetas mutables `:latest`, simula el rollout atómico Helm y dispara el Circuit Breaker ante un fallo `503 DOWN`:
 
 ```bash
+npm run test:cicd
+```
+
+##### Salida Real de Auditoría CI/CD (5/5 Aprobados):
+```text
+=== [1/5] Escenario BDD 1: Build Multi-Etapa Productivo (Dockerfile.production) ===
+✓ Usuario no-root verificado dentro de la imagen: node (UID 1000)
+✓ Aislamiento de artefactos verificado: 0 archivos .ts y 0 devDependencies en el runner.
+✓ Tamaño de imagen optimizado: 172MB (< 250MB límite máximo).
+
+=== [2/5] Escenario BDD 2: Validación Estructural de Pipelines (.github/workflows/cd.yml & .circleci/config.yml) ===
+✓ Workflow GitHub Actions (.github/workflows/cd.yml) validado sintáctica y estructuralmente.
+✓ Pipeline CircleCI 2.1 (.circleci/config.yml) con Orbs y gate de aprobación validado.
+
+=== [3/5] Verificando Rechazo de Etiqueta Mutable ':latest' ===
+✓ Política de inmutabilidad verificada: tag ':latest' bloqueado correctamente.
+
+=== [4/5] Verificando Rollout Exitoso con Etiqueta Inmutable (sha-a4e751b) ===
+✓ Rollout verificado: 2/2 réplicas listas con probes /health/live y /health/ready en estado 200 UP.
+
+=== [5/5] Escenario BDD 3: Verificando Rollback Automático ante Fallo de Health Probes (503 DOWN) ===
+✓ Circuit Breaker verificado: Fallo en /health/ready disparó 'helm rollback identity-service 0' y detuvo el pipeline (exit code 1).
+
+================================================================
+✓ Todas las pruebas de automatización CI/CD (US-15) pasaron con éxito.
+================================================================
+```
+
+#### 2. Validación Determinista Individual de Rollout (`deploy-helm-rollout.sh`)
+
+```bash
+export RELEASE_NAME="identity-service"
+export K8S_NAMESPACE="default"
+export ACR_REGISTRY="idprodacr.azurecr.io"
+export IMAGE_TAG="sha-$(git rev-parse --short=7 HEAD)"
+
 bash scripts/deploy-helm-rollout.sh \
-  --release identity-service \
-  --namespace default \
-  --registry idprodacr.azurecr.io \
-  --image-tag sha-1b258bb \
+  --release "${RELEASE_NAME}" \
+  --namespace "${K8S_NAMESPACE}" \
+  --registry "${ACR_REGISTRY}" \
+  --image-tag "${IMAGE_TAG}" \
   --dry-run
 ```
 
