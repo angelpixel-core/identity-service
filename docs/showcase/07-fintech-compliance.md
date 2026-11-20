@@ -930,25 +930,40 @@ sequenceDiagram
     participant LogAnalytics as Azure Log Analytics Workspace
     participant SIEM as Microsoft Sentinel / SOC SIEM
 
-    User->>Gateway: 1. Intento de acceso cross-tenant o autenticación anómala
-    Gateway->>Builder: 2. Detección de incidente de seguridad y generación de evento
-    Builder->>Builder: 3. Sanitización y redacción criptográfica de secretos
-    Builder->>Logger: 4. Emisión de NDJSON estructurado con tags PCI/SOC2
-    Logger->>Logger: 5. Escritura no bloqueante (fail-safe) a stdout
-    Daemon->>Logger: 6. Recolección de trazas NDJSON desde el stream del pod
-    Daemon->>LogAnalytics: 7. Ingesta cifrada vía Azure Monitor Ingestion API
-    LogAnalytics->>LogAnalytics: 8. Persistencia WORM inmutable con retención de 365 días
-    LogAnalytics->>SIEM: 9. Alerta en tiempo real al equipo SOC / Monitoreo FinTech
+    User->>Gateway: Intento de acceso cross-tenant o autenticación anómala
+    Gateway->>Builder: Detección de incidente de seguridad y generación de evento
+    Builder->>Builder: Sanitización y redacción criptográfica de secretos
+    Builder->>Logger: Emisión de NDJSON estructurado con tags PCI/SOC2
+    Logger->>Logger: Escritura no bloqueante (fail-safe) a stdout
+    Daemon->>Logger: Recolección de trazas NDJSON desde el stream del pod
+    Daemon->>LogAnalytics: Ingesta cifrada vía Azure Monitor Ingestion API
+    LogAnalytics->>LogAnalytics: Persistencia WORM inmutable con retención de 365 días
+    LogAnalytics->>SIEM: Alerta en tiempo real al equipo SOC / Monitoreo FinTech
 ```
 
-#### Glosario de Componentes US-19:
-- **`Usuario / Atacante`:** Origen de la petición evaluada por los filtros de seguridad de `identity-service`.
-- **`Ingress & Controller HTTP`:** Capa de enrutamiento y middlewares de seguridad (Rate Limiting, Tenant Context, Auth).
-- **`AuditEventBuilder`:** Clase de dominio encargada de ensamblar y normalizar el payload del evento de auditoría con metadatos contextuales y regulatorios.
-- **`ConsoleSecurityAuditLogger (stdout)`:** Adaptador de infraestructura que realiza la sanitización criptográfica y escribe en `process.stdout` de forma no bloqueante.
-- **`Container Insights (DaemonSet)`:** Agente recolector desplegado en cada nodo del clúster AKS que recopila flujos de salida estándar de los contenedores.
-- **`Azure Log Analytics Workspace`:** Repositorio centralizado en la nube con cifrado en reposo mediante claves administradas por el cliente (CMK) y retención WORM de 365 días.
-- **`Microsoft Sentinel / SOC SIEM`:** Plataforma de seguridad que analiza las bitácoras en tiempo real y dispara incidentes automáticos ante eventos con severidad `ALERT` o `CRITICAL`.
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`User` (Usuario / Atacante)** | `actor` | Sujeto externo (usuario final, cliente M2M o actor malicioso) cuyas peticiones atraviesan los controles perimetrales y de tenencia. |
+| **`Gateway` (Ingress & Controller HTTP)** | `participant` | Capa HTTP de Express y middlewares de seguridad (Rate Limiting, Tenant Context, Root Admin Guard, Auth) que detectan incidentes y propagan `X-Request-ID` / `X-Correlation-ID`. |
+| **`Builder` (`AuditEventBuilder`)** | `participant` | Constructor de dominio que ensambla el esquema bancario (`eventId`, `timestamp`, `eventType`, `severity`, `tenantId`, `actor`, `trace`, `compliance`) y redacta secretos recursivamente. |
+| **`Logger` (`ConsoleSecurityAuditLogger`)** | `participant` | Adaptador 12-Factor que serializa el evento como una línea NDJSON en `process.stdout` neutralizando errores de I/O (`EPIPE`) en modo *fail-safe*. |
+| **`Daemon` (Container Insights DaemonSet)** | `participant` | Agente recolector a nivel de nodo en AKS (Container Insights / Fluent Bit) que captura el stream `stdout` sin introducir latencia al proceso Node.js. |
+| **`LogAnalytics` (Azure Log Analytics)** | `participant` | Repositorio centralizado (`IdentitySecurityAudit_CL`) con cifrado CMK y política WORM inmutable de retención por 365 días (PCI-DSS 10.5 / SOC 2 CC6.8). |
+| **`SIEM` (Microsoft Sentinel / SOC SIEM)** | `participant` | Plataforma de detección y respuesta que correlaciona eventos `ALERT` / `CRITICAL` y dispara incidentes en tiempo real para el equipo de seguridad FinTech. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 9)
+
+1. **Paso 1 (`User -> Gateway`):** Un usuario o atacante envía una petición anómala (ej. manipulación de `tenantId` cross-tenant o credenciales M2M inválidas) hacia la API.
+2. **Paso 2 (`Gateway -> Builder`):** Los middlewares de seguridad bloquean la operación (`HTTP 403` / `HTTP 401`) e invocan `AuditEventBuilder` con el contexto de actor, inquilino y cabeceras de trazabilidad W3C (`X-Request-ID`, `X-Correlation-ID`).
+3. **Paso 3 (`Builder -> Builder`):** El filtro recursivo inspecciona todas las propiedades del payload y reemplaza irreversiblemente cualquier campo sensible (`password`, `client_secret`, `token`, `authorization`, `private_key`) por `[REDACTED]`.
+4. **Paso 4 (`Builder -> Logger`):** El evento normalizado se entrega a `ConsoleSecurityAuditLogger` enriquecido con severidad (`ALERT` / `CRITICAL`) y etiquetas regulatorias (`pciRequirement`, `soc2Criteria`, `AUDIT_IMMUTABLE`).
+5. **Paso 5 (`Logger -> Logger`):** El adaptador escribe exactamente una línea NDJSON terminada en `\n` hacia `process.stdout` de forma no bloqueante, garantizando que fallos de I/O nunca interrumpan transacciones de negocio.
+6. **Paso 6 (`Daemon -> Logger`):** El agente DaemonSet del clúster AKS recolecta el flujo continuo de `stdout` del contenedor de manera asíncrona.
+7. **Paso 7 (`Daemon -> LogAnalytics`):** Las líneas NDJSON recolectadas se transmiten cifradas mediante Azure Monitor Ingestion API hacia el workspace central.
+8. **Paso 8 (`LogAnalytics -> LogAnalytics`):** Los registros se persisten en `IdentitySecurityAudit_CL` bajo política WORM (*Write Once, Read Many*) inmutable durante 365 días.
+9. **Paso 9 (`LogAnalytics -> SIEM`):** Las reglas analíticas de Microsoft Sentinel evalúan eventos de severidad `ALERT` o `CRITICAL` y notifican en tiempo real al equipo SOC.
 
 ---
 
