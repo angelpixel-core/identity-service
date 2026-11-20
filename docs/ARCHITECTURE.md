@@ -114,3 +114,72 @@ La calidad del sistema se garantiza mediante una **Pirámide de Pruebas de Alta 
 3. **Acceptance Tests (Cucumber / Gherkin):** Documentación viva que describe el comportamiento del sistema en lenguaje ubicuo mediante escenarios *Given/When/Then*.
 4. **End-to-End Tests (Playwright / React):** Validan el flujo completo desde la interfaz de usuario en React hasta la respuesta del backend y la gestión del estado global en `AuthContext`.
 
+---
+
+## 5. Arquitectura de Infraestructura Cloud (Azure & Paridad Local)
+
+Además de la arquitectura interna de software (Hexagonal + Vertical Slice + CQRS), el despliegue en la nube está modelado mediante **Infraestructura como Código (Terraform modular sobre Azure Resource Manager)** y empaquetado Kubernetes (**Helm Chart v3**). En desarrollo local y CI, el plano de control de Azure se emula mediante **Floci Azure ARM** (`:4577`) detrás de un proxy TLS local (`:4578`), logrando paridad estructural sin depender de credenciales cloud activas.
+
+```mermaid
+flowchart TB
+    Clients["Clientes Externos (SPA React / M2M / CLI)"]
+
+    subgraph Edge["Perimetro de Red & Terminacion Criptografica"]
+        Ingress["NGINX Ingress Controller (:80 -> :443 TLS 1.3 + HSTS)"]
+    end
+
+    subgraph AzureRG["Azure Resource Group (id-*-rg / eastus2)"]
+        subgraph AKS["Azure Kubernetes Service (id-*-aks)"]
+            Pods["identity-service Pods (UID 1000 / ReadOnlyRootFS / :4000)"]
+            HPA["HPA (2-10 Replicas) & PDB (minAvailable: 1)"]
+            CSI["Secrets Store CSI Driver (tmpfs in-memory)"]
+        end
+
+        subgraph SecurityData["Capa de Datos & Custodia Criptografica"]
+            KV["Azure Key Vault (id-*-kv: jwt-secret, database-url, redis-url, encryption-key)"]
+            PG["PostgreSQL Flexible Server (id-*-psql: identity_db / TLSv1.2+ / FORCE RLS)"]
+            Redis["Redis Cache (Cache-Aside + Sliding Sessions)"]
+        end
+
+        subgraph RegistryAudit["Registro OCI & Observabilidad Regulatoria"]
+            ACR["Azure Container Registry (id*acr / IAM AcrPull)"]
+            Storage["Azure Storage Account (id*st: audit-logs WORM & identity-backups)"]
+            LAW["Log Analytics Workspace (id-*-law / Retencion 365d PCI-DSS 10.5)"]
+        end
+    end
+
+    subgraph ControlPlane["Plano de Control IaC (Terraform Modular)"]
+        TF["Terraform CLI (environments/local | prod)"]
+        ARM["Azure ARM API / Floci Local Emulator (:4577 via Proxy TLS :4578)"]
+    end
+
+    Clients -->|"HTTPS TLS 1.3"| Ingress
+    Ingress -->|"HTTP Interno + X-Forwarded-Proto"| Pods
+    HPA -.->|"Auto-Escalado"| Pods
+    Pods -->|"Montaje Secretos"| CSI
+    CSI -->|"Lectura Cifrada"| KV
+    Pods -->|"SQL TLS + SET LOCAL RLS"| PG
+    Pods -->|"Cache-Aside"| Redis
+    Pods -->|"Logs NDJSON / OTel"| LAW
+    Pods -->|"Archivo WORM"| Storage
+    AKS -->|"Managed Identity (AcrPull)"| ACR
+    TF -->|"fmt / validate / plan"| ARM
+    ARM -.->|"Aprovisiona 19 Recursos"| AzureRG
+```
+
+### Matriz de Paridad: Entorno Local (Floci + Docker) vs Producción (Microsoft Azure)
+
+| Componente Cloud (Azure) | Módulo Terraform | Recursos Planificados | Contraparte Local (Dev / CI) |
+| :--- | :--- | :---: | :--- |
+| **Azure ARM Control Plane** | `providers.tf` | — | **Floci Azure ARM** (`floci-azure-arm` `:4577` + `floci-proxy.mjs` TLS `:4578`) |
+| **Resource Group** | `main.tf` (`id-local-rg`) | 1 | Espacio lógico emulado en Floci (`eastus2`) |
+| **AKS Cluster & IAM `AcrPull`** | `modules/aks` | 2 | Contenedores Docker Compose + Helm Template Validation (`npm run test:helm`) |
+| **NGINX Ingress (TLS 1.3)** | `deployments/ingress` | — | Contenedor `identity-ingress` (`:80` / `:443`, cert local `auth.angelpixel.local`) |
+| **Azure Key Vault + 4 Secretos** | `modules/keyvault` | 6 | Variables `.env` + volúmenes CSI montados en `/mnt/secrets-store` |
+| **PostgreSQL Flexible Server** | `modules/postgres` | 5 | Contenedor `identity-db` (PostgreSQL 16 + `FORCE RLS` + rol `identity_app`) |
+| **Azure Container Registry** | `modules/acr` | 1 | Imagen local `Dockerfile` multi-stage Distroless/Alpine |
+| **Azure Storage (WORM + Backups)** | `modules/storage` | 3 | Contenedores privados `audit-logs` e `identity-backups` en Floci |
+| **Log Analytics (365d PCI-DSS)** | `modules/log_analytics` | 1 | Salida estructurada NDJSON + Prometheus `/metrics` |
+
+> Para el walkthrough interactivo paso a paso de Terraform + Floci, Ingress TLS 1.3, Helm Chart v3 y CI/CD, consulta [Capítulo 06: Infraestructura Cloud, Kubernetes & Entrega Continua](./showcase/06-cloud-infrastructure.md).
+

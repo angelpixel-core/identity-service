@@ -58,6 +58,73 @@ Este capítulo documenta la topología de infraestructura cloud, empaquetado Kub
 
 ---
 
+## ☁️ Topología de Infraestructura Cloud & Paridad Local
+
+El siguiente diagrama representa la arquitectura de despliegue en **Microsoft Azure** y su plano de control declarativo con **Terraform**, emulado localmente de forma determinista mediante **Floci Azure ARM** (`:4577` + Proxy TLS `:4578`):
+
+```mermaid
+flowchart TB
+    Clients["Clientes Externos (SPA React / M2M / CLI)"]
+
+    subgraph Edge["Perimetro de Red & Terminacion Criptografica"]
+        Ingress["NGINX Ingress Controller (:80 -> :443 TLS 1.3 + HSTS)"]
+    end
+
+    subgraph AzureRG["Azure Resource Group (id-*-rg / eastus2)"]
+        subgraph AKS["Azure Kubernetes Service (id-*-aks)"]
+            Pods["identity-service Pods (UID 1000 / ReadOnlyRootFS / :4000)"]
+            HPA["HPA (2-10 Replicas) & PDB (minAvailable: 1)"]
+            CSI["Secrets Store CSI Driver (tmpfs in-memory)"]
+        end
+
+        subgraph SecurityData["Capa de Datos & Custodia Criptografica"]
+            KV["Azure Key Vault (id-*-kv: jwt-secret, database-url, redis-url, encryption-key)"]
+            PG["PostgreSQL Flexible Server (id-*-psql: identity_db / TLSv1.2+ / FORCE RLS)"]
+            Redis["Redis Cache (Cache-Aside + Sliding Sessions)"]
+        end
+
+        subgraph RegistryAudit["Registro OCI & Observabilidad Regulatoria"]
+            ACR["Azure Container Registry (id*acr / IAM AcrPull)"]
+            Storage["Azure Storage Account (id*st: audit-logs WORM & identity-backups)"]
+            LAW["Log Analytics Workspace (id-*-law / Retencion 365d PCI-DSS 10.5)"]
+        end
+    end
+
+    subgraph ControlPlane["Plano de Control IaC (Terraform Modular)"]
+        TF["Terraform CLI (environments/local | prod)"]
+        ARM["Azure ARM API / Floci Local Emulator (:4577 via Proxy TLS :4578)"]
+    end
+
+    Clients -->|"HTTPS TLS 1.3"| Ingress
+    Ingress -->|"HTTP Interno + X-Forwarded-Proto"| Pods
+    HPA -.->|"Auto-Escalado"| Pods
+    Pods -->|"Montaje Secretos"| CSI
+    CSI -->|"Lectura Cifrada"| KV
+    Pods -->|"SQL TLS + SET LOCAL RLS"| PG
+    Pods -->|"Cache-Aside"| Redis
+    Pods -->|"Logs NDJSON / OTel"| LAW
+    Pods -->|"Archivo WORM"| Storage
+    AKS -->|"Managed Identity (AcrPull)"| ACR
+    TF -->|"fmt / validate / plan"| ARM
+    ARM -.->|"Aprovisiona 19 Recursos"| AzureRG
+```
+
+### Matriz de Paridad: Entorno Local (Floci + Docker) vs Producción (Microsoft Azure)
+
+| Componente Cloud (Azure) | Módulo Terraform | Recursos Planificados | Contraparte Local (Dev / CI) |
+| :--- | :--- | :---: | :--- |
+| **Azure ARM Control Plane** | `providers.tf` | — | **Floci Azure ARM** (`floci-azure-arm` `:4577` + `floci-proxy.mjs` TLS `:4578`) |
+| **Resource Group** | `main.tf` (`id-local-rg`) | 1 | Espacio lógico emulado en Floci (`eastus2`) |
+| **AKS Cluster & IAM `AcrPull`** | `modules/aks` | 2 | Contenedores Docker Compose + Helm Template Validation (`npm run test:helm`) |
+| **NGINX Ingress (TLS 1.3)** | `deployments/ingress` | — | Contenedor `identity-ingress` (`:80` / `:443`, cert local `auth.angelpixel.local`) |
+| **Azure Key Vault + 4 Secretos** | `modules/keyvault` | 6 | Variables `.env` + volúmenes CSI montados en `/mnt/secrets-store` |
+| **PostgreSQL Flexible Server** | `modules/postgres` | 5 | Contenedor `identity-db` (PostgreSQL 16 + `FORCE RLS` + rol `identity_app`) |
+| **Azure Container Registry** | `modules/acr` | 1 | Imagen local `Dockerfile` multi-stage Distroless/Alpine |
+| **Azure Storage (WORM + Backups)** | `modules/storage` | 3 | Contenedores privados `audit-logs` e `identity-backups` en Floci |
+| **Log Analytics (365d PCI-DSS)** | `modules/log_analytics` | 1 | Salida estructurada NDJSON + Prometheus `/metrics` |
+
+---
+
 ## 🏗️ US-12: Infraestructura como Código (Terraform Modular para Azure)
 
 ### 1. Arquitectura de Módulos Desacoplados en `infrastructure/terraform/`
@@ -125,21 +192,143 @@ sequenceDiagram
 
 ---
 
-### 2. Verificación Interactiva de la Topología Terraform
+### 2. Verificación Interactiva Real: Terraform + Emulador Floci Azure ARM
 
-Puedes inspeccionar la estructura modular y las salidas declaradas directamente en el repositorio:
+A diferencia de un mero chequeo estático de directorios, la topología Terraform se valida en vivo contra el emulador local **Floci Azure ARM** (`floci-azure-arm` en Docker) y un proxy TLS ARM (`scripts/floci-proxy.mjs`).
+
+#### Paso 0: Variables de Sesión Interactiva
 
 ```bash
-ls -la infrastructure/terraform/modules/
+# ==============================================================================
+# Variables de Sesión Interactiva para Infraestructura Cloud (Terraform + Floci)
+# ==============================================================================
+export TF_ROOT_DIR="infrastructure/terraform"
+export TF_ENV_DIR="infrastructure/terraform/environments/local"
+export FLOCI_URL="http://localhost:4577"
+```
+
+#### Paso 1: Verificación de Formato HCL (`terraform fmt`)
+
+```bash
+TF_CLI_CONFIG_FILE=/dev/null terraform fmt -check -recursive "${TF_ROOT_DIR}"
+```
+
+#### Paso 2: Arranque y Healthcheck del Emulador Floci Azure ARM (`:4577`)
+
+```bash
+npm run docker:cloud
+curl -s "${FLOCI_URL}/_floci/health" | jq .
+```
+
+##### Respuesta Real Obtenida (Floci Azure ARM):
+
+```json
+{
+  "status": "UP",
+  "version": "0.16.0",
+  "edition": "floci-az-always-free"
+}
+```
+
+#### Paso 3: Validación Sintáctica y de Grafo de Módulos (`terraform validate`)
+
+```bash
+TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" validate
 ```
 
 ```text
-acr
-aks
-keyvault
-log_analytics
-postgres
-storage
+Success! The configuration is valid.
+```
+
+#### Paso 4: Ejecución Real de `terraform plan` contra Floci (`npm run test:infra`)
+
+El pipeline oficial `npm run test:infra` ([`scripts/test-terraform-floci.sh`](../../scripts/test-terraform-floci.sh)) orquesta automáticamente las 5 compuertas: formato HCL, healthcheck de Floci (`:4577`), extracción de certificados autofirmados y arranque del proxy TLS (`https://localhost:4578 -> https://localhost:4577`), `terraform validate`, `terraform plan` contra los 6 módulos y cierre ordenado del proxy al finalizar:
+
+```bash
+npm run test:infra
+```
+
+<details>
+<summary><b>Ver Ejecución Manual del Proxy TLS y <code>terraform plan</code></b></summary>
+
+```bash
+# Iniciar proxy TLS ARM en segundo plano y verificar salud
+node scripts/floci-proxy.mjs &
+PROXY_PID=$!
+curl -sk https://localhost:4578/__proxy_health
+
+# Ejecutar plan contra el emulador Floci
+TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" plan -no-color
+
+# Detener el proxy TLS al finalizar
+kill -TERM "${PROXY_PID}"
+```
+
+</details>
+
+##### Salida Real Obtenida (`Plan: 19 to add, 0 to change, 0 to destroy`):
+
+```text
+=== [1/5] Checking Prerequisites & Formatting ===
+✓ Terraform formatting is pristine.
+
+=== [2/5] Checking Floci Azure ARM Emulator Container ===
+✓ Floci Azure ARM emulator is healthy on port 4577.
+
+=== [3/5] Setting up Floci ARM Proxy & TLS ===
+[Floci Proxy] Proxy active on https://localhost:4578 -> https://localhost:4577
+✓ Floci ARM Proxy is ready and verified via /__proxy_health.
+
+=== [4/5] Validating Terraform Modules & Providers ===
+Success! The configuration is valid.
+
+=== [5/5] Executing Terraform Plan against Floci Emulator ===
+  # azurerm_resource_group.this will be created
+  # module.acr.azurerm_container_registry.this will be created
+  # module.aks.azurerm_kubernetes_cluster.this will be created
+  # module.aks.azurerm_role_assignment.acr_pull[0] will be created
+  # module.keyvault.azurerm_key_vault.this will be created
+  # module.keyvault.azurerm_key_vault_access_policy.admin will be created
+  # module.keyvault.azurerm_key_vault_secret.this["database-url"] will be created
+  # module.keyvault.azurerm_key_vault_secret.this["encryption-key"] will be created
+  # module.keyvault.azurerm_key_vault_secret.this["jwt-secret"] will be created
+  # module.keyvault.azurerm_key_vault_secret.this["redis-url"] will be created
+  # module.log_analytics.azurerm_log_analytics_workspace.this will be created
+  # module.postgres.azurerm_postgresql_flexible_server.this will be created
+  # module.postgres.azurerm_postgresql_flexible_server_configuration.require_secure_transport will be created
+  # module.postgres.azurerm_postgresql_flexible_server_configuration.ssl_min_protocol_version will be created
+  # module.postgres.azurerm_postgresql_flexible_server_database.this will be created
+  # module.postgres.azurerm_postgresql_flexible_server_firewall_rule.allow_all will be created
+  # module.storage.azurerm_storage_account.this will be created
+  # module.storage.azurerm_storage_container.this["audit-logs"] will be created
+  # module.storage.azurerm_storage_container.this["identity-backups"] will be created
+
+Plan: 19 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + acr_login_server                  = (known after apply)
+  + aks_cluster_id                    = (known after apply)
+  + aks_cluster_name                  = "id-local-aks"
+  + aks_kube_config_raw               = (sensitive value)
+  + key_vault_uri                     = (known after apply)
+  + log_analytics_retention_in_days   = 365
+  + log_analytics_workspace_id        = (known after apply)
+  + postgres_database_name            = "identity_db"
+  + postgres_require_secure_transport = "on"
+  + postgres_server_fqdn              = (known after apply)
+  + postgres_ssl_min_protocol_version = "TLSv1.2"
+  + resource_group_name               = "id-local-rg"
+  + storage_account_blob_endpoint     = (known after apply)
+
+================================================================
+✓ All infrastructure tests passed! US-12 verification complete.
+================================================================
+```
+
+#### Paso 5: Teardown del Emulador Local (Opcional)
+
+```bash
+npm run docker:cloud:down
 ```
 
 ---
