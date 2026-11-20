@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { AsymmetricKeyProviderPort } from '../../../../../src/contexts/identity/domain/ports/crypto/asymmetric_key_provider_port';
 import type { SecurityAuditLoggerPort } from '../../../../../src/contexts/identity/application/ports/security/audit_logger';
 import type { DynamicPostgresPoolManager } from '../../../../../src/contexts/identity/infrastructure/persistence/database/dynamic_postgres_pool_manager';
+import { SecurityConfigurationError } from '../../../../../src/contexts/identity/infrastructure/persistence/database/postgres_ssl_config';
 import { TenantId } from '../../../../../src/contexts/identity/domain/value_objects/tenant_id/value';
 
 export interface SecretsControllerDeps {
@@ -33,6 +34,10 @@ export class SecretsController {
 
       const poolManager = getPool();
       const dbStats = poolManager ? poolManager.getStats() : null;
+      const sslOpts =
+        poolManager && typeof poolManager.getSslOptions === 'function'
+          ? poolManager.getSslOptions()
+          : undefined;
 
       res.status(200).json({
         status: 'ACTIVE',
@@ -51,6 +56,17 @@ export class SecretsController {
               totalConnections: dbStats.activePoolTotalCount ?? 0,
               idleConnections: dbStats.activePoolIdleCount ?? 0,
               waitingClients: dbStats.activePoolWaitingCount ?? 0,
+              ssl: {
+                enabled: Boolean(sslOpts?.enabled),
+                minVersion: sslOpts?.minVersion ?? 'TLSv1.2',
+                rejectUnauthorized: sslOpts?.rejectUnauthorized ?? true,
+                caConfigured: Boolean(
+                  sslOpts?.ca ||
+                    sslOpts?.caPath ||
+                    process.env.DATABASE_SSL_CA ||
+                    process.env.DATABASE_SSL_CA_PATH
+                ),
+              },
             }
           : {
               mode: 'IN_MEMORY_FALLBACK',
@@ -246,11 +262,12 @@ export class SecretsController {
       } catch (rotationErr: unknown) {
         const errMsg = rotationErr instanceof Error ? rotationErr.message : String(rotationErr);
         const stats = poolManager.getStats();
+        const isSslDowngrade = rotationErr instanceof SecurityConfigurationError;
 
         if (auditLogger) {
           await auditLogger.logEvent({
             eventType: 'SECRET_ROTATION_FAILURE',
-            severity: 'ALERT',
+            severity: isSslDowngrade ? 'CRITICAL' : 'ALERT',
             status: 'FAILURE',
             timestamp: new Date(),
             tenantId: TenantId.ROOT_TENANT_ID,
@@ -267,13 +284,15 @@ export class SecretsController {
                 req.headers && (req.headers['x-correlation-id'] as string),
             },
             compliance: {
-              pciRequirement: '10.2.6',
-              soc2Criteria: 'CC6.1',
+              pciRequirement: isSslDowngrade ? '4.1' : '10.2.6',
+              soc2Criteria: isSslDowngrade ? 'CC6.7' : 'CC6.1',
               retentionCategory: 'AUDIT_IMMUTABLE',
             },
-            action: 'database_credentials_rotation_aborted',
+            action: isSslDowngrade
+              ? 'database_ssl_downgrade_blocked'
+              : 'database_credentials_rotation_aborted',
             ip: req.ip,
-            reason: 'PREFLIGHT_HEALTHCHECK_FAILED',
+            reason: isSslDowngrade ? 'SSL_DOWNGRADE_BLOCKED' : 'PREFLIGHT_HEALTHCHECK_FAILED',
             metadata: {
               secretType: 'database_credentials',
               activeGeneration: stats.generation,
@@ -284,14 +303,17 @@ export class SecretsController {
         }
 
         res.status(422).json({
-          status: 'FAILED_SAFE',
+          status: isSslDowngrade ? 'BLOCKED_ANTI_DOWNGRADE' : 'FAILED_SAFE',
           operation: 'ZERO_DOWNTIME_DB_POOL_SWAP',
           failSafePreserved: true,
           activeGeneration: stats.generation,
-          error: `Pre-flight check failed; active pool Generation ${stats.generation} preserved without downtime: ${errMsg}`,
+          reason: isSslDowngrade ? 'SSL_DOWNGRADE_BLOCKED' : 'PREFLIGHT_HEALTHCHECK_FAILED',
+          error: isSslDowngrade
+            ? `Anti-Downgrade SSL Guard blocked insecure candidate; active pool Generation ${stats.generation} preserved without downtime: ${errMsg}`
+            : `Pre-flight check failed; active pool Generation ${stats.generation} preserved without downtime: ${errMsg}`,
           compliance: {
-            pciRequirement: '10.2.6',
-            soc2Criteria: 'CC6.1',
+            pciRequirement: isSslDowngrade ? '4.1' : '10.2.6',
+            soc2Criteria: isSslDowngrade ? 'CC6.7' : 'CC6.1',
             auditEventEmitted: 'SECRET_ROTATION_FAILURE',
           },
           timestamp: new Date().toISOString(),

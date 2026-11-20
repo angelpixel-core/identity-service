@@ -169,5 +169,14 @@ describe('Unit: PostgresSslConfigFactory (PCI-DSS v4.0 Req 4.1 & SOC 2 CC6.7 Har
       expect(ssl.rejectUnauthorized).toBe(true);
       expect(ssl.minVersion).toBe('TLSv1.2');
     });
+
+    it('should throw SecurityConfigurationError if sslmode=disable is passed when SSL is enforced', () => {
+      expect(() =>
+        createSecurePostgresConfig(
+          'postgresql://app:secret@db.internal:5432/identity_db?sslmode=disable',
+          { enabled: true }
+        )
+      ).toThrow(SecurityConfigurationError);
+    });
   });
 });

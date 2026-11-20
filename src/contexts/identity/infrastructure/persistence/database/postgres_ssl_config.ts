@@ -36,7 +36,7 @@ export function createSecurePostgresConfig(
 
   // 1. Normalizar entrada a PoolConfig
   if (typeof rawConfig === 'string') {
-    baseConfig = parseConnectionStringToPoolConfig(rawConfig);
+    baseConfig = parseConnectionStringToPoolConfig(rawConfig, options?.enabled === true);
   } else {
     baseConfig = { ...rawConfig };
   }
@@ -106,7 +106,10 @@ export function createSecurePostgresConfig(
  * Parsea y normaliza una URL de conexión de PostgreSQL a PoolConfig,
  * detectando parámetros de consulta relacionados con SSL y aplicando salvaguardas.
  */
-function parseConnectionStringToPoolConfig(connectionString: string): PoolConfig {
+function parseConnectionStringToPoolConfig(
+  connectionString: string,
+  sslEnforced = false
+): PoolConfig {
   try {
     const parsedUrl = new URL(connectionString);
 
@@ -116,6 +119,12 @@ function parseConnectionStringToPoolConfig(connectionString: string): PoolConfig
     if (sslMode === 'no-verify' || sslMode === 'allow' || sslMode === 'prefer') {
       throw new SecurityConfigurationError(
         `Insecure sslmode '${sslMode}' is forbidden. Encrypted transport must enforce full certificate verification.`
+      );
+    }
+
+    if (sslMode === 'disable' && sslEnforced) {
+      throw new SecurityConfigurationError(
+        "Insecure sslmode 'disable' is forbidden when encrypted transport is enforced under PCI-DSS v4.0 Req 4.1 and SOC 2 CC6.7."
       );
     }
 

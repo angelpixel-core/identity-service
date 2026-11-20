@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '@interfaces/http/server';
 import { InMemorySecurityAuditLogger } from '@identity/infrastructure/logging/memory_security_audit_logger';
 import type { DynamicPostgresPoolManager } from '@identity/infrastructure/persistence/database/dynamic_postgres_pool_manager';
+import { SecurityConfigurationError } from '@identity/infrastructure/persistence/database/postgres_ssl_config';
 
 describe('Integration API: /api/v1/secrets/* Zero-Downtime Secret Rotation & Root Governance (US-16 & ADR-0009)', () => {
   let app: Express;
@@ -18,6 +19,11 @@ describe('Integration API: /api/v1/secrets/* Zero-Downtime Secret Rotation & Roo
 
     fakePoolManager = {
       getGeneration: jest.fn(() => fakeGeneration),
+      getSslOptions: jest.fn(() => ({
+        enabled: true,
+        minVersion: 'TLSv1.2' as const,
+        rejectUnauthorized: true,
+      })),
       getStats: jest.fn(() => ({
         generation: fakeGeneration,
         activePoolTotalCount: 2,
@@ -28,6 +34,11 @@ describe('Integration API: /api/v1/secrets/* Zero-Downtime Secret Rotation & Roo
       })),
       reloadCredentials: jest.fn(async (candidate: any) => {
         const url = typeof candidate === 'string' ? candidate : String(candidate?.connectionString || '');
+        if (url.includes('sslmode=no-verify') || url.includes('sslmode=prefer')) {
+          throw new SecurityConfigurationError(
+            "Insecure sslmode 'no-verify' is forbidden. Encrypted transport must enforce full certificate verification."
+          );
+        }
         if (url.includes('bad_user') || url.includes('invalid')) {
           throw new Error('password authentication failed for user "bad_user"');
         }
@@ -96,6 +107,13 @@ describe('Integration API: /api/v1/secrets/* Zero-Downtime Secret Rotation & Roo
       expect(res.body.signingKeys.retainedKeysCount).toBe(0);
       expect(res.body.databasePool.mode).toBe('DYNAMIC_POSTGRES_POOL');
       expect(res.body.databasePool.activeGeneration).toBe(1);
+      expect(res.body.databasePool.ssl).toEqual(
+        expect.objectContaining({
+          enabled: true,
+          minVersion: 'TLSv1.2',
+          rejectUnauthorized: true,
+        })
+      );
     });
   });
 
@@ -171,6 +189,28 @@ describe('Integration API: /api/v1/secrets/* Zero-Downtime Secret Rotation & Roo
         .find((e) => e.eventType === 'SECRET_ROTATION_FAILURE' && e.status === 'FAILURE');
       expect(failEvent).toBeDefined();
       expect(failEvent?.severity).toBe('ALERT');
+    });
+
+    it('should block SSL downgrade attack (?sslmode=no-verify) with BLOCKED_ANTI_DOWNGRADE and CRITICAL PCI 4.1 audit', async () => {
+      const res = await request(app)
+        .post('/api/v1/secrets/rotate-db-credentials')
+        .set('Authorization', `Bearer ${rootToken}`)
+        .send({ databaseUrl: 'postgresql://postgres:postgres@localhost:5432/identity_db?sslmode=no-verify' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.status).toBe('BLOCKED_ANTI_DOWNGRADE');
+      expect(res.body.reason).toBe('SSL_DOWNGRADE_BLOCKED');
+      expect(res.body.failSafePreserved).toBe(true);
+      expect(res.body.activeGeneration).toBe(1);
+      expect(res.body.compliance.pciRequirement).toBe('4.1');
+      expect(res.body.compliance.soc2Criteria).toBe('CC6.7');
+
+      const criticalEvent = auditLogger
+        .getEvents()
+        .find((e) => e.eventType === 'SECRET_ROTATION_FAILURE' && e.reason === 'SSL_DOWNGRADE_BLOCKED');
+      expect(criticalEvent).toBeDefined();
+      expect(criticalEvent?.severity).toBe('CRITICAL');
+      expect(criticalEvent?.compliance?.pciRequirement).toBe('4.1');
     });
   });
 });
