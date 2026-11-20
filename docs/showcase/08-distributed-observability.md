@@ -491,71 +491,152 @@ sequenceDiagram
     participant DBPool as DynamicPostgresPoolManager
     participant Redis as Cliente Azure Cache for Redis
 
-    Kubelet->>App: 1. Envío de señal SIGTERM (inicio de terminación de pod)
-    Kubelet->>Endpoints: 2. Notificación paralela de retiro de pod del pool activo
-    Endpoints->>Ingress: 3. Ingress deja de enviar nuevas peticiones a este pod
-    App->>App: 4. server.close() (rechazo grácil de nuevas conexiones entrantes)
-    App->>App: 5. Procesamiento y culminación de peticiones HTTP en vuelo (< 10s)
-    App->>DBPool: 6. Drenado ordenado y cierre de pools de base de datos (pool.end())
-    DBPool-->>App: 7. Todas las conexiones de persistencia cerradas limpiamente
-    App->>Redis: 8. Cierre de conexiones socket hacia caché distribuida
-    App-->>Kubelet: 9. Salida del proceso con código 0 (Zero-Downtime Termination)
+    Kubelet->>App: Envío de señal SIGTERM (inicio de terminación de pod)
+    Kubelet->>Endpoints: Notificación paralela de retiro de pod del pool activo
+    Endpoints->>Ingress: Ingress deja de enviar nuevas peticiones a este pod
+    App->>App: server.close() (rechazo grácil de nuevas conexiones entrantes)
+    App->>App: Procesamiento y culminación de peticiones HTTP en vuelo (< 10s)
+    App->>DBPool: Drenado ordenado y cierre de pools de base de datos (pool.end())
+    DBPool-->>App: Todas las conexiones de persistencia cerradas limpiamente
+    App->>Redis: Cierre de conexiones socket hacia caché distribuida
+    App-->>Kubelet: Salida del proceso con código 0 (Zero-Downtime Termination)
 ```
 
-#### Glosario de Componentes US-22:
-- **`Kubelet / Orquestador AKS`:** Agente del plano de control de Kubernetes que coordina el ciclo de vida del contenedor y administra los tiempos de gracia (`terminationGracePeriodSeconds: 30`).
-- **`Kubernetes Service Endpoints`:** Controlador de red que propaga en milisegundos la lista de IPs saludables hacia los balanceadores de carga y proxies Ingress.
-- **`Ingress NGINX Controller`:** Enrutador de borde que redirige tráfico exclusivamente a pods con readiness activa.
-- **`Servidor HTTP Express (:4000)`:** Proceso de la aplicación gestionando el listener TCP y la finalización grácil de streams.
-- **`DynamicPostgresPoolManager`:** Gestor de persistencia que asegura que ninguna transacción SQL activa sea abortada durante el drenado.
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Kubelet` (Kubelet / Orquestador AKS)** | `actor` | Agente del nodo Kubernetes que coordina el apagado controlado del contenedor respetando `terminationGracePeriodSeconds: 30`. |
+| **`Endpoints` (Kubernetes Service Endpoints)** | `participant` | Controlador de red que retira la IP del pod en terminación y propaga el cambio en milisegundos hacia kube-proxy y los balanceadores. |
+| **`Ingress` (Ingress NGINX Controller)** | `participant` | Proxy inverso perimetral que actualiza sus upstreams dejando de enrutar nuevas conexiones hacia el pod saliente. |
+| **`App` (Servidor HTTP Express `:4000`)** | `participant` | Proceso Node.js que intercepta `SIGTERM` / `SIGINT`, cierra el listener HTTP (`server.close()`) y espera a que finalicen las transacciones en vuelo. |
+| **`DBPool` (`DynamicPostgresPoolManager`)** | `participant` | Gestor de conexiones PostgreSQL que drena todas las consultas SQL activas antes de invocar `pool.end()`, evitando transacciones huérfanas. |
+| **`Redis` (Cliente Azure Cache for Redis)** | `participant` | Cliente de caché distribuida que libera sus sockets abiertos de forma ordenada antes del cierre definitivo del proceso. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 9)
+
+1. **Paso 1 (`Kubelet -> App`):** Al iniciar un Rolling Update, drenado de nodo o scale-down, Kubelet envía la señal `SIGTERM` al proceso de `identity-service`.
+2. **Paso 2 (`Kubelet -> Endpoints`):** En paralelo, el plano de control remueve la IP del pod de la lista de `Service Endpoints` activos.
+3. **Paso 3 (`Endpoints -> Ingress`):** NGINX Ingress actualiza su tabla de upstreams y deja de despachar tráfico nuevo hacia el pod en terminación.
+4. **Paso 4 (`App -> App`):** El manejador `gracefulShutdown` invoca `server.close()`, dejando de aceptar nuevas conexiones TCP mientras mantiene vivos los sockets activos.
+5. **Paso 5 (`App -> App`):** Todas las peticiones HTTP en vuelo completan su ejecución y responden al cliente dentro del margen de gracia (`< 10s`), evitando errores `502/504`.
+6. **Paso 6 (`App -> DBPool`):** Una vez agotadas las peticiones entrantes, el servidor ordena el drenado y cierre de los pools activos y en retiro (`pool.end()`).
+7. **Paso 7 (`DBPool -->> App`):** `DynamicPostgresPoolManager` confirma que todas las conexiones a PostgreSQL fueron liberadas limpiamente.
+8. **Paso 8 (`App -> Redis`):** Se cierran de forma ordenada los descriptores de socket hacia Redis y el exportador de métricas OpenTelemetry.
+9. **Paso 9 (`App -->> Kubelet`):** El proceso finaliza explícitamente con `exit code 0`, certificando una terminación Zero-Downtime limpia.
 
 ---
 
-### 🧪 Recetas Reproducibles de Sondas de Salud
+### 🚀 Ejecución en Vivo & Verificación Interactiva Paso a Paso (`./bin/identity ops health`)
 
-#### Receta 1: Comprobación de Sondas con cURL (Receta Primaria)
+#### Paso 0: Variable de Sesión para Sondas de Salud
 
-Puedes inspeccionar directamente las sondas en el servidor local:
-
-##### 1. Sonda de Liveness (`/health/live`):
 ```bash
-curl -i -s http://localhost:4000/health/live
-```
-
-###### Respuesta Real:
-```http
-HTTP/1.1 200 OK
-X-Powered-By: Express
-Content-Type: application/json; charset=utf-8
-Content-Length: 99
-
-{"status":"UP","checks":{"liveness":"OK"},"protocol":"http","timestamp":"2026-11-18T18:29:24.818Z"}
-```
-
----
-
-##### 2. Sonda de Readiness con Diagnóstico de Dependencias (`/health/ready`):
-```bash
-curl -i -s http://localhost:4000/health/ready
-```
-
-###### Respuesta Real:
-```http
-HTTP/1.1 200 OK
-X-Powered-By: Express
-Content-Type: application/json; charset=utf-8
-
-{"status":"UP","checks":{"database":"OK","cache":"OK"},"timestamp":"2026-11-18T18:29:25.102Z"}
+# ==============================================================================
+# Variable de Sesión Interactiva para Sondas Kubernetes (US-22)
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
 ```
 
 ---
 
-##### 3. Reporte Consolidado de Diagnóstico (`/health`):
+#### Paso 1: Sonda de Liveness (`/health/live`)
+
+Verifica que el event loop de Node.js responde activamente (permanece `200 UP` incluso ante degradaciones de dependencias externas, evitando *crashloops*):
+
+**Comando CLI Oficial (`./bin/identity`):**
+
 ```bash
-curl -s http://localhost:4000/health | jq
+./bin/identity ops health --probe live
 ```
 
-###### Respuesta Real en Formato JSON:
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -s "${BASE_URL}/health/live"
+```
+
+</details>
+
+##### Salida Real Obtenida (HTTP 200 OK):
+
+```text
+HTTP/1.1 200 OK [35ms]
+GET http://localhost:4000/health/live
+Trace: traceparent=00-97d099ba3e33ef948a070bd4495614e6-7e0362749c272174-01 | X-Request-ID=760e706a-cc36-4866-b998-fd2fcb61641c
+
+{
+  "status": "UP",
+  "checks": {
+    "liveness": "OK"
+  },
+  "protocol": "http",
+  "timestamp": "2026-11-20T20:05:31.571Z"
+}
+```
+
+---
+
+#### Paso 2: Sonda de Readiness con Diagnóstico de Dependencias (`/health/ready`)
+
+Evalúa PostgreSQL (`SELECT 1`), Azure Key Vault (claves activas) y Redis (`200 UP` si todo está sano, `200 DEGRADED` si solo falla caché, `503 DOWN` si falla DB o Key Vault):
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity ops health --probe ready
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -s "${BASE_URL}/health/ready"
+```
+
+</details>
+
+##### Salida Real Obtenida (HTTP 200 OK):
+
+```text
+HTTP/1.1 200 OK [26ms]
+GET http://localhost:4000/health/ready
+Trace: traceparent=00-1c338477a073754a594fb25fb835f977-c609d05eebfa84cf-01 | X-Request-ID=54949f14-b8d5-4808-a030-090d0590d779
+
+{
+  "status": "UP",
+  "checks": {
+    "database": "OK",
+    "cache": "OK"
+  },
+  "timestamp": "2026-11-20T20:05:31.663Z"
+}
+```
+
+---
+
+#### Paso 3: Reporte Consolidado de Diagnóstico (`/health`)
+
+Exporta el estado agregado en JSON puro apto para monitores sintéticos y piping con `jq`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity ops health --probe all --raw-json | jq .
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s "${BASE_URL}/health" | jq .
+```
+
+</details>
+
+##### Salida Real Obtenida (JSON Consolidado):
+
 ```json
 {
   "status": "UP",
@@ -564,7 +645,7 @@ curl -s http://localhost:4000/health | jq
     "database": "OK",
     "cache": "OK"
   },
-  "timestamp": "2026-11-18T18:22:19.339Z"
+  "timestamp": "2026-11-20T20:05:31.751Z"
 }
 ```
 
