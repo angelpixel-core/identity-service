@@ -59,27 +59,43 @@ sequenceDiagram
     participant PG as PostgreSQL Flexible Server
     participant RSA as RsaKeyAdapter (JWKS Cache)
 
-    SecAdmin->>AKV: 1. Actualiza credencial de base de datos o par de claves RSA
-    AKV->>CSI: 2. Sincronización automática de secretos en clúster AKS
-    CSI->>K8sVol: 3. Actualización atómica de symlink ..data
-    Watcher->>K8sVol: 4. Detección de cambio en FS y verificación SHA-256
-    Watcher->>PoolMgr: 5. Emisión de evento reloadCredentials(newCredentials)
-    PoolMgr->>PG: 6. Pre-flight health check en candidato Gen N+1 (SELECT 1)
-    PG-->>PoolMgr: 7. Validación exitosa de conectividad
-    PoolMgr->>PoolMgr: 8. Swap atómico de puntero activo y graceful drain de Gen N
-    Watcher->>RSA: 9. Emisión de evento reloadKeys(newKeyPair)
-    RSA->>RSA: 10. Actualización de clave de firma y exposición dual en /oauth2/jwks
+    SecAdmin->>AKV: Actualiza credencial de base de datos o par de claves RSA
+    AKV->>CSI: Sincronización automática de secretos en clúster AKS
+    CSI->>K8sVol: Actualización atómica de symlink ..data
+    Watcher->>K8sVol: Detección de cambio en FS y verificación SHA-256
+    Watcher->>PoolMgr: Emisión de evento reloadCredentials(newCredentials)
+    PoolMgr->>PG: Pre-flight health check en candidato Gen N+1 (SELECT 1)
+    PG-->>PoolMgr: Validación exitosa de conectividad
+    PoolMgr->>PoolMgr: Swap atómico de puntero activo y graceful drain de Gen N
+    Watcher->>RSA: Emisión de evento reloadKeys(newKeyPair)
+    RSA->>RSA: Actualización de clave de firma y exposición dual en /oauth2/jwks
 ```
 
-#### Glosario de Componentes US-16:
-- **`Administrador de Seguridad`:** Ingeniero de operaciones o pipeline automatizado de rotación programada (ej. cada 90 días conforme a PCI-DSS Req 3.6).
-- **`Azure Key Vault (AKV)`:** Almacén centralizado de secretos corporativos protegido por HSM dedicados y políticas de acceso RBAC.
-- **`Secrets Store CSI Driver`:** Agente de Kubernetes que sondea periódicamente Azure Key Vault y monta los secretos como archivos en el pod.
-- **`Volumen Montado (/mnt/secrets-store)`:** Sistema de archivos en memoria (`tmpfs`) donde residen los secretos, gestionado con enlaces simbólicos atómicos.
-- **`SecretWatcherService (In-Process)`:** Módulo Node.js que supervisa los archivos sin dependencias de reinicio de procesos y filtra eventos duplicados.
-- **`DynamicPostgresPoolManager`:** Adaptador de persistencia que desacopla la conexión física a base de datos de las operaciones de negocio, garantizando continuidad transaccional.
-- **`PostgreSQL Flexible Server`:** Motor de base de datos relacional gestionado en Azure con autenticación forzada y TLS estricto.
-- **`RsaKeyAdapter (JWKS Cache)`:** Proveedor criptográfico que administra el ciclo de vida de los pares de claves asimétricas RSA-2048 y emite el conjunto de claves públicas bajo RFC 7517.
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`SecAdmin` (Administrador de Seguridad)** | `actor` | Operador de seguridad (`system:superadmin`) o pipeline programado de rotación periódica (ej. cada 90 días conforme a PCI-DSS Req 3.6). |
+| **`AKV` (Azure Key Vault)** | `participant` | Bóveda criptográfica corporativa respaldada por HSM y políticas RBAC donde residen `database-url` y los pares RSA-2048. |
+| **`CSI` (Secrets Store CSI Driver)** | `participant` | Agente nativo de Kubernetes que sondea Azure Key Vault (`rotationPollInterval: 2m`) y proyecta los secretos dentro del pod. |
+| **`K8sVol` (`/mnt/secrets-store`)** | `participant` | Volumen efímero en memoria (`tmpfs`) administrado por Kubernetes mediante enlaces simbólicos atómicos (`..data`). |
+| **`Watcher` (`SecretWatcherService`)** | `participant` | Observador Node.js en proceso (`fs.watch`) que aplica debounce y valida cambios reales mediante digest SHA-256 antes de notificar. |
+| **`PoolMgr` (`DynamicPostgresPoolManager`)** | `participant` | Gestor generacional ($N \to N+1$) de conexiones PostgreSQL que ejecuta pre-flight `SELECT 1`, swap atómico y drenado elegante sin caídas. |
+| **`PG` (PostgreSQL Flexible Server)** | `participant` | Base de datos relacional administrada en Azure que valida las credenciales candidatas sobre transporte TLS estricto. |
+| **`RSA` (`RsaKeyAdapter` — JWKS Cache)** | `participant` | Proveedor criptográfico asimétrico que activa la nueva clave de firma (`kid`) y mantiene la clave previa en ventana de gracia RFC 7517. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 10)
+
+1. **Paso 1 (`SecAdmin -> AKV`):** El administrador de seguridad o el job de rotación actualiza la credencial `database-url` o genera un nuevo par de claves RSA en Azure Key Vault.
+2. **Paso 2 (`AKV -> CSI`):** El Secrets Store CSI Driver detecta la nueva versión del secreto en su ciclo de sondeo en el clúster AKS.
+3. **Paso 3 (`CSI -> K8sVol`):** Kubernetes materializa el nuevo directorio de secretos en `tmpfs` y actualiza atómicamente el enlace simbólico `..data` en `/mnt/secrets-store`.
+4. **Paso 4 (`Watcher -> K8sVol`):** `SecretWatcherService` intercepta el evento del sistema de archivos, aplica debounce y compara el hash SHA-256 contra el contenido previo para descartar notificaciones duplicadas.
+5. **Paso 5 (`Watcher -> PoolMgr`):** Al confirmarse un cambio real en `database-url`, el observador emite el evento `reloadCredentials(newCredentials)` hacia `DynamicPostgresPoolManager`.
+6. **Paso 6 (`PoolMgr -> PG`):** El gestor instancia un pool candidato (Generación $N+1$) y ejecuta una prueba obligatoria `SELECT 1` contra PostgreSQL antes de conmutar tráfico.
+7. **Paso 7 (`PG -->> PoolMgr`):** PostgreSQL valida la autenticación y responde exitosamente al pre-flight check (si fallara, el candidato se descarta en modo *Fail-Safe* preservando la Generación $N$).
+8. **Paso 8 (`PoolMgr -> PoolMgr`):** Se realiza el intercambio atómico de puntero (*Atomic Pointer Swap*) a la Generación $N+1$, mientras la Generación $N$ pasa a `retiringPools` hasta completar sus transacciones activas (`graceful drain`).
+9. **Paso 9 (`Watcher -> RSA`):** Cuando se detecta una rotación en las claves RSA, el observador emite `reloadKeys(newKeyPair)` hacia `RsaKeyAdapter`.
+10. **Paso 10 (`RSA -> RSA`):** El adaptador promueve la nueva clave como clave de firma activa y expone simultáneamente ambas claves públicas (`kid` nuevo + anterior) en el endpoint JWKS (`/oauth2/jwks` / `/.well-known/jwks.json`) durante la ventana de gracia.
 
 ---
 
