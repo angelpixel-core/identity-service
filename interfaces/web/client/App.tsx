@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { AuthSession, UserProfile } from './contexts/identity/domain/types';
-import { BoundedShell } from './shell/BoundedShell';
+import { BoundedShell, resolveSurfaceFromPath } from './shell/BoundedShell';
 import { AuthPortalView } from './contexts/auth/ui/AuthPortalView';
+import { TenantConsoleView } from './contexts/tenant/ui/TenantConsoleView';
 
 export function App() {
   const [session, setSession] = useState<AuthSession | null>(() => {
@@ -48,14 +49,22 @@ export function App() {
     return data;
   };
 
+  const activePath =
+    typeof window !== 'undefined' ? window.location.pathname : '/auth';
+  const surface = resolveSurfaceFromPath(activePath);
+
   return (
     <BoundedShell session={session}>
-      <AuthPortalView
-        session={session}
-        onSessionChange={handleRegisterSuccess}
-        onLogout={handleLogout}
-        fetchProfile={fetchProfile}
-      />
+      {session && surface === 'tenant' ? (
+        <TenantConsoleView session={session} />
+      ) : (
+        <AuthPortalView
+          session={session}
+          onSessionChange={handleRegisterSuccess}
+          onLogout={handleLogout}
+          fetchProfile={fetchProfile}
+        />
+      )}
     </BoundedShell>
   );
 }
