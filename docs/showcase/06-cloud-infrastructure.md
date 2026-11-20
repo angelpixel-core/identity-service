@@ -192,7 +192,15 @@ sequenceDiagram
 
 ---
 
-### 2. Verificación Interactiva Real: Terraform + Emulador Floci Azure ARM
+### 2. Evidencia Visual: Dashboard Local de Floci Azure ARM
+
+Captura en alta resolución del panel web nativo de **Floci Azure ARM** (`http://localhost:4577/`), el emulador local que expone los 33 servicios de Azure (`arm`, `acr`, `aks`, `keyvault`, `postgres`, `blob`, `monitor`, entre otros) utilizados por nuestros 6 módulos de Terraform:
+
+![Floci Azure ARM Local Emulator Dashboard](./assets/screenshots/us12_floci_azure_dashboard.png)
+
+---
+
+### 3. Verificación Interactiva Real: Terraform + Emulador Floci Azure ARM
 
 A diferencia de un mero chequeo estático de directorios, la topología Terraform se valida en vivo contra el emulador local **Floci Azure ARM** (`floci-azure-arm` en Docker) y un proxy TLS ARM (`scripts/floci-proxy.mjs`).
 

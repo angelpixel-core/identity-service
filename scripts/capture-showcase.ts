@@ -90,6 +90,19 @@ async function runCapture() {
       fullPage: false,
     });
 
+    // 7. US-12: Floci Azure ARM Local Emulator Dashboard (optional if cloud profile is running)
+    console.log('📸 Capturing us12_floci_azure_dashboard.png from http://localhost:4577/...');
+    try {
+      await page.goto('http://localhost:4577/', { waitUntil: 'networkidle', timeout: 8000 });
+      await page.waitForTimeout(1000);
+      await page.screenshot({
+        path: path.join(SCREENSHOT_DIR, 'us12_floci_azure_dashboard.png'),
+        fullPage: false,
+      });
+    } catch {
+      console.warn('⚠️ Floci Azure ARM dashboard not reachable on :4577; skipping us12_floci_azure_dashboard.png');
+    }
+
     console.log('✅ All showcase captures saved successfully to:', SCREENSHOT_DIR);
   } catch (error) {
     console.error('❌ Error during showcase capture:', error);
