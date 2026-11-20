@@ -684,9 +684,152 @@ sequenceDiagram
 
 ---
 
-### 🧪 Verificación Automatizada: Auditoría de NetworkPolicies en Helm
+### ⚡ Ejecución en Vivo & Verificación Interactiva Paso a Paso (Helm NetworkPolicies)
 
-La sintaxis, el renderizado de plantillas y las restricciones estrictas del esquema JSON para NetworkPolicies se auditan mediante la suite de empaquetado:
+A diferencia de las pruebas unitarias aisladas, los controles de microsegmentación de red (**ISO/IEC 27001 A.13.1** y **SOC 2 CC6.6**) se validan directamente contra el motor nativo de **Helm v4** y su contrato estricto `values.schema.json`, sin necesidad de un clúster Kubernetes remoto.
+
+#### Paso 0: Configurar Variables de Sesión
+
+```bash
+export HELM_CHART_DIR="deployments/helm/identity-service"
+export HELM_RELEASE="identity-service"
+export HELM_VALUES="${HELM_CHART_DIR}/values-local.yaml"
+```
+
+#### Paso 1: Renderizar de Forma Determinista `templates/networkpolicy.yaml`
+
+Ejecuta `helm template` filtrado únicamente a la plantilla de red para inspeccionar en vivo los **2 manifiestos `networking.k8s.io/v1`** que gobiernan el namespace:
+1. `identity-service-default-deny-all` (`podSelector: {}`, `policyTypes: [Ingress, Egress]`).
+2. `identity-service` (Ingress exclusivo desde `ingress-nginx` `:4000` y Egress estricto a CoreDNS `:53`, PostgreSQL `:5432`, Redis `:6379`, HTTPS `:443` y Floci/IMDS `:4577/:4578`).
+
+```bash
+helm template "${HELM_RELEASE}" "${HELM_CHART_DIR}" \
+  -f "${HELM_VALUES}" \
+  -s templates/networkpolicy.yaml
+```
+
+##### Salida Real Verificada (Manifiestos Kubernetes Renderizados):
+```yaml
+---
+# Source: identity-service/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-service-default-deny-all
+  labels:
+    helm.sh/chart: identity-service-1.0.0
+    app.kubernetes.io/name: identity-service
+    app.kubernetes.io/instance: identity-service
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: identity-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+
+---
+# Source: identity-service/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-service
+  labels:
+    helm.sh/chart: identity-service-1.0.0
+    app.kubernetes.io/name: identity-service
+    app.kubernetes.io/instance: identity-service
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: identity-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: identity-service
+      app.kubernetes.io/instance: identity-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 4000
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 5432
+    - ports:
+        - protocol: TCP
+          port: 6379
+    - ports:
+        - protocol: TCP
+          port: 443
+    - ports:
+      - port: 4577
+        protocol: TCP
+      - port: 4578
+        protocol: TCP
+```
+
+#### Paso 2: Validación Negativa de Esquema (`values.schema.json`)
+
+Invoca la misma acción `helm template` con parámetros malformados para comprobar que el esquema JSON del chart bloquea configuraciones inseguras o inválidas antes de llegar al clúster:
+
+##### 2.1. Puerto Ingress fuera de rango IANA (`> 65535`)
+
+```bash
+helm template "${HELM_RELEASE}" "${HELM_CHART_DIR}" \
+  -f "${HELM_VALUES}" \
+  --set networkPolicy.ingress.port=70000 \
+  -s templates/networkpolicy.yaml
+```
+
+##### Salida Real Verificada (Rechazo Determinista de Esquema):
+```text
+Error: values don't meet the specifications of the schema(s) in the following chart(s):
+identity-service:
+- at '/networkPolicy/ingress/port': maximum: got 70,000, want 65,535
+```
+
+##### 2.2. Tipo inválido en `networkPolicy.enabled` (no booleano)
+
+```bash
+helm template "${HELM_RELEASE}" "${HELM_CHART_DIR}" \
+  -f "${HELM_VALUES}" \
+  --set networkPolicy.enabled=not-a-boolean \
+  -s templates/networkpolicy.yaml
+```
+
+##### Salida Real Verificada (Rechazo Determinista de Esquema):
+```text
+Error: values don't meet the specifications of the schema(s) in the following chart(s):
+identity-service:
+- at '/networkPolicy/enabled': got string, want boolean
+```
+
+#### Paso 3: Auditoría Integral Automatizada de Helm (`npm run test:helm`)
+
+La sintaxis completa del chart, los invariantes de seguridad Zero-Trust y los casos negativos de `values.schema.json` se certifican en una sola pasada mediante la suite automatizada:
 
 ```bash
 npm run test:helm
