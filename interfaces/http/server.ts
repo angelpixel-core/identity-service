@@ -228,9 +228,20 @@ export function createApp(deps?: AppDependencies): Express {
     minVersion: (process.env.DATABASE_SSL_MIN_VERSION as 'TLSv1.2' | 'TLSv1.3') || undefined,
   };
 
+  const hasExplicitSslConfig = Boolean(
+    deps?.sslOptions ||
+      process.env.DATABASE_SSL_ENABLED !== undefined ||
+      process.env.DATABASE_SSL_CA ||
+      process.env.DATABASE_SSL_CA_PATH
+  );
+
   let poolManager: DynamicPostgresPoolManager | null = deps?.poolManager ?? null;
   const getPool = (): DynamicPostgresPoolManager | null => {
-    if (!poolManager && resolvedDbUrl && (!isTestEnv || process.env.FORCE_POSTGRES_POOL === 'true')) {
+    if (
+      !poolManager &&
+      resolvedDbUrl &&
+      (!isTestEnv || hasExplicitSslConfig || process.env.FORCE_POSTGRES_POOL === 'true')
+    ) {
       poolManager = new DynamicPostgresPoolManager({
         connectionString: resolvedDbUrl,
         sslOptions: dbSslOptions,

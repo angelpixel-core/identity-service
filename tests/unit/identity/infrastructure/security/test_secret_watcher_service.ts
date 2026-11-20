@@ -113,7 +113,7 @@ describe('Unit: SecretWatcherService (US-16 In-Process File Watcher)', () => {
 
     const watcher = new SecretWatcherService({
       secretsDir: tempDir,
-      debounceMs: 80,
+      debounceMs: 250,
       auditLogger: mockAuditLogger,
     });
 
