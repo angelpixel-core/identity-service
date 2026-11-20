@@ -50,6 +50,11 @@
 - `[commit X]`: `test: [descripción]`
 - `[commit X]`: `docs: [descripción]`
 
+### Fase E: Showcase Interactivo & Evidencia Visual (`docs/showcase/`)
+- **Caso 1 — Épica con nuevos casos de uso:** Crear `docs/showcase/<NN>-<slug>.md` siguiendo la estructura estándar (Pilares → UML `autonumber` + `A. Glosario` + `B. Desglose Secuencial` → Walkthrough CLI-first/cURL → `🖥️ Interfaz Visual (UI) & Walkthrough en Navegador` + capturas Playwright Retina → Suites automatizadas) y enlazarlo en `docs/showcase/README.md`.
+- **Caso 2 — Épica de extensión (ej. nueva UI o CLI sobre US existentes):** **Extender** el capítulo de `docs/showcase/` correspondiente sin duplicar archivos, agregando la subsección `🖥️ Interfaz Visual (UI) & Walkthrough en Navegador` con ruta, pasos reproducibles y captura automatizada en `scripts/capture-showcase.ts`.
+- `[commit X]`: `docs(showcase): [crear o extender capítulo XX con walkthrough CLI/UI y capturas]`
+
 ---
 
 ## 4. Definición de Hecho (Definition of Done - DoD)
@@ -59,3 +64,5 @@
 - [ ] Reglas de arquitectura y bounded context respetadas sin dependencias circulares.
 - [ ] Matriz de trazabilidad (`TRACEABILITY_MATRIX.md`) actualizada al 100%.
 - [ ] Documentación pública y ADRs generados o actualizados.
+- [ ] Capítulo de Showcase en `docs/showcase/` creado o extendido (UML A/B, recetas CLI/cURL, sección UI con capturas Playwright Retina en `docs/showcase/assets/screenshots/`).
+- [ ] Cobertura visual verificada en Storybook y pruebas E2E de interfaz (cuando aplique UI).

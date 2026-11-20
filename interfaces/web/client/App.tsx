@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { RegisterForm } from './contexts/identity/ui/components/register_form';
 import { UserProfileCard } from './contexts/identity/ui/components/user_profile_card';
 import { AuthSession, UserProfile } from './contexts/identity/domain/types';
+import { BoundedShell } from './shell/BoundedShell';
+import { M3Button } from './design-system/components/M3Primitives';
 
 export function App() {
   const [session, setSession] = useState<AuthSession | null>(() => {
@@ -49,35 +51,28 @@ export function App() {
   };
 
   return (
-    <main className="portal-container">
-      <header className="portal-header">
-        <h1>Identity Service Portal</h1>
-        <p>Multi-Tenant SaaS User Registration & Profile Management</p>
-      </header>
-
-      <div className="portal-card">
-        {session ? (
-          <div>
-            <div className="session-toolbar">
-              <span>
-                Conectado como: <strong>{session.email}</strong> ({session.tenantId})
-              </span>
-              <button type="button" className="btn-secondary" onClick={handleLogout}>
-                Cerrar Sesión
-              </button>
-            </div>
-            <UserProfileCard fetchProfile={fetchProfile} />
+    <BoundedShell session={session}>
+      {session ? (
+        <div>
+          <div className="session-toolbar">
+            <span>
+              Conectado como: <strong>{session.email}</strong> ({session.tenantId})
+            </span>
+            <M3Button variant="outlined" onClick={handleLogout}>
+              Cerrar Sesión
+            </M3Button>
           </div>
-        ) : (
-          <div>
-            <h2 style={{ marginBottom: '1.25rem' }}>Registro de Nuevo Usuario</h2>
-            <RegisterForm
-              defaultTenantId="acme-corp"
-              onSuccess={handleRegisterSuccess}
-            />
-          </div>
-        )}
-      </div>
-    </main>
+          <UserProfileCard fetchProfile={fetchProfile} />
+        </div>
+      ) : (
+        <div>
+          <h2 className="m3-section-title">Registro de Nuevo Usuario</h2>
+          <RegisterForm
+            defaultTenantId="acme-corp"
+            onSuccess={handleRegisterSuccess}
+          />
+        </div>
+      )}
+    </BoundedShell>
   );
 }

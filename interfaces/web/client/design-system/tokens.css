@@ -1,0 +1,48 @@
+/* ============================================================================
+ * Google Material Design 3 (M3) Design Tokens — Identity Service UI (US-23)
+ * Paleta Cloud/Security Console (#1A73E8) + Tipografía Inter/Roboto/JetBrains Mono
+ * ============================================================================ */
+
+:root {
+  /* Color Roles — Primary */
+  --md-sys-color-primary: #1a73e8;
+  --md-sys-color-primary-hover: #1557b0;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #e8f0fe;
+  --md-sys-color-on-primary-container: #174ea6;
+
+  /* Color Roles — Surfaces & Containers */
+  --md-sys-color-background: #f8fafd;
+  --md-sys-color-surface: #ffffff;
+  --md-sys-color-surface-container-low: #f1f4f9;
+  --md-sys-color-surface-container: #e9eef6;
+  --md-sys-color-on-surface: #1f1f1f;
+  --md-sys-color-on-surface-variant: #444746;
+
+  /* Color Roles — Outline & Dividers */
+  --md-sys-color-outline: #747775;
+  --md-sys-color-outline-variant: #dadce0;
+
+  /* Color Roles — Semantic Status */
+  --md-sys-color-success: #137333;
+  --md-sys-color-success-container: #e6f4ea;
+  --md-sys-color-warning: #b06000;
+  --md-sys-color-warning-container: #fef7e0;
+  --md-sys-color-error: #c5221f;
+  --md-sys-color-error-container: #fce8e6;
+  --md-sys-color-info: #1967d2;
+  --md-sys-color-info-container: #e8f0fe;
+
+  /* Typography */
+  --md-sys-typescale-font-sans: "Inter", "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --md-sys-typescale-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Shape & Elevation */
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 20px;
+  --md-sys-shape-corner-full: 9999px;
+
+  --md-sys-elevation-1: 0 1px 2px 0 rgb(60 64 67 / 0.15), 0 1px 3px 1px rgb(60 64 67 / 0.08);
+  --md-sys-elevation-2: 0 1px 3px 0 rgb(60 64 67 / 0.2), 0 4px 8px 3px rgb(60 64 67 / 0.1);
+}
