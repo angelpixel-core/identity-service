@@ -413,11 +413,11 @@ sequenceDiagram
 
     Client->>App: 1. Petición que requiere persistencia segura
     App->>PoolMgr: 2. Solicitud de conexión cliente del pool
-    PoolMgr->>SSLGuard: 3. Validación de opciones SSL (rejectUnauthorized: true, TLS >= 1.2)
+    PoolMgr->>SSLGuard: 3. Validación de opciones SSL (rejectUnauthorized=true, TLS 1.2+)
     alt Handshake Seguro con CA Válido
         SSLGuard->>PG: 4. Establecimiento de túnel TLS con verificación de CA (/mnt/secrets-store/ca.crt)
         PG-->>PoolMgr: 5. Handshake completado exitosamente (Cifrado Activo)
-        PoolMgr-->>App: 6. Conexión entregada; ejecución de transacción cifrada
+        PoolMgr-->>App: 6. Conexión entregada y ejecución de transacción cifrada
         App-->>Client: 7. Respuesta exitosa 200 OK con datos protegidos
     else Intento de Rotación Insegura (sslmode=disable / MitM)
         SSLGuard->>SSLGuard: 4. Detección de degradación criptográfica o certificado no confiable
