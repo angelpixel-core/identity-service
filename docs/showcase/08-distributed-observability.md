@@ -66,46 +66,94 @@ sequenceDiagram
     participant PG as PostgreSQL Flexible Server
     participant Redis as Azure Cache for Redis
 
-    Client->>Ingress: 1. Petición HTTPS con cabecera W3C traceparent
-    Ingress->>TraceMW: 2. Reenvío con X-Request-ID y traceparent
-    TraceMW->>Storage: 3. Extracción de traceId, creación de nuevo spanId e inicialización
-    TraceMW->>Handler: 4. Ejecución del caso de uso dentro del contexto asíncrono
-    Handler->>DBRunner: 5. Inicio de transacción de base de datos
-    DBRunner->>PG: 6. SET LOCAL app.current_trace_id y ejecución de queries SQL
-    PG-->>DBRunner: 7. Confirmación de transacción (COMMIT)
-    Handler->>Redis: 8. Operación de caché con telemetría correlacionada
-    Handler-->>Client: 9. Respuesta HTTP 200 OK con traceparent actualizado y X-Request-ID
+    Client->>Ingress: Petición HTTPS con cabecera W3C traceparent
+    Ingress->>TraceMW: Reenvío con X-Request-ID y traceparent
+    TraceMW->>Storage: Extracción de traceId, creación de nuevo spanId e inicialización
+    TraceMW->>Handler: Ejecución del caso de uso dentro del contexto asíncrono
+    Handler->>DBRunner: Inicio de transacción de base de datos
+    DBRunner->>PG: SET LOCAL app.current_trace_id y ejecución de queries SQL
+    PG-->>DBRunner: Confirmación de transacción (COMMIT)
+    Handler->>Redis: Operación de caché con telemetría correlacionada
+    Handler-->>Client: Respuesta HTTP 200 OK con traceparent actualizado y X-Request-ID
 ```
 
-#### Glosario de Componentes & Términos US-20:
-- **`traceId`:** Identificador global de 16 bytes que acompaña a la petición desde el primer cliente hasta la base de datos más profunda.
-- **`spanId`:** Identificador de 8 bytes que delimita el tramo de procesamiento específico dentro de un microservicio.
-- **`CorrelationTraceMiddleware`:** Middleware HTTP de Express que intercepta las cabeceras entrantes, normaliza identificadores y vincula el ciclo de vida de la petición.
-- **`CorrelationContextStorage`:** Envoltorio de `AsyncLocalStorage` de Node.js que mantiene el contexto de traza disponible de manera transparente en cualquier punto de la pila asíncrona.
-- **`TenantAwareTransactionRunner`:** Coordinador de persistencia que inyecta el `tenant_id`, `trace_id` y `span_id` en las variables de sesión locales de PostgreSQL.
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Client` (Cliente / Front-End)** | `actor` | Navegador SPA, aplicación móvil, microservicio o CLI (`./bin/identity`) que inicia la petición y opcionalmente envía `traceparent`, `X-Request-ID` y `X-Correlation-ID`. |
+| **`Ingress` (Ingress NGINX `:443`)** | `participant` | Proxy inverso perimetral que termina TLS 1.3 y propaga íntegras las cabeceras de trazabilidad W3C hacia el servicio interno. |
+| **`TraceMW` (`CorrelationTraceMiddleware`)** | `participant` | Middleware HTTP de Express (`trace_context_middleware.ts`) que valida `traceparent` W3C, genera un nuevo `spanId` hijo (o una traza raíz nueva) y decora las cabeceras de respuesta. |
+| **`Storage` (`CorrelationContextStorage`)** | `participant` | Envoltorio sobre `AsyncLocalStorage` de Node.js que mantiene aislado el `TraceContext` (`traceId`, `spanId`, `requestId`, `correlationId`) a lo largo de toda la cadena de promesas. |
+| **`Handler` (Domain Application Handler)** | `participant` | Caso de uso de aplicación que accede de forma transparente a `CorrelationContextStorage.current()` sin contaminar las firmas de dominio. |
+| **`DBRunner` (`TenantAwareTransactionRunner`)** | `participant` | Coordinador transaccional que inyecta `app.current_tenant_id`, `app.current_trace_id` y `app.current_span_id` en la sesión SQL mediante `SET LOCAL`. |
+| **`PG` (PostgreSQL Flexible Server)** | `participant` | Motor relacional donde las consultas y auditorías (`pg_stat_activity`, `pgaudit`) heredan el `trace_id` activo de la transacción. |
+| **`Redis` (Azure Cache for Redis)** | `participant` | Capa de caché y sesiones de refresco cuyas operaciones quedan correlacionadas con el mismo contexto de traza. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 9)
+
+1. **Paso 1 (`Client -> Ingress`):** El cliente envía una solicitud HTTPS incluyendo (opcionalmente) una cabecera W3C `traceparent` (`00-<traceId>-<parentSpanId>-01`).
+2. **Paso 2 (`Ingress -> TraceMW`):** NGINX reenvía la petición hacia el contenedor `identity-service` preservando `traceparent`, `X-Request-ID` y `X-Correlation-ID`.
+3. **Paso 3 (`TraceMW -> Storage`):** `traceContextMiddleware` valida el formato W3C, preserva el `traceId` entrante (o genera uno de 16 bytes si no existe), crea un nuevo `spanId` hijo de 8 bytes y abre el alcance aislado en `AsyncLocalStorage`.
+4. **Paso 4 (`TraceMW -> Handler`):** El flujo continúa hacia el controlador y caso de uso correspondiente dentro de `CorrelationContextStorage.run(...)`.
+5. **Paso 5 (`Handler -> DBRunner`):** El caso de uso solicita una transacción multi-tenant a `TenantAwareTransactionRunner`.
+6. **Paso 6 (`DBRunner -> PG`):** Al abrir `BEGIN`, el runner ejecuta `SET LOCAL app.current_tenant_id`, `SET LOCAL app.current_trace_id` y `SET LOCAL app.current_span_id` antes de lanzar las queries SQL.
+7. **Paso 7 (`PG -->> DBRunner`):** PostgreSQL confirma la transacción (`COMMIT`) descartando automáticamente las variables `SET LOCAL` al finalizar.
+8. **Paso 8 (`Handler -> Redis`):** Las lecturas/escrituras en caché y sesiones quedan correlacionadas con el mismo `traceId` para observabilidad de latencia e invalidaciones.
+9. **Paso 9 (`Handler -->> Client`):** Express entrega la respuesta HTTP `200 OK` reflejando `traceparent` (con el nuevo `spanId`), `X-Request-ID` y `X-Correlation-ID` en las cabeceras.
 
 ---
 
-### 🧪 Recetas Reproducibles de Trazabilidad Distribuida
+### 🚀 Ejecución en Vivo & Verificación Interactiva Paso a Paso (`./bin/identity`)
 
-#### Receta 1: Inspección de Cabeceras de Traza con CLI Nativa (Receta Primaria)
+#### Paso 0: Variables de Sesión para Trazabilidad W3C
 
-La herramienta `./bin/identity` incluye trazabilidad en cada interacción:
+```bash
+# ==============================================================================
+# Variables de Sesión Interactiva para Trazabilidad Distribuida W3C (US-20)
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export TRACE_ID="4bf92f3577b34da6a3ce929d0e0e4736"
+export PARENT_SPAN_ID="00f067aa0ba902b7"
+export INCOMING_TRACEPARENT="00-${TRACE_ID}-${PARENT_SPAN_ID}-01"
+export CUSTOM_REQ_ID="req-us20-trace-2026"
+export CUSTOM_CORR_ID="corr-us20-trace-2026"
+```
+
+---
+
+#### Paso 1: Generación Automática de Traza Raíz W3C (Sin Cabecera Entrante)
+
+Cuando un cliente no envía `traceparent`, el middleware genera automáticamente un `traceId` raíz de 32 hexadecimales, un `spanId` de 16 hexadecimales y un `X-Request-ID` UUIDv4. `./bin/identity` imprime la línea `Trace:` en cada respuesta humana:
+
+**Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
 ./bin/identity oidc discovery
 ```
 
-##### Salida Real con Metadatos de Traza:
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -i -s "${BASE_URL}/.well-known/openid-configuration"
+```
+
+</details>
+
+##### Salida Real Obtenida (Traza Raíz Generada Automáticamente):
+
 ```text
-HTTP/1.1 200 OK [12ms]
+HTTP/1.1 200 OK [26ms]
 GET http://localhost:4000/.well-known/openid-configuration
+Trace: traceparent=00-2022e5fa0351da142eb69b0a7523221e-3bb3e1194182cd9e-01 | X-Request-ID=4ae295af-6fe0-4886-8f8c-be4526c8bd37
 
 {
   "issuer": "http://localhost:4000",
   "authorization_endpoint": "http://localhost:4000/oauth2/authorize",
-  "token_endpoint": "http://localhost:4000/oauth2/token",
+  "token_endpoint": "http://localhost:4000/api/v1/oauth2/token",
   "jwks_uri": "http://localhost:4000/.well-known/jwks.json",
+  "userinfo_endpoint": "http://localhost:4000/api/v1/auth/me",
   "response_types_supported": ["code"],
   "subject_types_supported": ["public"],
   "id_token_signing_alg_values_supported": ["RS256"]
@@ -114,40 +162,45 @@ GET http://localhost:4000/.well-known/openid-configuration
 
 ---
 
-#### Receta 2: Inyección de `traceparent` W3C con cURL (Receta Detallada)
+#### Paso 2: Propagación de `traceparent` W3C (Preservación de `${TRACE_ID}` & Rotación de `spanId`)
 
-<details open>
-<summary><b>Click para ver la receta detallada con cURL</b></summary>
+Inyectamos la cabecera W3C entrante (`${INCOMING_TRACEPARENT}`) junto con `--request-id` y `--correlation-id`. Observa cómo el servidor preserva **100% idéntico** el `${TRACE_ID}` (`4bf92f3577b34da6a3ce929d0e0e4736`) y genera un nuevo `spanId` hijo (`d91d81ccca879309`):
 
-En esta prueba se inyecta una cabecera `traceparent` externa con un `traceId` determinado (`4bf92f3577b34da6a3ce929d0e0e4736`). Observa cómo el servidor preserva el `traceId`, genera un nuevo `spanId` hijo (`9913b70a48677269`) y devuelve las cabeceras de correlación:
+**Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-curl -i -s http://localhost:4000/health/live \
-  -H "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+./bin/identity oidc discovery \
+  --traceparent "${INCOMING_TRACEPARENT}" \
+  --request-id "${CUSTOM_REQ_ID}" \
+  --correlation-id "${CUSTOM_CORR_ID}"
 ```
 
-##### Respuesta Real del Servidor en Vivo:
-```http
-HTTP/1.1 200 OK
-X-Powered-By: Express
-X-Request-ID: ec0e1ed8-87d9-4637-8ade-e85193bba9a7
-X-Correlation-ID: ec0e1ed8-87d9-4637-8ade-e85193bba9a7
-traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-9913b70a48677269-01
-Content-Type: application/json; charset=utf-8
-Content-Length: 99
-Date: Wed, 18 Nov 2026 18:29:24 GMT
-Connection: keep-alive
+<details>
+<summary><b>Ver Receta Equivalente con cURL (sobre <code>/health/live</code>)</b></summary>
 
-{"status":"UP","checks":{"liveness":"OK"},"protocol":"http","timestamp":"2026-11-18T18:29:24.818Z"}
+```bash
+curl -i -s "${BASE_URL}/health/live" \
+  -H "traceparent: ${INCOMING_TRACEPARENT}" \
+  -H "X-Request-ID: ${CUSTOM_REQ_ID}" \
+  -H "X-Correlation-ID: ${CUSTOM_CORR_ID}"
 ```
-
-> **Evidencia de Propagación:**
-> - **Trace ID Entrada:** `4bf92f3577b34da6a3ce929d0e0e4736`
-> - **Trace ID Salida:** `4bf92f3577b34da6a3ce929d0e0e4736` (Preservado 100% idéntico).
-> - **Span ID Entrada:** `00f067aa0ba902b7` (Span padre del cliente).
-> - **Span ID Salida:** `9913b70a48677269` (Nuevo span generado por el servidor de identidad).
 
 </details>
+
+##### Salida Real Obtenida (Propagación W3C Verificada):
+
+```text
+HTTP/1.1 200 OK [25ms]
+GET http://localhost:4000/.well-known/openid-configuration
+Trace: traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-d91d81ccca879309-01 | X-Request-ID=req-us20-trace-2026 | X-Correlation-ID=corr-us20-trace-2026
+```
+
+| Campo W3C / Correlación | Valor Enviado (Cliente) | Valor Devuelto (Servidor) | Invariante Verificado |
+| :--- | :--- | :--- | :--- |
+| **`traceId`** | `4bf92f3577b34da6a3ce929d0e0e4736` | `4bf92f3577b34da6a3ce929d0e0e4736` | Preservado 100% idéntico |
+| **`spanId`** | `00f067aa0ba902b7` (parent) | `d91d81ccca879309` (child) | Rotado a nuevo tramo hijo |
+| **`X-Request-ID`** | `req-us20-trace-2026` | `req-us20-trace-2026` | Propagado sin alteración |
+| **`X-Correlation-ID`** | `corr-us20-trace-2026` | `corr-us20-trace-2026` | Propagado sin alteración |
 
 ---
 
