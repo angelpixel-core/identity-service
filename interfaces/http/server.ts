@@ -81,6 +81,7 @@ import { InMemoryFederatedIdentityRepository } from '../../src/contexts/identity
 import { FederationController } from './rest/v1/federation/federation_controller';
 import { createRequireRootAdminMiddleware } from './middlewares/require_root_admin';
 import { SecretsController } from './rest/v1/secrets/secrets_controller';
+import { AuditController } from './rest/v1/audit/audit_controller';
 
 /**
  * Implementación en memoria del repositorio para testing e inicialización desacoplada.
@@ -770,6 +771,10 @@ export function createApp(deps?: AppDependencies): Express {
     requireRootAdmin,
     secretsController.rotateDbCredentials
   );
+
+  // Rutas de Auditoría Estructurada de Seguridad (US-19 & ADR-0009 — Root Superadmin Only)
+  const auditController = new AuditController({ auditLogger });
+  app.get('/api/v1/audit/events', authMiddleware, requireRootAdmin, auditController.getEvents);
 
   // Rutas de Operaciones y Reseed (Dev/Test Ops)
   app.post('/api/v1/ops/reseed-dev-sessions', async (_req: Request, res: Response) => {

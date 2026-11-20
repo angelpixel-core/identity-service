@@ -98,9 +98,20 @@ export interface CanonicalSecurityAuditEvent {
 }
 
 /**
+ * Filtros de consulta para inspección en tiempo de ejecución de eventos de auditoría (US-19).
+ */
+export interface SecurityAuditQueryFilters {
+  readonly tenantId?: string;
+  readonly severity?: SecurityAuditSeverity;
+  readonly eventType?: string;
+  readonly limit?: number;
+}
+
+/**
  * Secondary Port (SPI): SecurityAuditLoggerPort
  * Contrato abstracto para el registro inmutable de eventos de auditoría y seguridad.
  */
 export interface SecurityAuditLoggerPort {
   logEvent(event: SecurityAuditEvent): Promise<void>;
+  getRecentEvents?(filters?: SecurityAuditQueryFilters): CanonicalSecurityAuditEvent[];
 }
