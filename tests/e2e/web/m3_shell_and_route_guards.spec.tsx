@@ -26,4 +26,26 @@ describe('Web UI E2E Spec: US-23 Material Design 3 Shell & Bounded Contexts', ()
     expect(screen.queryByTestId('tenant-surface')).not.toBeInTheDocument();
     expect(screen.queryByTestId('platform-surface')).not.toBeInTheDocument();
   });
+
+  it('Scenario 2: blocks /platform with 403 Forbidden M3 banner for commercial tenant users (acme-corp)', () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'mock-commercial-jwt',
+        userId: 'usr_acme_01',
+        email: 'member@acme-corp.com',
+        tenantId: 'acme-corp',
+        roles: ['member'],
+      })
+    );
+    window.history.pushState({}, '', '/platform');
+
+    render(<App />);
+
+    const deniedBanner = screen.getByTestId('platform-access-denied');
+    expect(deniedBanner).toBeInTheDocument();
+    expect(deniedBanner).toHaveTextContent(/403 Forbidden/i);
+    expect(deniedBanner).toHaveTextContent(/system:superadmin/i);
+    expect(screen.queryByTestId('platform-surface')).not.toBeInTheDocument();
+  });
 });

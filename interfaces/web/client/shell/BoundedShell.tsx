@@ -1,6 +1,11 @@
 import React from 'react';
 import { AuthSession } from '../contexts/identity/domain/types';
-import { M3Card, M3Chip } from '../design-system/components/M3Primitives';
+import {
+  M3AlertBanner,
+  M3Button,
+  M3Card,
+  M3Chip,
+} from '../design-system/components/M3Primitives';
 
 export type BoundedSurface = 'auth' | 'tenant' | 'platform';
 
@@ -9,6 +14,30 @@ export function resolveSurfaceFromPath(pathname: string): BoundedSurface {
   if (normalized.startsWith('/platform')) return 'platform';
   if (normalized.startsWith('/tenant')) return 'tenant';
   return 'auth';
+}
+
+function extractRolesFromToken(token: string): readonly string[] {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2 || !parts[1]) return [];
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(base64);
+    const payload = JSON.parse(json) as { roles?: unknown };
+    return Array.isArray(payload.roles)
+      ? payload.roles.filter((r): r is string => typeof r === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isRootSuperadminSession(session: AuthSession): boolean {
+  if (session.tenantId !== 'system') return false;
+  const roles =
+    Array.isArray(session.roles) && session.roles.length > 0
+      ? session.roles
+      : extractRolesFromToken(session.token);
+  return roles.includes('superadmin');
 }
 
 export interface BoundedShellProps {
@@ -50,6 +79,40 @@ export function BoundedShell({ session, pathname, children }: BoundedShellProps)
         <footer className="m3-auth-footer">
           <span>W3C Trace Context Ready · RFC 7636 PKCE · Argon2id</span>
         </footer>
+      </main>
+    );
+  }
+
+  // Scenario 2 (US-23): Bloqueo estricto en /platform para inquilinos comerciales (ADR-0009)
+  if (requestedSurface === 'platform' && !isRootSuperadminSession(session)) {
+    return (
+      <main className="m3-auth-shell" data-testid="platform-guard-blocked">
+        <header className="m3-auth-header">
+          <M3Chip label={`${session.tenantId} · Acceso Restringido`} tone="neutral" />
+          <h1>Identity Service Portal</h1>
+        </header>
+
+        <M3Card variant="elevated" className="m3-auth-card">
+          <M3AlertBanner
+            severity="error"
+            title="403 Forbidden — Acceso Denegado (ADR-0009)"
+            message={`El inquilino "${session.tenantId}" no posee privilegios Root Tenant. Cambia a un operador Root Tenant (system:superadmin) para acceder a /platform.`}
+            testId="platform-access-denied"
+          />
+          <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <M3Button
+              variant="filled"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState({}, '', '/auth');
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }
+              }}
+            >
+              Volver a /auth
+            </M3Button>
+          </div>
+        </M3Card>
       </main>
     );
   }

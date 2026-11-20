@@ -12,6 +12,7 @@ export interface AuthSession {
   readonly userId: string;
   readonly email: string;
   readonly tenantId: string;
+  readonly roles?: readonly string[];
 }
 
 export interface UserProfile {
