@@ -192,12 +192,13 @@ ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}auth${colors.reset}         Gestión de usuarios y autenticación (register, me, update-user, delete-user, create-root-admin)
   ${colors.cyan}users${colors.reset}        Gobernanza de usuarios y Root Admin (create-root-admin, get, delete)
   ${colors.cyan}tenant${colors.reset}       Operaciones de contexto multi-tenant y PostgreSQL RLS (list-users, insert-user)
+  ${colors.cyan}secrets${colors.reset}      Rotación de secretos en caliente y telemetría CSI (status, rotate-signing-key, rotate-db-credentials)
   ${colors.cyan}client${colors.reset}       Gobernanza y validación de clientes OAuth2 (validate)
   ${colors.cyan}token${colors.reset}        Emisión y canje de tokens OAuth2 (m2m, exchange)
   ${colors.cyan}oidc${colors.reset}         Protocolo OpenID Connect (discovery, jwks, authorize)
   ${colors.cyan}session${colors.reset}      Gestión de sesiones y rotación de Refresh Tokens (refresh, revoke)
   ${colors.cyan}federation${colors.reset}   Federación de identidad OIDC externa (login, callback)
-  ${colors.cyan}ops${colors.reset}          Operaciones, observabilidad y cumplimiento (rotate-secret, export-audit, metrics, reseed-dev-sessions, db-reset)
+  ${colors.cyan}ops${colors.reset}          Operaciones, observabilidad y cumplimiento (export-audit, metrics, reseed-dev-sessions, db-reset)
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
@@ -220,7 +221,9 @@ ${colors.bold}Ejemplos:${colors.reset}
   identity session revoke --token "$REFRESH_TOKEN"
   identity federation login --provider google --tenant acme-corp --redirect-uri https://portal.angelpixel.io/callback
   identity federation callback --provider google --code "dev_google_jit_2026" --state "$STATE"
-  identity ops rotate-secret --secret-type db
+  identity secrets status --token "$ROOT_TOKEN"
+  identity secrets rotate-signing-key --token "$ROOT_TOKEN"
+  identity secrets rotate-db-credentials --token "$ROOT_TOKEN"
   identity ops export-audit --tenant acme-corp --severity ALERT
   identity ops metrics --filter http_requests
   identity ops reseed-dev-sessions
@@ -605,6 +608,88 @@ async function handleTenantDomain(action, flags, rawJson) {
   if (result.status !== 0) {
     process.exitCode = result.status || 1;
   }
+}
+
+function printSecretsHelp() {
+  console.log(`${colors.bold}Uso: identity secrets <accion> [banderas]${colors.reset}
+
+${colors.bold}Acciones (Gobernanza Root Tenant — ADR-0009 & US-16):${colors.reset}
+  ${colors.cyan}status${colors.reset}                 Consulta telemetría en vivo de claves RSA/JWKS y generación del pool PostgreSQL
+                         Banderas:
+                           --token <jwt>             Token Bearer de Root Superadmin (Requerido)
+
+  ${colors.cyan}rotate-signing-key${colors.reset}     Ejecuta un Hot Key Rollover asimétrico RSA-2048 real exponiendo ventana dual en JWKS
+                         Banderas:
+                           --token <jwt>             Token Bearer de Root Superadmin (Requerido)
+                           --key-id <kid>            Identificador explícito para la nueva clave (Opcional)
+                           --grace-ms <ms>           Ventana de gracia en milisegundos para la clave previa (Opcional)
+
+  ${colors.cyan}rotate-db-credentials${colors.reset}  Ejecuta rotación generacional de credenciales PostgreSQL (Gen N -> N+1) con Fail-Safe
+                         Banderas:
+                           --token <jwt>             Token Bearer de Root Superadmin (Requerido)
+                           --database-url <url>      URL PostgreSQL candidata (Opcional; una URL inválida dispara Fail-Safe 422)
+
+${colors.bold}Ejemplos:${colors.reset}
+  identity secrets status --token "\${ROOT_TOKEN}"
+  identity secrets rotate-signing-key --token "\${ROOT_TOKEN}"
+  identity secrets rotate-db-credentials --token "\${ROOT_TOKEN}"
+  identity secrets rotate-db-credentials --token "\${ROOT_TOKEN}" --database-url "postgresql://bad_user:wrong_pass@localhost:5432/identity_db"
+`);
+}
+
+// --- MANEJADOR DEL DOMINIO SECRETS (US-16 ROTACIÓN EN CALIENTE) ---
+async function handleSecretsDomain(action, flags, baseUrl, rawJson) {
+  if (!action || flags.help || flags.h) {
+    printSecretsHelp();
+    return;
+  }
+
+  const token = flags.token;
+  if (!token) {
+    console.error(`${colors.red}Error:${colors.reset} La bandera --token (Bearer de Root Superadmin) es obligatoria para operaciones de secrets.`);
+    process.exit(1);
+  }
+
+  const authHeader = `Bearer ${String(token).replace(/^Bearer\s+/i, '')}`;
+
+  if (action === 'status') {
+    const res = await requestHttp('GET', '/api/v1/secrets/status', {
+      baseUrl,
+      headers: { Authorization: authHeader },
+    });
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'rotate-signing-key') {
+    const body = {};
+    if (flags['key-id']) body.keyId = String(flags['key-id']);
+    if (flags['grace-ms']) body.gracePeriodMs = Number(flags['grace-ms']);
+
+    const res = await requestHttp('POST', '/api/v1/secrets/rotate-signing-key', {
+      baseUrl,
+      headers: { Authorization: authHeader },
+      body,
+    });
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  if (action === 'rotate-db-credentials') {
+    const body = {};
+    if (flags['database-url']) body.databaseUrl = String(flags['database-url']);
+
+    const res = await requestHttp('POST', '/api/v1/secrets/rotate-db-credentials', {
+      baseUrl,
+      headers: { Authorization: authHeader },
+      body,
+    });
+    renderResponse(res, rawJson);
+    return;
+  }
+
+  console.error(`${colors.red}Acción desconocida:${colors.reset} "${action}" para el recurso secrets. Usa --help para ver las acciones disponibles.`);
+  process.exit(1);
 }
 
 function printClientHelp() {
@@ -1086,12 +1171,6 @@ function printOpsHelp() {
   console.log(`${colors.bold}Uso: identity ops <accion> [banderas]${colors.reset}
 
 ${colors.bold}Acciones Operacionales & Cumplimiento FinTech:${colors.reset}
-  ${colors.cyan}rotate-secret${colors.reset}    Simula o dispara la recarga dinámica en caliente de secretos CSI sin downtime (US-16 & US-17)
-                   Banderas:
-                     --secret-type <tipo>       Tipo de secreto a rotar: db | rsa | jwt (def: db)
-                     --secrets-dir <dir>        Ruta del volumen montado (def: /mnt/secrets-store)
-                     --dry-run                  Ejecuta validación pre-flight sin aplicar swap definitivo
-
   ${colors.cyan}export-audit${colors.reset}     Exporta e inspecciona registros estructurados de auditoría NDJSON (US-19: PCI-DSS 10.2 / SOC 2 CC6.8)
                    Banderas:
                      --tenant <id>              Filtrar por espacio de tenencia (Opcional)
@@ -1112,8 +1191,6 @@ ${colors.bold}Acciones Operacionales & Cumplimiento FinTech:${colors.reset}
                      --no-seeds                 Omite la inserción de clientes iniciales de desarrollo
 
 ${colors.bold}Ejemplos:${colors.reset}
-  identity ops rotate-secret --secret-type db
-  identity ops rotate-secret --secret-type rsa
   identity ops export-audit --tenant acme-corp --severity ALERT
   identity ops export-audit --limit 5 --format table
   identity ops metrics --filter http_requests
@@ -1131,120 +1208,6 @@ async function handleOpsDomain(action, flags, baseUrl, rawJson) {
   if (!action || flags.help || flags.h) {
     printOpsHelp();
     return;
-  }
-
-  if (action === 'rotate-secret') {
-    const secretType = String(flags['secret-type'] || flags.type || 'db').toLowerCase();
-    const secretsDir = String(flags['secrets-dir'] || '/mnt/secrets-store');
-    const isDryRun = Boolean(flags['dry-run']);
-
-    const start = performance.now();
-
-    // Comprobar salud antes de la rotación
-    const livenessRes = await requestHttp('GET', '/health/live', { baseUrl });
-    const readinessRes = await requestHttp('GET', '/health/ready', { baseUrl });
-
-    const elapsed = Math.round(performance.now() - start);
-
-    if (secretType === 'db' || secretType === 'database') {
-      const payload = {
-        status: 'SUCCESS',
-        operation: isDryRun ? 'SECRET_ROTATION_DRY_RUN' : 'ZERO_DOWNTIME_SECRET_ROTATION',
-        secretType: 'database_credentials',
-        secretsDirectory: secretsDir,
-        preFlightCheck: {
-          query: 'SELECT 1',
-          status: 'PASSED',
-          sslEnforced: true,
-          tlsMinVersion: 'TLSv1.2',
-          rejectUnauthorized: true,
-        },
-        poolLifecycle: {
-          previousGeneration: 1,
-          activeGeneration: isDryRun ? 1 : 2,
-          swapType: 'ATOMIC_POINTER_SWAP',
-          gracefulDraining: 'ACTIVE',
-          droppedQueries: 0,
-        },
-        probes: {
-          liveness: livenessRes.status === 200 ? 'OK' : 'FAIL',
-          readiness: readinessRes.status === 200 ? 'OK' : 'FAIL',
-        },
-        compliance: {
-          pciRequirement: '3.6 / 3.7',
-          soc2Criteria: 'CC6.1',
-          isoControl: 'A.10.1',
-          auditEventEmitted: 'SECRET_ROTATION_SUCCESS',
-        },
-        timestamp: new Date().toISOString(),
-        latencyMs: elapsed,
-      };
-
-      renderResponse({
-        status: 200,
-        statusText: 'OK',
-        method: 'POST',
-        url: `${baseUrl}/ops/rotate-secret`,
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'x-request-id': crypto.randomUUID().replace(/-/g, ''),
-        },
-        data: payload,
-        latencyMs: elapsed,
-      }, rawJson);
-      return;
-    }
-
-    if (secretType === 'rsa' || secretType === 'jwt') {
-      const jwksRes = await requestHttp('GET', '/.well-known/jwks.json', { baseUrl });
-      const currentKeys = Array.isArray(jwksRes.data?.keys) ? jwksRes.data.keys : [];
-
-      const activeKid = `kid_rsa_2026_v2_${crypto.randomBytes(4).toString('hex')}`;
-      const previousKid = currentKeys[0]?.kid || 'kid_rsa_2026_v1_active';
-
-      const payload = {
-        status: 'SUCCESS',
-        operation: isDryRun ? 'RSA_KEY_ROLLOVER_DRY_RUN' : 'HOT_ASYMMETRIC_KEY_ROLLOVER',
-        secretType: 'rsa_signing_keypair',
-        newKeyId: activeKid,
-        previousKeyId: previousKid,
-        jwksExposure: {
-          endpoint: '/.well-known/jwks.json',
-          mode: 'MULTI_KEY_WINDOW (RFC 7517)',
-          exposedKeysCount: isDryRun ? currentKeys.length : Math.max(2, currentKeys.length + 1),
-          verificationStatus: 'DUAL_KEY_VERIFICATION_ACTIVE',
-        },
-        probes: {
-          liveness: livenessRes.status === 200 ? 'OK' : 'FAIL',
-          readiness: readinessRes.status === 200 ? 'OK' : 'FAIL',
-        },
-        compliance: {
-          pciRequirement: '3.6.1',
-          soc2Criteria: 'CC6.1',
-          isoControl: 'A.10.1',
-          auditEventEmitted: 'SECRET_ROTATION_SUCCESS',
-        },
-        timestamp: new Date().toISOString(),
-        latencyMs: elapsed,
-      };
-
-      renderResponse({
-        status: 200,
-        statusText: 'OK',
-        method: 'POST',
-        url: `${baseUrl}/ops/rotate-secret`,
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'x-request-id': crypto.randomUUID().replace(/-/g, ''),
-        },
-        data: payload,
-        latencyMs: elapsed,
-      }, rawJson);
-      return;
-    }
-
-    console.error(`${colors.red}Error:${colors.reset} Tipo de secreto no soportado '${secretType}'. Opciones permitidas: db, rsa, jwt.`);
-    process.exit(1);
   }
 
   if (action === 'export-audit') {
@@ -1539,6 +1502,10 @@ async function main() {
 
     case 'tenant':
       await handleTenantDomain(parsed.action, parsed.flags, rawJson);
+      break;
+
+    case 'secrets':
+      await handleSecretsDomain(parsed.action, parsed.flags, baseUrl, rawJson);
       break;
 
     case 'client':
