@@ -272,95 +272,150 @@ sequenceDiagram
     participant Grafana as Grafana Dashboard (Golden Signals)
     participant Alert as Prometheus Alertmanager (SLO Alerts)
 
-    User->>App: 1. Peticiones HTTP entrantes concurrentes
-    App->>Normalizer: 2. Interceptación y normalización de ruta (evita cardinalidad)
-    Normalizer->>MetricsAdapter: 3. Actualización de contadores (Tráfico/Errores) e histogramas (Latencia)
-    App-->>User: 4. Entrega de respuesta HTTP con cabecera traceparent
-    Prom->>App: 5. Sondeo periódico de scraping a GET /metrics
-    App->>MetricsAdapter: 6. Serialización de métricas en formato OpenMetrics/Prometheus
-    MetricsAdapter-->>Prom: 7. Entrega de métricas crudas con etiquetas dimensionales
-    Prom->>Grafana: 8. Consulta PromQL y visualización de Golden Signals por tenant
-    Prom->>Alert: 9. Evaluación de alertas de tasa de error o saturación de pool
+    User->>App: Peticiones HTTP entrantes concurrentes
+    App->>Normalizer: Interceptación y normalización de ruta (evita cardinalidad)
+    Normalizer->>MetricsAdapter: Actualización de contadores (Tráfico/Errores) e histogramas (Latencia)
+    App-->>User: Entrega de respuesta HTTP con cabecera traceparent
+    Prom->>App: Sondeo periódico de scraping a GET /metrics
+    App->>MetricsAdapter: Serialización de métricas en formato OpenMetrics/Prometheus
+    MetricsAdapter-->>Prom: Entrega de métricas crudas con etiquetas dimensionales
+    Prom->>Grafana: Consulta PromQL y visualización de Golden Signals por tenant
+    Prom->>Alert: Evaluación de alertas de tasa de error o saturación de pool
 ```
 
-#### Glosario de Componentes US-21:
-- **`RouteNormalizer & MetricsMiddleware`:** Middleware que intercepta la finalización de cada petición (`res.on('finish')`), calcula la duración exacta con `perf_hooks` y normaliza la ruta antes de registrar métricas.
-- **`OpenTelemetryMetricsAdapter`:** Adaptador de telemetría que administra el registro de métricas en memoria bajo la especificación de OpenTelemetry SDK y genera la salida en formato OpenMetrics.
-- **`Servidor Prometheus (Scraper)`:** Agente centralizado de recolección que sondea `/metrics` cada 15 segundos mediante peticiones HTTP pull.
-- **`Grafana Dashboard (Golden Signals)`:** Panel de visualización ejecutiva y operativa que grafica las 4 Señales de Oro desglosadas por inquilino y ruta.
-- **`Prometheus Alertmanager`:** Subsistema de alertas que notifica al equipo de guardia SRE cuando la latencia $p_{99} > 250\text{ms}$ o la tasa de errores 5xx supera el $1\%$.
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`User` (Clientes / Consumidores API)** | `actor` | Navegadores SPA, clientes M2M, operadores CLI o pruebas de carga que generan tráfico HTTP hacia el servicio. |
+| **`App` (`identity-service :4000`)** | `participant` | Instancia de Express que procesa las peticiones de negocio y expone el endpoint de scraping `GET /metrics` sin bloquear el event loop. |
+| **`Normalizer` (`RouteNormalizer` & `MetricsMiddleware`)** | `participant` | Middleware que intercepta `res.on('finish')`, mide latencia con alta precisión y colapsa parámetros dinámicos (`/api/v1/users/:userId`) evitando explosión de cardinalidad. |
+| **`MetricsAdapter` (`OpenTelemetryMetricsAdapter`)** | `participant` | Adaptador de telemetría basado en OpenTelemetry Metrics SDK (`3.1.1`) que mantiene contadores, histogramas exponenciales y medidores de saturación en formato OpenMetrics. |
+| **`Prom` (Servidor Prometheus — Scraper)** | `participant` | Motor de series temporales que realiza scraping HTTP pull periódico (`GET /metrics` cada 15s) sobre los pods activos. |
+| **`Grafana` (Grafana Dashboard)** | `participant` | Panel ejecutivo y SRE que consulta PromQL para visualizar las 4 Señales de Oro (Latencia, Tráfico, Errores y Saturación) por ruta y `tenant_id`. |
+| **`Alert` (Prometheus Alertmanager)** | `participant` | Evaluador de reglas SLO que dispara alertas al equipo de guardia cuando $p_{99} > 250\text{ms}$, la tasa 5xx supera el $1\%$ o el pool PostgreSQL entra en saturación. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 9)
+
+1. **Paso 1 (`User -> App`):** Clientes concurrentes envían peticiones HTTP hacia los endpoints públicos y autenticados de `identity-service`.
+2. **Paso 2 (`App -> Normalizer`):** `MetricsMiddleware` intercepta la finalización de cada respuesta y aplica `RouteNormalizer` para reemplazar UUIDs y parámetros dinámicos por plantillas canónicas.
+3. **Paso 3 (`Normalizer -> MetricsAdapter`):** Se incrementan `http_requests_total` (y `http_errors_total` ante 4xx/5xx) y se registra la duración exacta en los cubos del histograma `http_request_duration_seconds`.
+4. **Paso 4 (`App -->> User`):** El servicio devuelve la respuesta HTTP al cliente con su cabecera `traceparent` correlacionada y sin añadir latencia de red por telemetría.
+5. **Paso 5 (`Prom -> App`):** El scraper de Prometheus (o `./bin/identity ops metrics`) consulta `GET /metrics`.
+6. **Paso 6 (`App -> MetricsAdapter`):** El servidor solicita al adaptador OpenTelemetry la serialización del estado actual de todos los instrumentos.
+7. **Paso 7 (`MetricsAdapter -->> Prom`):** Se devuelve el payload en texto plano OpenMetrics/Prometheus (`# HELP`, `# TYPE`, `# UNIT` y series etiquetadas).
+8. **Paso 8 (`Prom -> Grafana`):** Grafana ejecuta consultas PromQL sobre las series almacenadas para calcular tasas de tráfico y percentiles ($p_{50}$, $p_{95}$, $p_{99}$).
+9. **Paso 9 (`Prom -> Alert`):** Alertmanager evalúa umbrales de SLA/SLO y notifica incidentes ante degradación de latencia, picos de error o agotamiento del pool.
 
 ---
 
-### 🧪 Recetas Reproducibles de Métricas Prometheus
+### 🚀 Ejecución en Vivo & Verificación Interactiva Paso a Paso (`./bin/identity ops metrics`)
 
-#### Receta 1: Inspección Filtrada con CLI Nativa (Receta Primaria)
-
-El comando `identity ops metrics` permite consultar y filtrar las métricas del servicio de forma inmediata:
+#### Paso 0: Variables de Sesión para Métricas Prometheus
 
 ```bash
-./bin/identity ops metrics --filter http_requests
+# ==============================================================================
+# Variables de Sesión Interactiva para Métricas Prometheus & Golden Signals (US-21)
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export METRIC_TRAFFIC="http_requests_total"
+export METRIC_LATENCY="http_request_duration_seconds"
+export METRIC_TARGET="target_info"
 ```
 
-##### Salida Real de Métricas de Tráfico:
+---
+
+#### Paso 1: Señal de Tráfico — Generación de Peticiones & Inspección de `http_requests_total`
+
+Generamos tráfico real sobre los endpoints OIDC y consultamos inmediatamente el contador de tráfico filtrado por `${METRIC_TRAFFIC}`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity oidc discovery --raw-json >/dev/null
+./bin/identity oidc jwks --raw-json >/dev/null
+
+./bin/identity ops metrics --filter "${METRIC_TRAFFIC}"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s "${BASE_URL}/.well-known/openid-configuration" >/dev/null
+curl -s "${BASE_URL}/.well-known/jwks.json" >/dev/null
+
+curl -s "${BASE_URL}/metrics" | grep "${METRIC_TRAFFIC}"
+```
+
+</details>
+
+##### Salida Real Obtenida (Contador de Tráfico OpenMetrics):
+
 ```text
-Métricas Prometheus (7 líneas encontradas):
+Métricas Prometheus (5 líneas encontradas):
 # HELP http_requests_total Total number of inbound HTTP requests processed
 # TYPE http_requests_total counter
-http_requests_total{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 4
-http_requests_total{method="GET",route="/health",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
-http_requests_total{method="GET",route="/metrics",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
-http_requests_total{method="GET",route="/health/ready",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 3
+http_requests_total{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
+http_requests_total{method="GET",route="/.well-known/openid-configuration",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
 http_requests_total{method="GET",route="/.well-known/jwks.json",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
 ```
 
-También puedes exportar las métricas en formato JSON estructurado:
+---
+
+#### Paso 2: Señales de Latencia & Saturación — Histograma Exponencial & Metadatos JSON
+
+Inspeccionamos el histograma calibrado (`0.005s` a `10s` + `+Inf`) para cálculo de percentiles ($p_{50}/p_{95}/p_{99}$) y exportamos los metadatos del SDK OpenTelemetry en JSON:
+
+**Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-./bin/identity ops metrics --filter target_info --format json
+# 1. Histograma de latencia con cubos exponenciales
+./bin/identity ops metrics --filter "${METRIC_LATENCY}" | head -n 20
+
+# 2. Metadatos de runtime en formato JSON estructurado
+./bin/identity ops metrics --filter "${METRIC_TARGET}" --format json --raw-json | jq .
 ```
 
-##### Salida en Formato JSON:
+<details>
+<summary><b>Ver Receta Equivalente con cURL (Scraping Directo Prometheus)</b></summary>
+
+```bash
+curl -s "${BASE_URL}/metrics" | head -n 25
+```
+
+</details>
+
+##### Salidas Reales Obtenidas:
+
+```text
+Métricas Prometheus (59 líneas encontradas):
+# HELP http_request_duration_seconds Duration of inbound HTTP requests in seconds
+# UNIT http_request_duration_seconds s
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_count{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
+http_request_duration_seconds_sum{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 0.0029295
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.005"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.01"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.025"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.05"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.1"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.25"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.5"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="1"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="2.5"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="5"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="10"} 1
+http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="+Inf"} 1
+http_request_duration_seconds_count{method="GET",route="/.well-known/openid-configuration",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 1
+http_request_duration_seconds_sum{method="GET",route="/.well-known/openid-configuration",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 0.000558417
+```
+
 ```json
 {
   "target_info{service_name=\"unknown_service:/usr/local/bin/node\",telemetry_sdk_language=\"nodejs\",telemetry_sdk_name=\"opentelemetry\",telemetry_sdk_version=\"3.1.1\"}": 1
 }
 ```
-
----
-
-#### Receta 2: Scraping Estándar con cURL (Receta Detallada)
-
-<details open>
-<summary><b>Click para ver la receta detallada con cURL</b></summary>
-
-Puedes realizar un scraping directo al endpoint `/metrics` emulando el comportamiento exacto de Prometheus:
-
-```bash
-curl -s http://localhost:4000/metrics | head -n 25
-```
-
-##### Muestra Real de Exposición de Métricas Prometheus:
-```text
-# HELP target_info Target metadata
-# TYPE target_info gauge
-target_info{service_name="unknown_service:/usr/local/bin/node",telemetry_sdk_language="nodejs",telemetry_sdk_name="opentelemetry",telemetry_sdk_version="3.1.1"} 1
-# HELP http_request_duration_seconds Duration of inbound HTTP requests in seconds
-# UNIT http_request_duration_seconds s
-# TYPE http_request_duration_seconds histogram
-http_request_duration_seconds_count{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 4
-http_request_duration_seconds_sum{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 0.045211042
-http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.005"} 0
-http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.01"} 1
-http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.025"} 3
-http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="0.05"} 4
-http_request_duration_seconds_bucket{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service",le="+Inf"} 4
-# HELP http_requests_total Total number of inbound HTTP requests processed
-# TYPE http_requests_total counter
-http_requests_total{method="GET",route="/health/live",status_code="200",otel_scope_name="@angelpixel-core/identity-service"} 4
-```
-
-</details>
 
 ---
 
