@@ -498,4 +498,16 @@ npx jest tests/unit/identity/application/test_get_user_profile_handler.ts tests/
 
 ---
 
+## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
+
+La superficie **`/auth`** (`US-24`, Material Design 3) expone el flujo completo de registro y gestión de perfil multi-tenant sobre el navegador sin menús administrativos (`BoundedShell` centrado):
+
+1. Abrir `http://localhost:3000/auth` en la pestaña **Cuenta**.
+2. Completar **Tenant ID**, **Correo electrónico** y **Contraseña** (`Argon2id`/`bcrypt`), disparando `POST /api/v1/auth/register`.
+3. Al persistirse la sesión en `localStorage`, el portal renderiza la tarjeta **UserProfileCard** alimentada por `GET /api/v1/auth/me` (con propagación automática de `X-Request-ID` y `traceparent` W3C).
+
+![Superficie /auth Cuenta en Material Design 3](./assets/screenshots/ui_auth_account.png)
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)

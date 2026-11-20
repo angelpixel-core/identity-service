@@ -976,4 +976,17 @@ npx jest tests/acceptance/step_defs/test_refresh_token_rotation_steps.ts
 
 ---
 
+## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
+
+En **`/auth`** (`US-24`), las pestañas **OIDC & JWKS** y **PKCE & Sesiones** exponen los flujos estándar RFC 6749 / RFC 7636 / RFC 7009:
+
+1. **OIDC & JWKS (`US-07`):** Consulta en vivo `GET /.well-known/openid-configuration` y `GET /.well-known/jwks.json`, renderizando las llaves públicas RSA-2048 (`kid`) sin material privado.
+2. **PKCE & Sesiones (`US-08`, `US-09`):** Genera un par `code_verifier` / `code_challenge` (`S256`), intercambia el código en `POST /oauth2/token`, rota la familia de sesiones con `POST /oauth2/refresh` y revoca en caliente vía `POST /oauth2/revoke`.
+
+![Superficie /auth OIDC Discovery & JWKS](./assets/screenshots/ui_auth_oidc_jwks.png)
+
+![Superficie /auth PKCE S256 & Sesiones Refresh](./assets/screenshots/ui_auth_pkce_sessions.png)
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)

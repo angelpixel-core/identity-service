@@ -652,4 +652,16 @@ npx jest tests/integration/security/test_cross_tenant_penetration.ts
 
 ---
 
+## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
+
+Dentro de **`/tenant`** (`US-25`), la pestaña **Laboratorio RLS / Cross-Tenant** permite demostrar en vivo el aislamiento multi-inquilino:
+
+1. Abrir la pestaña **Laboratorio RLS / Cross-Tenant** en `http://localhost:3000/tenant`.
+2. Seleccionar un **Tenant objetivo ajeno** (distinto al de la sesión JWT) y disparar la petición controlada contra `GET /api/v1/auth/me`.
+3. Verificar que el backend responde `403 Forbidden` (registrando `CROSS_TENANT_VIOLATION`) y que la UI muestra la evidencia forense junto con el `traceparent` W3C.
+
+![Consola /tenant Laboratorio RLS y Cross-Tenant en Material Design 3](./assets/screenshots/ui_tenant_rls_lab.png)
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)

@@ -553,4 +553,16 @@ npx jest tests/acceptance/step_defs/test_federated_account_linking_steps.ts
 
 ---
 
+## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
+
+La pestaña **Federación** de **`/auth`** (`US-24`, conectada a `US-10` & `US-11`) permite iniciar y completar flujos de identidad externa:
+
+1. Abrir `http://localhost:3000/auth` y seleccionar la pestaña **Federación**.
+2. Elegir el proveedor **Google OIDC** o **Microsoft Entra ID** para obtener la URL de autorización con `state`/`nonce` anti-CSRF (`GET /api/v1/auth/federation/:provider/login`).
+3. Simular o completar el callback (`POST /api/v1/auth/federation/:provider/callback`) para verificar el aprovisionamiento Just-In-Time (JIT) y la persistencia de sesión nativa.
+
+![Superficie /auth Federación Externa en Material Design 3](./assets/screenshots/ui_auth_federation.png)
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)

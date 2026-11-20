@@ -686,4 +686,15 @@ Ran all test suites matching tests/integration/interfaces/http/test_health_readi
 
 ---
 
+## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
+
+La pestaña **Observabilidad SRE** de **`/platform`** (`US-26`) unifica en vivo las capacidades de `US-20`, `US-21` y `US-22`:
+
+1. Navegar a `http://localhost:3000/platform` y seleccionar **Observabilidad SRE**.
+2. El panel consulta simultáneamente `GET /health/live`, `GET /health/ready` y `GET /metrics` (OpenMetrics/Prometheus), mostrando el estado de sondas Kubernetes, métricas clave parseadas y el header `traceparent` W3C propagado en la sesión.
+
+![Consola /platform Observabilidad SRE en Material Design 3](./assets/screenshots/ui_platform_sre.png)
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)

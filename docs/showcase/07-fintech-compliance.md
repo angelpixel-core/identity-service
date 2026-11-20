@@ -1272,4 +1272,15 @@ Ran all test suites matching tests/integration/identity/security/test_structured
 
 ---
 
+## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
+
+Dentro de **`/platform`** (`US-26`), las pestañas **Bóveda Criptográfica** y **Auditoría Forense** llevan a navegador las capacidades de `US-16` a `US-19`:
+
+1. **Bóveda Criptográfica (`US-16`, `US-17`):** Consulta `GET /api/v1/secrets/status` mostrando `activeKeyId`, llaves retenidas en JWKS y postura TLS de PostgreSQL sin exponer material privado. La rotación (`POST /api/v1/secrets/rotate-signing-key`) exige confirmación explícita del operador.
+2. **Auditoría Forense (`US-19`):** Permite filtrar en vivo `GET /api/v1/audit/events` por `tenantId`, `severity` y `eventType`, correlacionando cada evento con su `traceId`.
+
+![Consola /platform Bóveda Criptográfica en Material Design 3](./assets/screenshots/ui_platform_vault_audit.png)
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)

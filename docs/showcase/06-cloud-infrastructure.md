@@ -816,4 +816,15 @@ deployment "identity-service" successfully rolled out
 
 ---
 
+## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
+
+La superficie **`/platform`** (`US-26`, protegida por **Root Tenant Governance `ADR-0009`**) expone en la pestaña **Postura & Gobernanza** el estado agregado de infraestructura en modo **estrictamente de solo lectura**:
+
+1. Autenticarse en el tenant `system` con rol `superadmin` y navegar a `http://localhost:3000/platform` (cualquier inquilino comercial es bloqueado con `403 Forbidden` por `BoundedShell`).
+2. La vista consulta `GET /api/v1/platform/posture` propagando `traceparent` W3C y renderiza el estado de **Cloud IaC (`US-12`)**, **Ingress TLS 1.3 (`US-13`)**, **Helm Strict Schema (`US-14`)**, **CI/CD Guardrails (`US-15`)** y **NetworkPolicy Zero-Trust (`US-18`)**.
+
+![Consola /platform Postura Read-Only en Material Design 3](./assets/screenshots/ui_platform_posture.png)
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)

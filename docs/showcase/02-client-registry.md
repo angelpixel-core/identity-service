@@ -635,4 +635,16 @@ npx jest tests/integration/identity/interfaces/test_oauth2_token_m2m.ts
 
 ---
 
+## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
+
+La superficie **`/tenant`** (`US-25`, Material Design 3) centraliza la gobernanza de aplicaciones OAuth2 del inquilino autenticado:
+
+1. Navegar a `http://localhost:3000/tenant` con una sesión comercial activa.
+2. En la pestaña **Clientes & CORS**, el panel consulta `GET /api/v1/oauth2/clients` listando aplicaciones registradas sin exponer `clientSecretHash` y permite validar orígenes CORS contra `POST /api/v1/oauth2/clients/validate`.
+3. En la pestaña **M2M Playground**, el desarrollador ejecuta flujos `client_credentials` en vivo contra `POST /oauth2/token` e inspecciona los claims del JWT emitido.
+
+![Consola /tenant Clientes & M2M en Material Design 3](./assets/screenshots/ui_tenant_clients_m2m.png)
+
+---
+
 [⬅️ Volver al Hub Principal de Showcase](./README.md)
