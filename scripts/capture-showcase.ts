@@ -18,6 +18,7 @@ async function runCapture() {
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 2, // High-DPI Retina resolution
+    ignoreHTTPSErrors: true, // Allow self-signed local TLS certs (Floci ARM & NGINX Ingress)
   });
 
   const page = await context.newPage();
@@ -91,16 +92,16 @@ async function runCapture() {
     });
 
     // 7. US-12: Floci Azure ARM Local Emulator Dashboard (optional if cloud profile is running)
-    console.log('📸 Capturing us12_floci_azure_dashboard.png from http://localhost:4577/...');
+    console.log('📸 Capturing us12_floci_azure_dashboard.png from https://localhost:4577/...');
     try {
-      await page.goto('http://localhost:4577/', { waitUntil: 'networkidle', timeout: 8000 });
+      await page.goto('https://localhost:4577/', { waitUntil: 'networkidle', timeout: 8000 });
       await page.waitForTimeout(1000);
       await page.screenshot({
         path: path.join(SCREENSHOT_DIR, 'us12_floci_azure_dashboard.png'),
         fullPage: false,
       });
     } catch {
-      console.warn('⚠️ Floci Azure ARM dashboard not reachable on :4577; skipping us12_floci_azure_dashboard.png');
+      console.warn('⚠️ Floci Azure ARM dashboard not reachable on https://localhost:4577; skipping us12_floci_azure_dashboard.png');
     }
 
     console.log('✅ All showcase captures saved successfully to:', SCREENSHOT_DIR);
