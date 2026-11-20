@@ -83,12 +83,277 @@ sequenceDiagram
 
 ---
 
-### 🧪 Verificación Automatizada: Suite de Pruebas de Integración E2E (US-16)
+### 🚀 Ejecución en Vivo & Verificación Interactiva Paso a Paso (`./bin/identity secrets`)
 
-La resiliencia de la recarga dinámica y la ausencia total de caídas en peticiones se certifican mediante la suite de integración E2E dedicada:
+Las operaciones de rotación en caliente están protegidas por la gobernanza **Root Tenant (ADR-0009)**: únicamente un operador autenticado del inquilino `system` con rol `superadmin` puede invocar `/api/v1/secrets/*` (cualquier inquilino comercial recibe `HTTP 403 Forbidden` con auditoría `CROSS_TENANT_VIOLATION`).
+
+#### Paso 0: Variables de Sesión y Aprovisionamiento del Operador Raíz (`${ROOT_TOKEN}`)
 
 ```bash
-npx jest tests/integration/identity/security/test_zero_downtime_secret_rotation.ts
+# ==============================================================================
+# Variables de Sesión Interactiva para Rotación de Secretos en Caliente (US-16)
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export ROOT_EMAIL="secadmin.$(date +%s)@angelpixel.io"
+export ROOT_PASS='SuperAdmin2026!'
+export INVALID_DB_URL="postgresql://bad_user:wrong_pass@localhost:5432/identity_db"
+
+REG_RESP=$(./bin/identity users create-root-admin \
+  --email "${ROOT_EMAIL}" \
+  --password "${ROOT_PASS}" \
+  --raw-json)
+
+export ROOT_TOKEN=$(echo "${REG_RESP}" | jq -r .accessToken)
+export ROOT_USER_ID=$(echo "${REG_RESP}" | jq -r .userId)
+
+echo "ROOT_USER_ID=${ROOT_USER_ID}"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+REG_RESP=$(curl -s -X POST "${BASE_URL}/api/v1/auth/register" \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: system" \
+  -d "{
+    \"email\": \"${ROOT_EMAIL}\",
+    \"password\": \"${ROOT_PASS}\",
+    \"roles\": [\"superadmin\", \"member\"]
+  }")
+
+export ROOT_TOKEN=$(echo "${REG_RESP}" | jq -r .accessToken)
+export ROOT_USER_ID=$(echo "${REG_RESP}" | jq -r .userId)
+```
+
+</details>
+
+---
+
+#### Paso 1: Inspección de Línea Base (`./bin/identity secrets status`)
+
+Consultamos la telemetría real del proceso antes de rotar (1 clave RSA en JWKS y pool PostgreSQL en Generación `1`):
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity secrets status --token "${ROOT_TOKEN}"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X GET "${BASE_URL}/api/v1/secrets/status" \
+  -H "Authorization: Bearer ${ROOT_TOKEN}" | jq .
+```
+
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+
+```json
+{
+  "status": "ACTIVE",
+  "signingKeys": {
+    "activeKeyId": "key-03b846e480b2",
+    "retainedKeysCount": 0,
+    "jwksKeysCount": 1,
+    "exposedKids": ["key-03b846e480b2"],
+    "jwksEndpoint": "/.well-known/jwks.json"
+  },
+  "databasePool": {
+    "mode": "DYNAMIC_POSTGRES_POOL",
+    "activeGeneration": 1,
+    "retiringPoolsCount": 0,
+    "totalConnections": 1,
+    "idleConnections": 1,
+    "waitingClients": 0
+  }
+}
+```
+
+---
+
+#### Paso 2: Hot Key Rollover Asimétrico RSA-2048 & Ventana Dual JWKS (RFC 7517)
+
+Disparamos la rotación real del par RSA-2048 en `RsaKeyAdapter` y verificamos inmediatamente el endpoint público `/.well-known/jwks.json`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity secrets rotate-signing-key --token "${ROOT_TOKEN}"
+
+# Confirmar exposición simultánea de la clave nueva y la anterior en JWKS
+./bin/identity oidc jwks --raw-json | jq '{keysCount: (.keys | length), kids: [.keys[].kid]}'
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X POST "${BASE_URL}/api/v1/secrets/rotate-signing-key" \
+  -H "Authorization: Bearer ${ROOT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{}' | jq .
+
+curl -s "${BASE_URL}/.well-known/jwks.json" | jq '{keysCount: (.keys | length), kids: [.keys[].kid]}'
+```
+
+</details>
+
+##### Respuestas Reales Obtenidas (Rollover + Ventana Dual RFC 7517):
+
+```json
+{
+  "status": "SUCCESS",
+  "operation": "HOT_ASYMMETRIC_KEY_ROLLOVER",
+  "previousKeyId": "key-03b846e480b2",
+  "activeKeyId": "kid_rsa_1795145025060_2382f7",
+  "retainedKeysCount": 1,
+  "jwksKeysCount": 2,
+  "exposedKids": [
+    "kid_rsa_1795145025060_2382f7",
+    "key-03b846e480b2"
+  ],
+  "gracePeriodMs": 900000,
+  "compliance": {
+    "pciRequirement": "10.2.6",
+    "soc2Criteria": "CC6.1",
+    "auditEventEmitted": "SECRET_ROTATION_SUCCESS"
+  }
+}
+```
+
+```json
+{
+  "keysCount": 2,
+  "kids": [
+    "kid_rsa_1795145025060_2382f7",
+    "key-03b846e480b2"
+  ]
+}
+```
+
+---
+
+#### Paso 3: Rotación Generacional de Credenciales PostgreSQL (Gen 1 → Gen 2)
+
+Promovemos un nuevo pool candidato tras superar el pre-flight `SELECT 1`, ejecutando un *Atomic Pointer Swap* y drenado elegante de la generación previa:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity secrets rotate-db-credentials --token "${ROOT_TOKEN}"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X POST "${BASE_URL}/api/v1/secrets/rotate-db-credentials" \
+  -H "Authorization: Bearer ${ROOT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{}' | jq .
+```
+
+</details>
+
+##### Respuesta Real Obtenida (HTTP 200 OK):
+
+```json
+{
+  "status": "SUCCESS",
+  "operation": "ZERO_DOWNTIME_DB_POOL_SWAP",
+  "previousGeneration": 1,
+  "activeGeneration": 2,
+  "retiringPoolsCount": 1,
+  "swapType": "ATOMIC_POINTER_SWAP",
+  "compliance": {
+    "pciRequirement": "10.2.6",
+    "soc2Criteria": "CC6.1",
+    "auditEventEmitted": "SECRET_ROTATION_SUCCESS"
+  }
+}
+```
+
+---
+
+#### Paso 4: Demostración de Defensa Fail-Safe ante Credenciales Inválidas (HTTP 422)
+
+Invocamos la **misma acción de dominio** pasando una URL PostgreSQL inválida (`${INVALID_DB_URL}`). El pre-flight `SELECT 1` rechaza el candidato, preserva intacta la Generación `2` y mantiene `/health/ready` en `200 UP`:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity secrets rotate-db-credentials \
+  --token "${ROOT_TOKEN}" \
+  --database-url "${INVALID_DB_URL}"
+
+# Verificar continuidad total de servicio en /health/ready
+curl -s "${BASE_URL}/health/ready" | jq .
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X POST "${BASE_URL}/api/v1/secrets/rotate-db-credentials" \
+  -H "Authorization: Bearer ${ROOT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"databaseUrl\": \"${INVALID_DB_URL}\"}" | jq .
+
+curl -s "${BASE_URL}/health/ready" | jq .
+```
+
+</details>
+
+##### Respuesta Real Obtenida (HTTP 422 Unprocessable Entity — Fail-Safe Preservado):
+
+```json
+{
+  "status": "FAILED_SAFE",
+  "operation": "ZERO_DOWNTIME_DB_POOL_SWAP",
+  "failSafePreserved": true,
+  "activeGeneration": 2,
+  "error": "Pre-flight check failed; active pool Generation 2 preserved without downtime",
+  "compliance": {
+    "pciRequirement": "10.2.6",
+    "soc2Criteria": "CC6.1",
+    "auditEventEmitted": "SECRET_ROTATION_FAILURE"
+  }
+}
+```
+
+```json
+{
+  "status": "UP",
+  "checks": {
+    "database": "OK",
+    "cache": "OK"
+  }
+}
+```
+
+---
+
+#### Paso 5: Teardown y Limpieza del Operador Temporal
+
+```bash
+./bin/identity users delete \
+  --tenant system \
+  --token "${ROOT_TOKEN}" \
+  --user-id "${ROOT_USER_ID}"
+```
+
+---
+
+### 🧪 Verificación Automatizada: Suites de Pruebas de Integración E2E (US-16)
+
+La resiliencia de la recarga dinámica, la gobernanza Root Tenant en `/api/v1/secrets/*` y la ausencia total de caídas en peticiones se certifican mediante las suites de integración E2E dedicadas:
+
+```bash
+npx jest tests/integration/identity/security/test_zero_downtime_secret_rotation.ts tests/integration/identity/security/test_secrets_rotation_api.ts
 ```
 
 ##### Salida Real de Verificación Automatizada (4/4 Escenarios Aprobados):
