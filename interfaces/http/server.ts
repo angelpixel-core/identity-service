@@ -150,10 +150,13 @@ export interface AppDependencies {
  */
 export function createApp(deps?: AppDependencies): Express {
   const app = express();
+  const isTestEnv =
+    process.env.NODE_ENV === 'test' ||
+    (Boolean(process.env.JEST_WORKER_ID) && process.env.NODE_ENV !== 'production');
 
   const metricsAdapter: MetricsPort =
     deps?.metricsAdapter ??
-    (process.env.NODE_ENV === 'test' && !process.env.FORCE_OPENTELEMETRY_METRICS
+    (isTestEnv && !process.env.FORCE_OPENTELEMETRY_METRICS
       ? new InMemoryMetricsAdapter()
       : new OpenTelemetryMetricsAdapter());
   app.locals.metricsAdapter = metricsAdapter;
@@ -190,7 +193,7 @@ export function createApp(deps?: AppDependencies): Express {
 
   const auditLogger =
     deps?.auditLogger ??
-    (process.env.NODE_ENV === 'test' && !process.env.FORCE_CONSOLE_AUDIT_LOGS
+    (isTestEnv && !process.env.FORCE_CONSOLE_AUDIT_LOGS
       ? new InMemorySecurityAuditLogger()
       : new ConsoleSecurityAuditLogger());
   app.locals.auditLogger = auditLogger;
@@ -227,7 +230,7 @@ export function createApp(deps?: AppDependencies): Express {
 
   let poolManager: DynamicPostgresPoolManager | null = deps?.poolManager ?? null;
   const getPool = (): DynamicPostgresPoolManager | null => {
-    if (!poolManager && resolvedDbUrl) {
+    if (!poolManager && resolvedDbUrl && (!isTestEnv || process.env.FORCE_POSTGRES_POOL === 'true')) {
       poolManager = new DynamicPostgresPoolManager({
         connectionString: resolvedDbUrl,
         sslOptions: dbSslOptions,
