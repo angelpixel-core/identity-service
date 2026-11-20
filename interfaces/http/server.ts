@@ -458,7 +458,10 @@ export function createApp(deps?: AppDependencies): Express {
 
   const authController = new AuthController(registerUserHandler, getProfileHandler);
   const userController = new UserController(getProfileHandler, updateUserProfileHandler, deleteUserHandler);
-  const oauth2ClientController = new OAuth2ClientController(validateClientOriginHandler);
+  const oauth2ClientController = new OAuth2ClientController(
+    validateClientOriginHandler,
+    clientRepository
+  );
 
   const issueAuthCodeHandler = new IssueAuthorizationCodeCommandHandler(
     clientRepository,
@@ -812,6 +815,12 @@ export function createApp(deps?: AppDependencies): Express {
   });
 
   // Rutas OAuth2 / Client Registry v1
+  app.get(
+    '/api/v1/oauth2/clients',
+    tenantContextMiddleware,
+    authMiddleware,
+    oauth2ClientController.listClients
+  );
   app.post(
     '/api/v1/oauth2/clients/validate',
     clientAuthorizationMiddleware(validateClientOriginHandler),

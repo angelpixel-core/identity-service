@@ -110,4 +110,32 @@ export class PostgresClientApplicationRepository implements ClientApplicationRep
       updatedAt: new Date(row.updated_at),
     });
   }
+
+  public async findAll(): Promise<ClientApplication[]> {
+    const sql = `
+      SELECT id, client_id, client_secret_hash, client_name, client_type,
+             allowed_origins, redirect_uris, allowed_grant_types, scopes,
+             is_active, created_at, updated_at
+      FROM registered_clients
+      ORDER BY client_id ASC;
+    `;
+
+    const { rows } = await this.db.query<RegisteredClientRow>(sql);
+    return (rows || []).map((row) =>
+      ClientApplication.reconstitute({
+        id: row.id,
+        clientId: ClientId.create(row.client_id),
+        clientSecretHash: row.client_secret_hash,
+        clientName: row.client_name,
+        clientType: row.client_type,
+        allowedOrigins: (row.allowed_origins || []).map((originStr) => OriginDomain.create(originStr)),
+        redirectUris: row.redirect_uris || [],
+        allowedGrantTypes: row.allowed_grant_types || [],
+        scopes: row.scopes || [],
+        isActive: row.is_active,
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+      })
+    );
+  }
 }

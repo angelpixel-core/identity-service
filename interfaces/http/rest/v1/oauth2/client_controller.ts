@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ValidateClientOriginQueryHandler } from '../../../../../src/contexts/identity/application/queries/validate_client_origin/handler';
+import { ClientApplicationRepositoryPort } from '../../../../../src/contexts/identity/domain/ports/client_application_repository_port';
 import {
   ClientValidationErrorCode,
   ClientValidationResultDTO,
@@ -56,7 +57,42 @@ export function extractClientValidationParams(req: Request): {
  * Gestiona las peticiones HTTP vinculadas al registro y validación de aplicaciones cliente OAuth2/OIDC.
  */
 export class OAuth2ClientController {
-  constructor(private readonly validateClientOriginHandler: ValidateClientOriginQueryHandler) {}
+  constructor(
+    private readonly validateClientOriginHandler: ValidateClientOriginQueryHandler,
+    private readonly clientRepository?: ClientApplicationRepositoryPort
+  ) {}
+
+  public listClients = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const clients =
+        this.clientRepository && typeof this.clientRepository.findAll === 'function'
+          ? await this.clientRepository.findAll()
+          : [];
+
+      const safeClients = clients.map((client) => ({
+        id: client.getId(),
+        clientId: client.getClientId().getValue(),
+        clientName: client.getClientName(),
+        clientType: client.getClientType(),
+        allowedOrigins: client.getAllowedOrigins().map((o) => o.getValue()),
+        redirectUris: client.getRedirectUris(),
+        allowedGrantTypes: client.getAllowedGrantTypes(),
+        scopes: client.getScopes(),
+        isActive: client.isActive(),
+      }));
+
+      res.status(200).json({
+        count: safeClients.length,
+        clients: safeClients,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 
   public validateClientOrigin = async (
     req: Request,
