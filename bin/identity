@@ -101,6 +101,8 @@ function parseArgs(args) {
 }
 
 // --- CLIENTE HTTP ---
+let globalTraceHeaders = {};
+
 async function requestHttp(method, path, options = {}) {
   const baseUrl = options.baseUrl || DEFAULT_BASE_URL;
   const cleanBase = baseUrl.replace(/\/$/, '');
@@ -109,6 +111,7 @@ async function requestHttp(method, path, options = {}) {
 
   const headers = {
     Accept: 'application/json',
+    ...globalTraceHeaders,
     ...(options.headers || {}),
   };
 
@@ -202,10 +205,12 @@ ${colors.bold}Recursos Disponibles:${colors.reset}
   ${colors.cyan}ops${colors.reset}          Operaciones y observabilidad (metrics, reseed-dev-sessions, db-reset)
 
 ${colors.bold}Opciones Globales:${colors.reset}
-  --base-url <url>    URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
-  -q, --raw-json      Imprime exclusivamente JSON plano sin metadatos ni colores
-  -h, --help          Muestra este mensaje de ayuda
-  -v, --version       Muestra la versión de la CLI
+  --base-url <url>        URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
+  --request-id <id>       Inyecta cabecera de trazabilidad X-Request-ID
+  --correlation-id <id>   Inyecta cabecera de trazabilidad X-Correlation-ID
+  -q, --raw-json          Imprime exclusivamente JSON plano sin metadatos ni colores
+  -h, --help              Muestra este mensaje de ayuda
+  -v, --version           Muestra la versión de la CLI
 
 ${colors.bold}Ejemplos:${colors.reset}
   identity auth register --tenant acme-corp --email user@acme.com --password "Secret2026!"
@@ -1422,6 +1427,14 @@ async function main() {
   const parsed = parseArgs(process.argv.slice(2));
   const baseUrl = parsed.flags['base-url'] || DEFAULT_BASE_URL;
   const rawJson = Boolean(parsed.flags['raw-json'] || parsed.flags.q);
+
+  globalTraceHeaders = {};
+  if (parsed.flags['request-id']) {
+    globalTraceHeaders['X-Request-ID'] = String(parsed.flags['request-id']);
+  }
+  if (parsed.flags['correlation-id']) {
+    globalTraceHeaders['X-Correlation-ID'] = String(parsed.flags['correlation-id']);
+  }
 
   if (parsed.flags.version || parsed.flags.v) {
     console.log(`v${VERSION}`);

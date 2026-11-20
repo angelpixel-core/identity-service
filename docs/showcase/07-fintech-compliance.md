@@ -1031,23 +1031,37 @@ export USER_ID=$(echo "${USER_RESP}" | jq -r .userId)
 
 #### Paso 1: Provocar Incidente Cross-Tenant (`HTTP 403`) con Trazabilidad W3C
 
-Enviamos una mutación maliciosa donde el usuario de `alpha-corp` intenta alterar un recurso declarando `tenantId: "beta-corp"`, adjuntando cabeceras explícitas `X-Request-ID` y `X-Correlation-ID`:
+Consultamos un recurso solicitando el inquilino `beta-corp` con el token del usuario de `alpha-corp`, propagando cabeceras explícitas `--request-id` y `--correlation-id` (`X-Request-ID` / `X-Correlation-ID`):
+
+**Comando CLI Oficial (`./bin/identity`):**
 
 ```bash
-curl -s -i -X PATCH "${BASE_URL}/api/v1/users/${USER_ID}" \
-  -H "Authorization: Bearer ${USER_TOKEN}" \
-  -H "X-Tenant-ID: alpha-corp" \
-  -H "X-Request-ID: ${CUSTOM_REQ_ID}" \
-  -H "X-Correlation-ID: ${CUSTOM_CORR_ID}" \
-  -H "Content-Type: application/json" \
-  -d '{"tenantId": "beta-corp"}'
+./bin/identity users get \
+  --tenant beta-corp \
+  --user-id "${USER_ID}" \
+  --token "${USER_TOKEN}" \
+  --request-id "${CUSTOM_REQ_ID}" \
+  --correlation-id "${CUSTOM_CORR_ID}"
 ```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -i -X GET "${BASE_URL}/api/v1/users/${USER_ID}" \
+  -H "Authorization: Bearer ${USER_TOKEN}" \
+  -H "X-Tenant-ID: beta-corp" \
+  -H "X-Request-ID: ${CUSTOM_REQ_ID}" \
+  -H "X-Correlation-ID: ${CUSTOM_CORR_ID}"
+```
+
+</details>
 
 ##### Respuesta Real Obtenida (HTTP 403 Forbidden — Zero-Trust Guard):
 
 ```json
 {
-  "error": "Forbidden: Cross-tenant access violation detected"
+  "error": "Forbidden: Token does not belong to the requested tenant context"
 }
 ```
 
@@ -1118,7 +1132,7 @@ curl -s -X GET "${BASE_URL}/api/v1/audit/events?tenantId=alpha-corp&severity=ALE
 ##### Salida Real Obtenida (Línea NDJSON Canónica PCI-DSS 10.2.5 / SOC 2 CC7.2):
 
 ```json
-{"timestamp":"2026-11-20T18:54:43.394Z","logType":"SECURITY_AUDIT","eventType":"CROSS_TENANT_VIOLATION","severity":"ALERT","tenantId":"alpha-corp","actor":{"userId":"08230c71-d4b3-418f-846b-a1da0e06b993","type":"USER","ip":"::1"},"trace":{"requestId":"req-us19-audit-2026","correlationId":"corr-us19-audit-2026","traceId":"ef6df273d47fb9d8681f1eaab9e39f47","spanId":"35b21d396a6f5027","traceparent":"00-ef6df273d47fb9d8681f1eaab9e39f47-35b21d396a6f5027-01"},"compliance":{"pciRequirement":"10.2.5","soc2Criteria":"CC7.2","retentionCategory":"AUDIT_IMMUTABLE"},"action":"cross_tenant_access_denied","status":"DENIED","details":{"reason":"CROSS_TENANT_VIOLATION","activeTenantId":"alpha-corp","attemptedTenantId":"beta-corp","userId":"08230c71-d4b3-418f-846b-a1da0e06b993","path":"/api/v1/users/08230c71-d4b3-418f-846b-a1da0e06b993","method":"PATCH"}}
+{"timestamp":"2026-11-20T19:00:20.393Z","logType":"SECURITY_AUDIT","eventType":"CROSS_TENANT_VIOLATION","severity":"ALERT","tenantId":"alpha-corp","actor":{"userId":"59afcc51-09d6-4231-89fe-f99eda1e5273","type":"USER","ip":"::1"},"trace":{"requestId":"req-us19-audit-2026","correlationId":"corr-us19-audit-2026","traceId":"9b4ac6f3af268412c9aaf47479e21fc7","spanId":"8320d56136a51c61","traceparent":"00-9b4ac6f3af268412c9aaf47479e21fc7-8320d56136a51c61-01"},"compliance":{"pciRequirement":"10.2.5","soc2Criteria":"CC7.2","retentionCategory":"AUDIT_IMMUTABLE"},"action":"cross_tenant_access_denied","status":"DENIED","details":{"reason":"CROSS_TENANT_VIOLATION","activeTenantId":"alpha-corp","attemptedTenantId":"beta-corp","userId":"59afcc51-09d6-4231-89fe-f99eda1e5273","path":"/api/v1/users/59afcc51-09d6-4231-89fe-f99eda1e5273","method":"GET"}}
 ```
 
 ##### 3.2. Vista Tabular Operativa (`--format table`) y Comprobación de Cero Fugas de Secretos
