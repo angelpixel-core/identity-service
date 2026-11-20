@@ -967,32 +967,260 @@ sequenceDiagram
 
 ---
 
-### 🧪 Verificación Automatizada: Suite de Pruebas de Auditoría E2E (US-19)
+### 🚀 Ejecución en Vivo & Verificación Interactiva Paso a Paso (`./bin/identity audit`)
 
-La precisión del esquema de auditoría, la redacción obligatoria de secretos y la propagación de contexto W3C se certifican mediante la siguiente suite de integración:
+La inspección y exportación de bitácoras de seguridad está gobernada por el patrón **Root Tenant (ADR-0009)**: únicamente un operador autenticado del inquilino `system` con rol `superadmin` puede consultar `GET /api/v1/audit/events` mediante `./bin/identity audit events`. Cualquier inquilino comercial que lo intente recibe `HTTP 403 Forbidden` y queda registrado automáticamente en el flujo de auditoría.
+
+#### Paso 0: Variables de Sesión y Aprovisionamiento de Actores (`${ROOT_TOKEN}` y `${USER_TOKEN}`)
 
 ```bash
-npx jest tests/integration/identity/security/test_structured_audit_logging.ts
+# ==============================================================================
+# Variables de Sesión Interactiva para Auditoría Estructurada NDJSON (US-19)
+# ==============================================================================
+export BASE_URL="http://localhost:4000"
+export ROOT_EMAIL="auditor.$(date +%s)@angelpixel.io"
+export ROOT_PASS='SuperAdmin2026!'
+export USER_EMAIL="member.$(date +%s)@alpha-corp.com"
+export USER_PASS='EnterprisePassword2026!'
+export CUSTOM_REQ_ID="req-us19-audit-2026"
+export CUSTOM_CORR_ID="corr-us19-audit-2026"
+export DUMMY_SECRET='MySuperConfidentialSecret_2026!'
+
+# 1. Aprovisionar operador Root Superadmin (tenant 'system')
+ROOT_RESP=$(./bin/identity users create-root-admin \
+  --email "${ROOT_EMAIL}" \
+  --password "${ROOT_PASS}" \
+  --raw-json)
+export ROOT_TOKEN=$(echo "${ROOT_RESP}" | jq -r .accessToken)
+export ROOT_USER_ID=$(echo "${ROOT_RESP}" | jq -r .userId)
+
+# 2. Aprovisionar usuario comercial en 'alpha-corp'
+USER_RESP=$(./bin/identity auth register \
+  --tenant alpha-corp \
+  --email "${USER_EMAIL}" \
+  --password "${USER_PASS}" \
+  --raw-json)
+export USER_TOKEN=$(echo "${USER_RESP}" | jq -r .accessToken)
+export USER_ID=$(echo "${USER_RESP}" | jq -r .userId)
+
+echo "ROOT_USER_ID=${ROOT_USER_ID} | USER_ID=${USER_ID}"
 ```
 
-##### Salida Real de Verificación Automatizada (4/4 Escenarios Aprobados):
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+ROOT_RESP=$(curl -s -X POST "${BASE_URL}/api/v1/auth/register" \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: system" \
+  -d "{\"email\": \"${ROOT_EMAIL}\", \"password\": \"${ROOT_PASS}\", \"roles\": [\"superadmin\", \"member\"]}")
+export ROOT_TOKEN=$(echo "${ROOT_RESP}" | jq -r .accessToken)
+export ROOT_USER_ID=$(echo "${ROOT_RESP}" | jq -r .userId)
+
+USER_RESP=$(curl -s -X POST "${BASE_URL}/api/v1/auth/register" \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: alpha-corp" \
+  -d "{\"email\": \"${USER_EMAIL}\", \"password\": \"${USER_PASS}\"}")
+export USER_TOKEN=$(echo "${USER_RESP}" | jq -r .accessToken)
+export USER_ID=$(echo "${USER_RESP}" | jq -r .userId)
+```
+
+</details>
+
+---
+
+#### Paso 1: Provocar Incidente Cross-Tenant (`HTTP 403`) con Trazabilidad W3C
+
+Enviamos una mutación maliciosa donde el usuario de `alpha-corp` intenta alterar un recurso declarando `tenantId: "beta-corp"`, adjuntando cabeceras explícitas `X-Request-ID` y `X-Correlation-ID`:
+
+```bash
+curl -s -i -X PATCH "${BASE_URL}/api/v1/users/${USER_ID}" \
+  -H "Authorization: Bearer ${USER_TOKEN}" \
+  -H "X-Tenant-ID: alpha-corp" \
+  -H "X-Request-ID: ${CUSTOM_REQ_ID}" \
+  -H "X-Correlation-ID: ${CUSTOM_CORR_ID}" \
+  -H "Content-Type: application/json" \
+  -d '{"tenantId": "beta-corp"}'
+```
+
+##### Respuesta Real Obtenida (HTTP 403 Forbidden — Zero-Trust Guard):
+
+```json
+{
+  "error": "Forbidden: Cross-tenant access violation detected"
+}
+```
+
+---
+
+#### Paso 2: Provocar Fallo M2M con Credencial Confidencial (`HTTP 401` + Redacción `[REDACTED]`)
+
+Invocamos el intercambio M2M con un cliente inexistente pasando un `client_secret` real (`${DUMMY_SECRET}`) para comprobar que el evento emitido **jamás** filtra secretos en texto plano:
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity token m2m \
+  --client-id rogue-billing-svc \
+  --client-secret "${DUMMY_SECRET}"
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X POST "${BASE_URL}/api/v1/oauth2/token" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"grant_type\": \"client_credentials\",
+    \"client_id\": \"rogue-billing-svc\",
+    \"client_secret\": \"${DUMMY_SECRET}\"
+  }" | jq .
+```
+
+</details>
+
+##### Respuesta Real Obtenida (HTTP 401 Unauthorized):
+
+```json
+{
+  "error": "invalid_client",
+  "error_description": "Client application \"rogue-billing-svc\" was not found"
+}
+```
+
+---
+
+#### Paso 3: Inspección & Exportación Real en Vivo (`./bin/identity audit events`)
+
+##### 3.1. Exportación NDJSON filtrada por inquilino y severidad `ALERT`
+
+**Comando CLI Oficial (`./bin/identity`):**
+
+```bash
+./bin/identity audit events \
+  --token "${ROOT_TOKEN}" \
+  --tenant alpha-corp \
+  --severity ALERT \
+  --format ndjson
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL</b></summary>
+
+```bash
+curl -s -X GET "${BASE_URL}/api/v1/audit/events?tenantId=alpha-corp&severity=ALERT&format=ndjson" \
+  -H "Authorization: Bearer ${ROOT_TOKEN}"
+```
+
+</details>
+
+##### Salida Real Obtenida (Línea NDJSON Canónica PCI-DSS 10.2.5 / SOC 2 CC7.2):
+
+```json
+{"timestamp":"2026-11-20T18:54:43.394Z","logType":"SECURITY_AUDIT","eventType":"CROSS_TENANT_VIOLATION","severity":"ALERT","tenantId":"alpha-corp","actor":{"userId":"08230c71-d4b3-418f-846b-a1da0e06b993","type":"USER","ip":"::1"},"trace":{"requestId":"req-us19-audit-2026","correlationId":"corr-us19-audit-2026","traceId":"ef6df273d47fb9d8681f1eaab9e39f47","spanId":"35b21d396a6f5027","traceparent":"00-ef6df273d47fb9d8681f1eaab9e39f47-35b21d396a6f5027-01"},"compliance":{"pciRequirement":"10.2.5","soc2Criteria":"CC7.2","retentionCategory":"AUDIT_IMMUTABLE"},"action":"cross_tenant_access_denied","status":"DENIED","details":{"reason":"CROSS_TENANT_VIOLATION","activeTenantId":"alpha-corp","attemptedTenantId":"beta-corp","userId":"08230c71-d4b3-418f-846b-a1da0e06b993","path":"/api/v1/users/08230c71-d4b3-418f-846b-a1da0e06b993","method":"PATCH"}}
+```
+
+##### 3.2. Vista Tabular Operativa (`--format table`) y Comprobación de Cero Fugas de Secretos
+
+```bash
+# Vista tabular de los eventos recientes del proceso
+./bin/identity audit events \
+  --token "${ROOT_TOKEN}" \
+  --limit 5 \
+  --format table
+
+# Verificar 0 apariciones en texto plano del client_secret enviado en el Paso 2
+./bin/identity audit events --token "${ROOT_TOKEN}" --format ndjson | grep -c "${DUMMY_SECRET}" || true
+```
+
+##### Salidas Reales Obtenidas:
+
+```text
+REGISTROS DE AUDITORÍA DE SEGURIDAD EN VIVO (US-19 — WORM COMPLIANCE):
+-------------------------------------------------------------------------------------------------------
+TIMESTAMP (UTC)           EVENT TYPE                   SEVERITY   TENANT         STATUS    PCI-REQ
+-------------------------------------------------------------------------------------------------------
+2026-11-20T18:54:43.477Z  AUTH_LOGIN_FAILURE           WARN       -              FAILURE   10.2.1
+2026-11-20T18:54:43.394Z  CROSS_TENANT_VIOLATION       ALERT      alpha-corp     DENIED    10.2.5
+-------------------------------------------------------------------------------------------------------
+✓ 2 evento(s) real(es) recuperado(s) del proceso. Retención WORM en Azure Log Analytics: 365 días.
+```
+
+```text
+0
+```
+
+---
+
+#### Paso 4: Gobernanza Root Tenant (ADR-0009) — Rechazo a Inquilino Comercial
+
+Si un usuario comercial (`alpha-corp`) intenta consultar el stream de auditoría, el middleware `requireRootAdmin` bloquea la solicitud con `HTTP 403 Forbidden` y registra automáticamente el intento como `CROSS_TENANT_VIOLATION`:
+
+```bash
+./bin/identity audit events --token "${USER_TOKEN}"
+```
+
+##### Respuesta Real Obtenida (HTTP 403 Forbidden):
+
+```json
+{
+  "error": "Forbidden: Platform governance operations require Root Tenant (system) superadmin privileges"
+}
+```
+
+---
+
+#### Paso 5: Teardown y Limpieza de Actores Temporales
+
+```bash
+./bin/identity users delete \
+  --tenant alpha-corp \
+  --token "${ROOT_TOKEN}" \
+  --user-id "${USER_ID}"
+
+./bin/identity users delete \
+  --tenant system \
+  --token "${ROOT_TOKEN}" \
+  --user-id "${ROOT_USER_ID}"
+```
+
+---
+
+### 🧪 Verificación Automatizada: Suites de Pruebas de Auditoría E2E (US-19)
+
+La precisión del esquema de auditoría, la redacción obligatoria de secretos, la propagación de contexto W3C y el contrato HTTP de `GET /api/v1/audit/events` bajo gobernanza Root Tenant se certifican mediante las suites de integración:
+
+```bash
+npx jest tests/integration/identity/security/test_structured_audit_logging.ts tests/integration/identity/security/test_audit_events_api.ts
+```
+
+##### Salida Real de Verificación Automatizada (2/2 Suites, 9/9 Escenarios Aprobados):
 ```text
 PASS tests/integration/identity/security/test_structured_audit_logging.ts
   Integration E2E: Structured Security Audit Logging & NDJSON Ingestion (US-19)
     Scenario 1 (BDD 1): Cross-Tenant Access Violation Detection
-      ✓ should abort with 403 Forbidden and emit an ALERT NDJSON audit log when tenant mismatch is detected (107 ms)
+      ✓ should abort with 403 Forbidden and emit an ALERT NDJSON audit log when tenant mismatch is detected (89 ms)
     Scenario 2 (BDD 2): M2M Authentication & Strict Credential Redaction
-      ✓ should reject invalid client credentials and ensure secrets are redacted in audit output (49 ms)
+      ✓ should reject invalid client credentials and ensure secrets are redacted in audit output (64 ms)
     Scenario 3: Correlation & Request ID Header Forwarding
-      ✓ should preserve and forward client-supplied correlation headers into trace object (66 ms)
+      ✓ should preserve and forward client-supplied correlation headers into trace object (50 ms)
     Scenario 4: Runtime Server Wiring Default Resolution
-      ✓ should instantiate ConsoleSecurityAuditLogger by default when in production environment (98 ms)
+      ✓ should instantiate ConsoleSecurityAuditLogger by default when in production environment (97 ms)
 
-Test Suites: 1 passed, 1 total
-Tests:       4 passed, 4 total
+PASS tests/integration/identity/security/test_audit_events_api.ts
+  Integration E2E: Live Security Audit Events API & Root Tenant Governance (US-19 & ADR-0009)
+    ✓ should reject unauthenticated requests with 401 Unauthorized (51 ms)
+    ✓ should reject commercial tenant users with 403 Forbidden and emit CROSS_TENANT_VIOLATION (45 ms)
+    ✓ should capture real cross-tenant violations and M2M failures with W3C trace and [REDACTED] secrets (78 ms)
+    ✓ should filter by tenantId, severity, eventType, limit and reject invalid severity with 400 (47 ms)
+    ✓ should export valid NDJSON lines when format=ndjson is requested (156 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       9 passed, 9 total
 Snapshots:   0 total
-Time:        2.072 s
-Ran all test suites matching tests/integration/identity/security/test_structured_audit_logging.ts.
+Time:        3.129 s
+Ran all test suites matching tests/integration/identity/security/test_structured_audit_logging.ts|tests/integration/identity/security/test_audit_events_api.ts.
 ```
 
 ---
