@@ -172,7 +172,19 @@ function renderResponse(res, rawJson) {
   console.log(
     `${statusColor}HTTP/1.1 ${res.status} ${res.statusText}${colors.reset} ${colors.gray}[${res.latencyMs}ms]${colors.reset}`
   );
-  console.log(`${methodColor}${res.method}${colors.reset} ${colors.dim}${res.url}${colors.reset}\n`);
+  console.log(`${methodColor}${res.method}${colors.reset} ${colors.dim}${res.url}${colors.reset}`);
+
+  const traceparent = res.headers?.get('traceparent');
+  const requestId = res.headers?.get('x-request-id');
+  const correlationId = res.headers?.get('x-correlation-id');
+  const traceParts = [];
+  if (traceparent) traceParts.push(`traceparent=${traceparent}`);
+  if (requestId) traceParts.push(`X-Request-ID=${requestId}`);
+  if (correlationId && correlationId !== requestId) traceParts.push(`X-Correlation-ID=${correlationId}`);
+  if (traceParts.length > 0) {
+    console.log(`${colors.dim}Trace: ${traceParts.join(' | ')}${colors.reset}`);
+  }
+  console.log('');
 
   if (typeof res.data === 'object' && res.data !== null) {
     const jsonStr = JSON.stringify(res.data, null, 2);
@@ -206,6 +218,7 @@ ${colors.bold}Recursos Disponibles:${colors.reset}
 
 ${colors.bold}Opciones Globales:${colors.reset}
   --base-url <url>        URL de la API (def: http://localhost:4000 o $IDENTITY_API_URL)
+  --traceparent <w3c>     Inyecta cabecera W3C Trace Context (00-<traceId>-<spanId>-01)
   --request-id <id>       Inyecta cabecera de trazabilidad X-Request-ID
   --correlation-id <id>   Inyecta cabecera de trazabilidad X-Correlation-ID
   -q, --raw-json          Imprime exclusivamente JSON plano sin metadatos ni colores
@@ -1429,6 +1442,9 @@ async function main() {
   const rawJson = Boolean(parsed.flags['raw-json'] || parsed.flags.q);
 
   globalTraceHeaders = {};
+  if (parsed.flags['traceparent']) {
+    globalTraceHeaders['traceparent'] = String(parsed.flags['traceparent']);
+  }
   if (parsed.flags['request-id']) {
     globalTraceHeaders['X-Request-ID'] = String(parsed.flags['request-id']);
   }
