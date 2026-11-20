@@ -530,26 +530,43 @@ sequenceDiagram
     participant Deploy as Deployment Controller
     participant PDB as PodDisruptionBudget
 
-    Client->>Ing: 1. Petición HTTPS entrante
-    Ing->>Svc: 2. Terminación TLS y enrutamiento interno
-    Svc->>Pods: 3. Balanceo Round-Robin a réplicas saludables
-    Kubelet->>Pods: 4. Sondeo periódico de /health/live y /health/ready
-    Pods-->>Kubelet: 5. Respuesta 200 UP (Liveness/Readiness OK)
-    HPA->>Pods: 6. Muestreo de utilización de CPU (% relativo a request 100m)
-    HPA->>Deploy: 7. Disparo de escalado horizontal si CPU > 70%
-    Deploy->>PDB: 8. Validación de invariantes de alta disponibilidad (minAvailable: 1)
-    Deploy->>Pods: 9. Despliegue de réplicas adicionales con securityContext no-root
-    Pods-->>Svc: 10. Incorporación automática al pool de endpoints activos
+    Client->>Ing: Petición HTTPS entrante
+    Ing->>Svc: Terminación TLS y enrutamiento interno
+    Svc->>Pods: Balanceo Round-Robin a réplicas saludables
+    Kubelet->>Pods: Sondeo periódico de /health/live y /health/ready
+    Pods-->>Kubelet: Respuesta 200 UP (Liveness/Readiness OK)
+    HPA->>Pods: Muestreo de utilización de CPU (% relativo a request 100m)
+    HPA->>Deploy: Disparo de escalado horizontal si CPU > 70%
+    Deploy->>PDB: Validación de invariantes de alta disponibilidad (minAvailable: 1)
+    Deploy->>Pods: Despliegue de réplicas adicionales con securityContext no-root
+    Pods-->>Svc: Incorporación automática al pool de endpoints activos
 ```
 
-#### Glosario de Componentes Kubernetes:
-- **`Ingress (TLS 1.3)`:** Controlador NGINX en el borde del clúster que realiza terminación TLS estricta y reenvía tráfico en texto claro internamente.
-- **`Service (ClusterIP:4000)`:** Abstracción de red interna que distribuye las peticiones entrantes entre los pods activos.
-- **`Pods Activos (UID 1000)`:** Contenedores aislados ejecutando Node.js 25 bajo usuario no privilegiado con sistema de archivos montado en sólo lectura.
-- **`Kubelet Probe Runner`:** Agente de nodo que interroga `/health/live` (para reinicio) y `/health/ready` (para routing de tráfico).
-- **`HPA Controller`:** Controlador de autoscaling que incrementa o reduce las réplicas dinámicamente según la carga de trabajo.
-- **`Deployment Controller`:** Controlador que gestiona el ciclo de vida del release, coordinando rolling updates con `maxUnavailable: 0`.
-- **`PodDisruptionBudget (PDB)`:** Invariante de resiliencia que impide que operaciones administrativas dejen al servicio con menos de 1 pod activo.
+#### A. Glosario de Actores y Componentes (Cajas del Diagrama)
+
+| Participante / Caja | Tipo | Rol Arquitectónico y Frontera de Seguridad |
+| :--- | :--- | :--- |
+| **`Client` (Cliente / API Consumer)** | `actor` | Navegador SPA, aplicación móvil o cliente M2M que consume el servicio a través del borde HTTPS del clúster. |
+| **`Ing` (Ingress TLS 1.3)** | `participant` | Controlador NGINX perimetral que ejecuta la terminación TLS 1.3 y enruta las rutas autorizadas hacia el servicio interno. |
+| **`Svc` (`Service ClusterIP:4000`)** | `participant` | Abstracción de red interna de Kubernetes que balancea el tráfico hacia los endpoints saludables sin exponer los pods directamente. |
+| **`Pods` (`Pods Activos UID 1000`)** | `participant` | Contenedores endurecidos de Node.js 25 ejecutados bajo usuario no privilegiado (`runAsNonRoot: true`, `readOnlyRootFilesystem: true`, `drop: ALL`). |
+| **`Kubelet` (Kubelet Probe Runner)** | `participant` | Agente de nodo que ejecuta las sondas periódicas `/health/live` (reinicio automático) y `/health/ready` (admisión de tráfico). |
+| **`HPA` (HPA Controller)** | `participant` | Controlador `autoscaling/v2` que evalúa la utilización media de CPU y escala dinámicamente entre 2 y 10 réplicas. |
+| **`Deploy` (Deployment Controller)** | `participant` | Controlador que gestiona el ciclo de vida de las réplicas aplicando `RollingUpdate` sin caídas (`maxSurge: 25%`, `maxUnavailable: 0`). |
+| **`PDB` (`PodDisruptionBudget`)** | `participant` | Invariante de disponibilidad (`minAvailable: 1`) que impide desalojos voluntarios simultáneos durante mantenimiento o drenado de nodos. |
+
+#### B. Desglose Secuencial del Flujo (Pasos 1 al 10)
+
+1. **Paso 1 (`Client -> Ing`):** Un cliente externo envía una solicitud HTTPS al dominio público expuesto por el controlador de Ingress.
+2. **Paso 2 (`Ing -> Svc`):** NGINX realiza la terminación TLS 1.3, inyecta cabeceras de confianza y reenvía la petición hacia el `Service ClusterIP` en el puerto `:4000`.
+3. **Paso 3 (`Svc -> Pods`):** El `Service` distribuye la solicitud en modo Round-Robin únicamente hacia los pods que se encuentran marcados como `Ready`.
+4. **Paso 4 (`Kubelet -> Pods`):** De forma continua, el Kubelet del nodo sondea los endpoints internos `/health/live` y `/health/ready` de cada réplica.
+5. **Paso 5 (`Pods -->> Kubelet`):** Las réplicas saludables responden `HTTP 200 UP`, confirmando conectividad con PostgreSQL y Redis para permanecer en el pool de tráfico.
+6. **Paso 6 (`HPA -> Pods`):** El controlador HPA recolecta métricas de utilización de CPU respecto al `request` base de `100m`.
+7. **Paso 7 (`HPA -> Deploy`):** Cuando el consumo promedio supera el umbral configurado del `70%`, el HPA instruye al `Deployment` incrementar el número deseado de réplicas (hasta un máximo de 10).
+8. **Paso 8 (`Deploy -> PDB`):** Antes de mutar o drenar pods durante actualizaciones o rebalances, el plano de control verifica el presupuesto `PodDisruptionBudget` (`minAvailable: 1`).
+9. **Paso 9 (`Deploy -> Pods`):** El `Deployment` programa nuevas réplicas heredando obligatoriamente el `securityContext` restringido (`UID 1000`, `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`).
+10. **Paso 10 (`Pods -->> Svc`):** Una vez superada la sonda `/health/ready`, cada nueva réplica se registra automáticamente en los endpoints activos del `Service` absorbiendo carga sin interrupciones.
 
 ---
 
