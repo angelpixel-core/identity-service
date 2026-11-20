@@ -398,20 +398,56 @@ sequenceDiagram
 
 ---
 
-### 2. Ejecución en Vivo contra el Contenedor `identity-ingress` (`:443`)
+### 2. Ejecución en Vivo contra el Contenedor `identity-ingress` (`:80` / `:443`)
 
-Puedes verificar la terminación TLS en vivo consultando el puerto `443` del contenedor `identity-ingress` activo en el stack Docker:
+#### Paso 0: Variables de Sesión Interactiva
 
 ```bash
-curl -sk -i https://localhost:443/health/live \
-  -H "Host: auth.angelpixel.local"
+# ==============================================================================
+# Variables de Sesión Interactiva para NGINX Ingress & Terminación TLS 1.3
+# ==============================================================================
+export INGRESS_HOST="auth.angelpixel.local"
+export INGRESS_HTTP_URL="http://localhost:80"
+export INGRESS_HTTPS_URL="https://localhost:443"
+export INGRESS_CA_CERT="deployments/tls/certs/auth-ca.crt"
+```
+
+#### Paso 1: Arranque del Perfil Ingress & Certificados Locales
+
+```bash
+# Si aún no existen los certificados locales en deployments/tls/certs:
+npm run cert:generate
+
+# Levantar el contenedor identity-ingress
+npm run docker:ingress
+```
+
+#### Paso 2: Verificación de Redirección Forzada HTTP (`:80`) → HTTPS (`308 Permanent Redirect`)
+
+```bash
+curl -sI "${INGRESS_HTTP_URL}/health/live" \
+  -H "Host: ${INGRESS_HOST}"
+```
+
+```http
+HTTP/1.1 308 Permanent Redirect
+Server: nginx/1.27.5
+Location: https://auth.angelpixel.local/health/live
+```
+
+#### Paso 3: Terminación TLS 1.3 en `:443` y Propagación de `X-Forwarded-Proto`
+
+```bash
+curl -s -i --cacert "${INGRESS_CA_CERT}" \
+  --resolve "${INGRESS_HOST}:443:127.0.0.1" \
+  "https://${INGRESS_HOST}/health/live"
 ```
 
 ##### Respuesta Real Obtenida a través del Túnel TLS (HTTP 200 OK):
 ```http
 HTTP/1.1 200 OK
 Server: nginx/1.27.5
-Date: Wed, 18 Nov 2026 17:13:56 GMT
+Date: Thu, 19 Nov 2026 01:56:35 GMT
 Content-Type: application/json; charset=utf-8
 Content-Length: 100
 Connection: keep-alive
@@ -420,7 +456,49 @@ X-Request-ID: 7da3e3120e12a486c6433d0b247af189
 X-Correlation-ID: 7da3e3120e12a486c6433d0b247af189
 traceparent: 00-c81c7e9c84704ea16b13a6cccdedb6d1-7567a11144dc607c-01
 
-{"status":"UP","checks":{"liveness":"OK"},"protocol":"https","timestamp":"2026-11-18T17:13:56.472Z"}
+{"status":"UP","checks":{"liveness":"OK"},"protocol":"https","timestamp":"2026-11-20T01:56:35.715Z"}
+```
+
+#### Paso 4: Suite Automatizada Completa (`npm run test:ingress`)
+
+```bash
+npm run test:ingress
+```
+
+##### Salida Real de Verificación de Ingress TLS (6/6 Aprobados):
+```text
+=== [1/6] Comprobando Certificados TLS y Herramientas ===
+✓ Certificados TLS disponibles en deployments/tls/certs
+
+=== [2/6] Verificando / Iniciando Stack de Ingress Local ===
+✓ Identity Ingress Controller activo y escuchando en puertos 80 / 443.
+
+=== [3/6] Test Vector 1: Redirección Forzada HTTP -> HTTPS (308) ===
+Código de estado HTTP recibido: 308
+Cabecera Location: Location: https://auth.angelpixel.local/health/live
+✓ Redirección 308 Permanent Redirect verificada correctamente.
+
+=== [4/6] Test Vector 2: Terminación TLS y Liveness Probe (/health/live) ===
+Respuesta de /health/live: {"status":"UP","checks":{"liveness":"OK"},"protocol":"https","timestamp":"2026-11-20T01:56:35.715Z"}
+✓ Terminación TLS y Liveness Probe validadas con éxito sobre HTTPS.
+
+=== [5/6] Test Vector 3: Readiness Probe (/health/ready) ===
+Respuesta de /health/ready: {"status":"UP","checks":{"database":"OK","cache":"OK"},"timestamp":"2026-11-20T01:56:35.749Z"}
+✓ Readiness Probe validada con éxito.
+
+=== [6/6] Test Vector 4: OIDC Discovery & Propagación X-Request-ID ===
+✓ Cabecera de correlación X-Request-ID (custom-e2e-trace-id-1795139795) propagada correctamente por el Ingress.
+✓ Endpoint OIDC Discovery accesible y verificado a través de la capa de borde Ingress.
+
+================================================================
+✓ Todas las pruebas de Ingress TLS y enrutamiento pasaron con éxito.
+================================================================
+```
+
+#### Paso 5: Teardown del Perfil Ingress (Opcional)
+
+```bash
+npm run docker:ingress:down
 ```
 
 ---
@@ -480,8 +558,26 @@ sequenceDiagram
 El repositorio incluye una suite integral de validación de empaquetado que audita la sintaxis, el renderizado de manifiestos, las invariantes de seguridad y los casos negativos de esquema:
 
 ```bash
+export HELM_CHART_DIR="deployments/helm/identity-service"
+
 npm run test:helm
 ```
+
+<details>
+<summary><b>Ver Comandos Manuales Equivalentes de Helm CLI</b></summary>
+
+```bash
+# Lint estricto con valores por defecto y valores locales
+helm lint "${HELM_CHART_DIR}" --strict
+helm lint "${HELM_CHART_DIR}" -f "${HELM_CHART_DIR}/values-local.yaml" --strict
+
+# Renderizar manifiestos Kubernetes con HPA habilitado e inspeccionar recursos generados
+helm template identity-service "${HELM_CHART_DIR}" \
+  -f "${HELM_CHART_DIR}/values-local.yaml" \
+  --set autoscaling.enabled=true | grep -E "^kind:"
+```
+
+</details>
 
 ##### Salida Real de Auditoría de Helm Chart (6/6 Aprobados):
 ```text
