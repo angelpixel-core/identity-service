@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { RegisterForm } from './contexts/identity/ui/components/register_form';
-import { UserProfileCard } from './contexts/identity/ui/components/user_profile_card';
 import { AuthSession, UserProfile } from './contexts/identity/domain/types';
 import { BoundedShell } from './shell/BoundedShell';
-import { M3Button } from './design-system/components/M3Primitives';
+import { AuthPortalView } from './contexts/auth/ui/AuthPortalView';
 
 export function App() {
   const [session, setSession] = useState<AuthSession | null>(() => {
@@ -52,27 +50,12 @@ export function App() {
 
   return (
     <BoundedShell session={session}>
-      {session ? (
-        <div>
-          <div className="session-toolbar">
-            <span>
-              Conectado como: <strong>{session.email}</strong> ({session.tenantId})
-            </span>
-            <M3Button variant="outlined" onClick={handleLogout}>
-              Cerrar Sesión
-            </M3Button>
-          </div>
-          <UserProfileCard fetchProfile={fetchProfile} />
-        </div>
-      ) : (
-        <div>
-          <h2 className="m3-section-title">Registro de Nuevo Usuario</h2>
-          <RegisterForm
-            defaultTenantId="acme-corp"
-            onSuccess={handleRegisterSuccess}
-          />
-        </div>
-      )}
+      <AuthPortalView
+        session={session}
+        onSessionChange={handleRegisterSuccess}
+        onLogout={handleLogout}
+        fetchProfile={fetchProfile}
+      />
     </BoundedShell>
   );
 }
