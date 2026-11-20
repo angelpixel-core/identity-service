@@ -1116,7 +1116,7 @@ curl -s -X POST "${BASE_URL}/api/v1/oauth2/token" \
   --token "${ROOT_TOKEN}" \
   --tenant alpha-corp \
   --severity ALERT \
-  --format ndjson
+  --format ndjson | jq .
 ```
 
 <details>
@@ -1124,7 +1124,7 @@ curl -s -X POST "${BASE_URL}/api/v1/oauth2/token" \
 
 ```bash
 curl -s -X GET "${BASE_URL}/api/v1/audit/events?tenantId=alpha-corp&severity=ALERT&format=ndjson" \
-  -H "Authorization: Bearer ${ROOT_TOKEN}"
+  -H "Authorization: Bearer ${ROOT_TOKEN}" | jq .
 ```
 
 </details>
@@ -1132,7 +1132,40 @@ curl -s -X GET "${BASE_URL}/api/v1/audit/events?tenantId=alpha-corp&severity=ALE
 ##### Salida Real Obtenida (Línea NDJSON Canónica PCI-DSS 10.2.5 / SOC 2 CC7.2):
 
 ```json
-{"timestamp":"2026-11-20T19:00:20.393Z","logType":"SECURITY_AUDIT","eventType":"CROSS_TENANT_VIOLATION","severity":"ALERT","tenantId":"alpha-corp","actor":{"userId":"59afcc51-09d6-4231-89fe-f99eda1e5273","type":"USER","ip":"::1"},"trace":{"requestId":"req-us19-audit-2026","correlationId":"corr-us19-audit-2026","traceId":"9b4ac6f3af268412c9aaf47479e21fc7","spanId":"8320d56136a51c61","traceparent":"00-9b4ac6f3af268412c9aaf47479e21fc7-8320d56136a51c61-01"},"compliance":{"pciRequirement":"10.2.5","soc2Criteria":"CC7.2","retentionCategory":"AUDIT_IMMUTABLE"},"action":"cross_tenant_access_denied","status":"DENIED","details":{"reason":"CROSS_TENANT_VIOLATION","activeTenantId":"alpha-corp","attemptedTenantId":"beta-corp","userId":"59afcc51-09d6-4231-89fe-f99eda1e5273","path":"/api/v1/users/59afcc51-09d6-4231-89fe-f99eda1e5273","method":"GET"}}
+{
+  "timestamp": "2026-11-20T19:00:20.393Z",
+  "logType": "SECURITY_AUDIT",
+  "eventType": "CROSS_TENANT_VIOLATION",
+  "severity": "ALERT",
+  "tenantId": "alpha-corp",
+  "actor": {
+    "userId": "59afcc51-09d6-4231-89fe-f99eda1e5273",
+    "type": "USER",
+    "ip": "::1"
+  },
+  "trace": {
+    "requestId": "req-us19-audit-2026",
+    "correlationId": "corr-us19-audit-2026",
+    "traceId": "9b4ac6f3af268412c9aaf47479e21fc7",
+    "spanId": "8320d56136a51c61",
+    "traceparent": "00-9b4ac6f3af268412c9aaf47479e21fc7-8320d56136a51c61-01"
+  },
+  "compliance": {
+    "pciRequirement": "10.2.5",
+    "soc2Criteria": "CC7.2",
+    "retentionCategory": "AUDIT_IMMUTABLE"
+  },
+  "action": "cross_tenant_access_denied",
+  "status": "DENIED",
+  "details": {
+    "reason": "CROSS_TENANT_VIOLATION",
+    "activeTenantId": "alpha-corp",
+    "attemptedTenantId": "beta-corp",
+    "userId": "59afcc51-09d6-4231-89fe-f99eda1e5273",
+    "path": "/api/v1/users/59afcc51-09d6-4231-89fe-f99eda1e5273",
+    "method": "GET"
+  }
+}
 ```
 
 ##### 3.2. Vista Tabular Operativa (`--format table`) y Comprobación de Cero Fugas de Secretos
