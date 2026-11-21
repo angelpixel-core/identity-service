@@ -1000,7 +1000,7 @@ npx jest tests/acceptance/step_defs/test_refresh_token_rotation_steps.ts
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-09`)
 
-1. **Prerrequisitos:** Haber emitido un `refresh_token` en la pestaña **`PKCE & Sesiones`** (`US-08`), tras lo cual se habilitan los botones **`Rotar Refresh Token`** y **`Revocar Sesión`**.
+1. **Prerrequisitos:** En la pestaña **`PKCE & Sesiones`**, ubica la tarjeta **Gestión de Sesión Refresh (`US-09`)** y pulsa **`Inicializar Sesión Refresh (Dev)`** (`POST /api/v1/ops/reseed-dev-sessions`, o pega un `refresh_token` válido) para habilitar **`Rotar Refresh Token`** y **`Revocar Sesión`**.
 2. **Paso a Paso (Rotación & Revocación):**
    - Pulsa **`Rotar Refresh Token`**: dispara `POST /oauth2/refresh` y actualiza en `Respuesta OAuth2 Token / Session` el nuevo par `access_token` + `refresh_token` rotado (invalidando el anterior).
    - Pulsa **`Revocar Sesión`**: dispara `POST /oauth2/revoke` (`RFC 7009`) y limpia la familia de sesión activa.

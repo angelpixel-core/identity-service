@@ -93,6 +93,10 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
     await waitFor(() => {
       expect(screen.getByTestId('pkce-output-viewer')).toHaveTextContent('"revoked": true');
     });
+
+    expect(
+      screen.getByRole('button', { name: /Inicializar Sesión Refresh \(Dev\)/i })
+    ).toBeInTheDocument();
   });
 
   it('Scenario 4: starts Google federation login and persists JIT session on callback (US-10 / US-11)', async () => {

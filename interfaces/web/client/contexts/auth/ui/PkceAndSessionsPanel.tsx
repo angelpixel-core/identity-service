@@ -116,6 +116,26 @@ export function PkceAndSessionsPanel() {
     }
   };
 
+  const handleSeedDevSession = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiRequest<{ refresh_token?: string; error?: string; message?: string }>(
+        '/api/v1/ops/reseed-dev-sessions',
+        { method: 'POST' }
+      );
+      setTraceparent(res.trace.traceparent);
+      setOutput(res.data);
+      if (res.ok && res.data?.refresh_token) {
+        setRefreshToken(res.data.refresh_token);
+      } else if (!res.ok) {
+        setError(res.data?.message ?? res.data?.error ?? 'Error inicializando sesión Refresh');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleRotateRefresh = async () => {
     if (!refreshToken) return;
     setBusy(true);
@@ -201,16 +221,29 @@ export function PkceAndSessionsPanel() {
         />
       )}
 
-      {refreshToken && (
-        <div className="m3-actions-row">
-          <M3Button variant="outlined" onClick={handleRotateRefresh} disabled={busy}>
+      <div className="m3-card m3-card--tonal" style={{ padding: '1rem' }}>
+        <h3 style={{ fontSize: '0.95rem', marginBottom: '0.75rem' }}>
+          Gestión de Sesión Refresh (US-09)
+        </h3>
+        <M3TextField
+          id="pkce-refresh-token"
+          label="Refresh Token"
+          placeholder="Pulsa 'Inicializar Sesión Refresh (Dev)' o pega un token"
+          value={refreshToken}
+          onChange={(e) => setRefreshToken(e.target.value)}
+        />
+        <div className="m3-actions-row" style={{ marginTop: '0.75rem' }}>
+          <M3Button variant="tonal" onClick={handleSeedDevSession} disabled={busy}>
+            Inicializar Sesión Refresh (Dev)
+          </M3Button>
+          <M3Button variant="outlined" onClick={handleRotateRefresh} disabled={busy || !refreshToken}>
             Rotar Refresh Token
           </M3Button>
-          <M3Button variant="outlined" onClick={handleRevokeSession} disabled={busy}>
+          <M3Button variant="outlined" onClick={handleRevokeSession} disabled={busy || !refreshToken}>
             Revocar Sesión
           </M3Button>
         </div>
-      )}
+      </div>
 
       {error && <M3AlertBanner severity="error" title="Error OAuth2" message={error} />}
 
