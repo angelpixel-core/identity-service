@@ -239,11 +239,13 @@ npx jest tests/unit/identity/infrastructure/federation/ tests/unit/identity/appl
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-10`)
 
-1. **Prerrequisitos:** Backend (`:4000`) y Vite (`:3000`) activos. Abre [`http://localhost:3000/auth`](http://localhost:3000/auth) y selecciona la pestaña **`Federación`**. Al cargar, la UI consulta `GET /api/v1/auth/federation/status` y muestra los 2 badges de estado (`Emulador Dev (sin GOOGLE_CLIENT_ID / MICROSOFT_CLIENT_ID)` o `Configurado (Live)` si ya configuraste credenciales reales en `.env`; consulta la [Guía para obtener credenciales OIDC de Google y Microsoft](../guides/oidc-federation-credentials.md)).
+1. **Prerrequisitos:** Backend (`:4000`) y Vite (`:3000`) activos. Abre [`http://localhost:3000/auth`](http://localhost:3000/auth) y selecciona la pestaña **`Federación`**. Al cargar, la UI consulta `GET /api/v1/auth/federation/status` y muestra los 2 badges de estado:
+   - **Modo Live (`Configurado (Live)` en verde):** Cuando `GOOGLE_CLIENT_ID` / `MICROSOFT_CLIENT_ID` están configurados en `.env` (consulta la [Guía para obtener credenciales OIDC de Google y Microsoft](../guides/oidc-federation-credentials.md)). La UI ajusta automáticamente el **`Redirect URI`** a `${origin}/api/v1/auth/federation/{provider}/callback` y limpia **`Authorization Code`** para evitar enviar códigos de emulador.
+   - **Modo Emulador Dev (`Emulador Dev` en ámbar):** Cuando faltan las credenciales reales en `.env`; muestra el banner informativo local y precarga los códigos simulados (`dev_google_jit_2026` / `dev_microsoft_jit_2026`).
 2. **Paso a Paso (Inicio OIDC Externo & `state` Anti-CSRF):**
    - Verifica **Tenant ID** (`acme-corp`) y **Redirect URI**.
    - Pulsa **`Continuar con Google`** (o **`Continuar con Microsoft Entra ID`**).
-   - El cliente invoca `GET /api/v1/auth/federation/:provider/login`, autocompleta el campo **`Anti-CSRF State`** firmado con HMAC-SHA256 y muestra la `authorizationUrl` generada con `nonce` y `state`.
+   - El cliente invoca `GET /api/v1/auth/federation/:provider/login`, autocompleta el campo **`Anti-CSRF State`** firmado con HMAC-SHA256 y muestra la `authorizationUrl` generada con `nonce` y `state`. En **Modo Live**, además habilita el botón **`Abrir Login en Google / Microsoft Entra ID`** para iniciar el consentimiento OIDC real en el proveedor externo.
 3. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4).
 
 ![Superficie /auth Federación Externa — Inicio OIDC & Chips de Estado](./assets/screenshots/ui_auth_federation.png)
@@ -565,8 +567,9 @@ npx jest tests/acceptance/step_defs/test_federated_account_linking_steps.ts
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-11`)
 
 1. **Prerrequisitos:** Haber iniciado el flujo en la pestaña **`Federación`** (`US-10`) obteniendo un **`Anti-CSRF State`** válido.
-2. **Paso a Paso (Aprovisionamiento JIT):**
-   - Ingresa un **`Authorization Code`** válido en el campo correspondiente.
+2. **Paso a Paso (Aprovisionamiento JIT & Account Linking):**
+   - **En Modo Live:** Abre **`Abrir Login en Google / Microsoft Entra ID`**, autentícate en el proveedor externo y obtén el `code` real devuelto al callback (o deja que el callback `GET` del backend procese el retorno directamente), o bien pégalo manualmente en **`Authorization Code`**.
+   - **En Modo Emulador Dev:** Usa el código simulado precargado (`dev_google_jit_2026` o `dev_microsoft_jit_2026`).
    - Pulsa **`Procesar Callback JIT (google)`** (o `microsoft`): invoca `POST /api/v1/auth/federation/:provider/callback`, vincula o crea la identidad local y persiste `identity_session` en `localStorage`.
 3. **Caso Negativo (Anti-CSRF `state` Manipulado):** Modifica manualmente un carácter del campo **`Anti-CSRF State`** y pulsa **`Procesar Callback JIT`** → el servidor rechaza con `400`/`403` y la UI muestra `M3AlertBanner` (`Error de Federación`).
 4. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4).

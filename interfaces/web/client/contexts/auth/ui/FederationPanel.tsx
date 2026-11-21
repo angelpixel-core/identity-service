@@ -27,15 +27,23 @@ export interface FederationPanelProps {
   onFederatedSession: (session: AuthSession) => void;
 }
 
+const DEFAULT_DEV_REDIRECT_URI = 'https://portal.angelpixel.io/callback';
+
+function buildLiveRedirectUri(selectedProvider: 'google' | 'microsoft'): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  return `${origin}/api/v1/auth/federation/${selectedProvider}/callback`;
+}
+
 /**
  * Federación de Identidad Externa (Google & Microsoft Entra ID - US-10 & US-11).
  */
 export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
   const [provider, setProvider] = useState<'google' | 'microsoft'>('google');
   const [tenantId, setTenantId] = useState('acme-corp');
-  const [redirectUri, setRedirectUri] = useState('https://portal.angelpixel.io/callback');
+  const [redirectUri, setRedirectUri] = useState(DEFAULT_DEV_REDIRECT_URI);
   const [authCode, setAuthCode] = useState('dev_google_jit_2026');
   const [stateToken, setStateToken] = useState('');
+  const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
   const [traceparent, setTraceparent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +55,10 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
     void apiRequest<FederationStatusPayload>('/api/v1/auth/federation/status').then((res) => {
       if (active && res.ok && res.data?.providers) {
         setProviderStatus(res.data);
+        if (res.data.providers.google.configured) {
+          setRedirectUri(buildLiveRedirectUri('google'));
+          setAuthCode('');
+        }
       }
     });
     return () => {
@@ -58,10 +70,22 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
     setProvider(selectedProvider);
     setBusy(true);
     setError(null);
+    setAuthorizationUrl(null);
     try {
+      const isLive = Boolean(providerStatus?.providers[selectedProvider]?.configured);
+      const effectiveRedirectUri =
+        isLive &&
+        (redirectUri === DEFAULT_DEV_REDIRECT_URI ||
+          redirectUri.includes('/api/v1/auth/federation/'))
+          ? buildLiveRedirectUri(selectedProvider)
+          : redirectUri;
+      if (effectiveRedirectUri !== redirectUri) {
+        setRedirectUri(effectiveRedirectUri);
+      }
+
       const query = new URLSearchParams({
         tenant_id: tenantId,
-        redirect_uri: redirectUri,
+        redirect_uri: effectiveRedirectUri,
         format: 'json',
       });
       const res = await apiRequest<{
@@ -85,6 +109,7 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
       }
 
       const targetAuthUrl = res.data?.url ?? res.data?.authorizationUrl;
+      setAuthorizationUrl(targetAuthUrl ?? null);
       if (res.data?.state) {
         setStateToken(res.data.state);
       } else if (targetAuthUrl) {
@@ -97,7 +122,11 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
         }
       }
       setAuthCode(
-        selectedProvider === 'google' ? 'dev_google_jit_2026' : 'dev_microsoft_jit_2026'
+        isLive
+          ? ''
+          : selectedProvider === 'google'
+            ? 'dev_google_jit_2026'
+            : 'dev_microsoft_jit_2026'
       );
     } finally {
       setBusy(false);
@@ -220,6 +249,27 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
           Continuar con Microsoft Entra ID
         </M3Button>
       </div>
+
+      {authorizationUrl && providerStatus?.providers[provider]?.configured && (
+        <div className="m3-stack" style={{ gap: '0.5rem' }}>
+          <M3AlertBanner
+            severity="info"
+            title={`Autorización OIDC Live (${provider === 'google' ? 'Google' : 'Microsoft Entra ID'})`}
+            message={`Abre la URL oficial del proveedor para autenticarte y recibir el código real en ${redirectUri}.`}
+          />
+          <div className="m3-actions-row">
+            <a
+              href={authorizationUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="m3-button m3-button--tonal"
+              data-testid="federation-live-auth-link"
+            >
+              Abrir Login en {provider === 'google' ? 'Google' : 'Microsoft Entra ID'}
+            </a>
+          </div>
+        </div>
+      )}
 
       <div className="m3-grid-2">
         <M3TextField
