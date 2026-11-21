@@ -28,7 +28,14 @@ export function OidcDiscoveryPanel() {
         apiRequest('/.well-known/openid-configuration'),
         apiRequest('/.well-known/jwks.json'),
       ]);
-      if (!discRes.ok || !jwksRes.ok) {
+      if (
+        !discRes.ok ||
+        !jwksRes.ok ||
+        typeof discRes.data !== 'object' ||
+        discRes.data === null ||
+        typeof jwksRes.data !== 'object' ||
+        jwksRes.data === null
+      ) {
         setError('No se pudo consultar el servidor OIDC.');
         return;
       }
