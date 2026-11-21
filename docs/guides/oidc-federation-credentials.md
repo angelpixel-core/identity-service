@@ -108,7 +108,7 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
 
      ![API permissions Configured Microsoft Graph scopes](./assets/entra_api_permissions_configured.jpg)
 
-   - En **Manage → Token configuration**, haz clic en **`+ Add optional claim` → `ID`**, marca `email` (y opcionalmente `preferred_username`) y confirma con **Add** (si aparece el aviso superior, asegúrate de que el permiso `email` de Microsoft Graph ya esté habilitado o marca la casilla de confirmación) para garantizar que el claim `email` venga incluido explícitamente en el `id_token`:
+   - En **Manage → Token configuration**, haz clic en **`+ Add optional claim` → `ID`**, marca `email` (y opcionalmente `preferred_username`), marca la casilla **`Turn on the Microsoft Graph email permission (required for claims to appear in token)`** y confirma con **Add** para garantizar que el claim `email` venga incluido explícitamente en el `id_token`:
 
      ![Token configuration Optional claims ID token](./assets/entra_token_configuration.png)
 
