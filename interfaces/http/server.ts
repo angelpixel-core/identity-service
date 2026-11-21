@@ -529,7 +529,9 @@ export function createApp(deps?: AppDependencies): Express {
                   iss: isMicrosoft
                     ? 'https://login.microsoftonline.com/common/v2.0'
                     : 'https://accounts.google.com',
-                  aud: isMicrosoft ? 'mock-msft-client-id' : 'mock-google-client-id',
+                  aud: isMicrosoft
+                    ? process.env.MICROSOFT_CLIENT_ID || 'mock-msft-client-id'
+                    : process.env.GOOGLE_CLIENT_ID || 'mock-google-client-id',
                   sub: subMap[code] || `dev-sub-${code}`,
                   ...(isMicrosoft ? { oid: `oid-${code}` } : {}),
                   email: emailMap[code] || `${code}@acme-corp.com`,

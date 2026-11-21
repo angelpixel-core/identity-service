@@ -246,6 +246,8 @@ npx jest tests/unit/identity/infrastructure/federation/ tests/unit/identity/appl
    - El cliente invoca `GET /api/v1/auth/federation/:provider/login`, autocompleta el campo **`Anti-CSRF State`** firmado con HMAC-SHA256 y muestra la `authorizationUrl` generada con `nonce` y `state`.
 3. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4).
 
+![Superficie /auth Federación Externa — Inicio OIDC & Chips de Estado](./assets/screenshots/ui_auth_federation.png)
+
 ---
 
 ## 🔗 US-11: Vinculación Automática de Cuentas (Account Linking) & Aprovisionamiento JIT
