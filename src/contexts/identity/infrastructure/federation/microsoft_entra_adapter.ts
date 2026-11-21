@@ -128,15 +128,44 @@ export class MicrosoftEntraAdapter implements ExternalIdentityProviderPort {
       throw new Error('Microsoft Entra account profile did not include an oid or sub');
     }
 
+    const picture =
+      !params.code.startsWith('dev_') &&
+      typeof tokenResponse.access_token === 'string' &&
+      !tokenResponse.access_token.startsWith('mock_')
+        ? await this.fetchProfilePhoto(tokenResponse.access_token)
+        : undefined;
+
     return {
       provider: 'microsoft',
       externalSubjectId,
       email,
       emailVerified: true,
       name: payload.name,
-      picture: undefined,
+      picture,
       rawClaims: payload,
     };
+  }
+
+  private async fetchProfilePhoto(accessToken: string): Promise<string | undefined> {
+    try {
+      const res = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) {
+        return undefined;
+      }
+      const contentType = res.headers.get('content-type') || 'image/jpeg';
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.byteLength === 0) {
+        return undefined;
+      }
+      return `data:${contentType};base64,${buffer.toString('base64')}`;
+    } catch {
+      return undefined;
+    }
   }
 
   public getTokenVerifier(): JwksTokenVerifier {
