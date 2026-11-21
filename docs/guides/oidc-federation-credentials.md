@@ -115,6 +115,8 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
      ![Token configuration Add optional claim ID email](./assets/entra_token_add_email_claim.jpg)
 
      ![Token configuration Turn on Microsoft Graph email permission prompt](./assets/entra_token_email_permission_prompt.jpg)
+
+     ![Token configuration Optional claim email ID configured](./assets/entra_token_email_claim_configured.png)
 8. Configura tu `.env`:
    ```dotenv
    MICROSOFT_CLIENT_ID=00000000-0000-0000-0000-000000000000
