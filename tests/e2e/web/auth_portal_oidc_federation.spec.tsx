@@ -136,6 +136,12 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
       expect(screen.getByTestId('federation-output-viewer')).toHaveTextContent('state_google_01');
     });
 
+    const loginCall = ((globalThis as any).fetch as jest.Mock).mock.calls.find((call: unknown[]) =>
+      String(call[0]).includes('/federation/google/login')
+    );
+    expect(String(loginCall?.[0])).toContain('tenant_id=acme-corp');
+    expect(String(loginCall?.[0])).toContain('redirect_uri=');
+
     fireEvent.click(screen.getByRole('button', { name: /Procesar Callback JIT/i }));
 
     await waitFor(() => {

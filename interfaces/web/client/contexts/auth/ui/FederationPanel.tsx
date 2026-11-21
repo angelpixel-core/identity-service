@@ -32,28 +32,36 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
     setError(null);
     try {
       const query = new URLSearchParams({
-        tenantId,
-        redirectUri,
+        tenant_id: tenantId,
+        redirect_uri: redirectUri,
+        format: 'json',
       });
       const res = await apiRequest<{
+        url?: string;
         authorizationUrl?: string;
         state?: string;
         error?: string;
+        error_description?: string;
       }>(`/api/v1/auth/federation/${selectedProvider}/login?${query.toString()}`);
 
       setTraceparent(res.trace.traceparent);
       setResult(res.data);
 
       if (!res.ok) {
-        setError(res.data?.error ?? `Error iniciando federación ${selectedProvider}`);
+        setError(
+          res.data?.error_description ??
+            res.data?.error ??
+            `Error iniciando federación ${selectedProvider}`
+        );
         return;
       }
 
+      const targetAuthUrl = res.data?.url ?? res.data?.authorizationUrl;
       if (res.data?.state) {
         setStateToken(res.data.state);
-      } else if (res.data?.authorizationUrl) {
+      } else if (targetAuthUrl) {
         try {
-          const parsedUrl = new URL(res.data.authorizationUrl);
+          const parsedUrl = new URL(targetAuthUrl);
           const urlState = parsedUrl.searchParams.get('state');
           if (urlState) setStateToken(urlState);
         } catch {
@@ -78,7 +86,10 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
         email?: string;
         tenantId?: string;
         roles?: string[];
+        tokens?: { access_token?: string };
+        user?: { id?: string; email?: string; tenantId?: string; roles?: string[] };
         error?: string;
+        error_description?: string;
       }>(`/api/v1/auth/federation/${provider}/callback`, {
         method: 'POST',
         body: { code: authCode, state: stateToken },
@@ -88,17 +99,27 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
       setResult(res.data);
 
       if (!res.ok) {
-        setError(res.data?.error ?? 'Error procesando callback federado JIT');
+        setError(
+          res.data?.error_description ??
+            res.data?.error ??
+            'Error procesando callback federado JIT'
+        );
         return;
       }
 
-      if (res.data?.accessToken && res.data?.userId && res.data?.email) {
+      const token = res.data?.tokens?.access_token ?? res.data?.accessToken;
+      const resolvedUserId = res.data?.user?.id ?? res.data?.userId;
+      const resolvedEmail = res.data?.user?.email ?? res.data?.email;
+      const resolvedTenantId = res.data?.user?.tenantId ?? res.data?.tenantId ?? tenantId;
+      const resolvedRoles = res.data?.user?.roles ?? res.data?.roles;
+
+      if (token && resolvedUserId && resolvedEmail) {
         onFederatedSession({
-          token: res.data.accessToken,
-          userId: res.data.userId,
-          email: res.data.email,
-          tenantId: res.data.tenantId ?? tenantId,
-          roles: res.data.roles,
+          token,
+          userId: resolvedUserId,
+          email: resolvedEmail,
+          tenantId: resolvedTenantId,
+          roles: resolvedRoles,
         });
       }
     } finally {
