@@ -373,10 +373,21 @@ body {
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.m3-tab:hover:not(:disabled) {
+  background: var(--md-sys-color-surface-container-high, #e9eef6);
+  color: var(--md-sys-color-on-surface, #1f1f1f);
 }
 
 .m3-tab--active {
   background: var(--md-sys-color-primary-container, #e8f0fe);
+  color: var(--md-sys-color-on-primary-container, #174ea6);
+}
+
+.m3-tab--active:hover:not(:disabled) {
+  background: #d2e3fc;
   color: var(--md-sys-color-on-primary-container, #174ea6);
 }
 
@@ -427,7 +438,7 @@ button {
   transition: background-color 0.2s;
 }
 
-button:hover:not(:disabled) {
+button:not([class*="m3-"]):hover:not(:disabled) {
   background-color: var(--primary-hover);
 }
 
