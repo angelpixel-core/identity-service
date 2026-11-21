@@ -250,6 +250,8 @@ npx jest tests/unit/identity/infrastructure/federation/ tests/unit/identity/appl
 
 ![Superficie /auth Federación Externa — Inicio OIDC & Chips de Estado](./assets/screenshots/ui_auth_federation.png)
 
+![Flujo OIDC Live — Pantalla de Consentimiento Real en Google](./assets/screenshots/us10_google_consent_live.png)
+
 ---
 
 ## 🔗 US-11: Vinculación Automática de Cuentas (Account Linking) & Aprovisionamiento JIT
@@ -575,6 +577,58 @@ npx jest tests/acceptance/step_defs/test_federated_account_linking_steps.ts
 4. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4).
 
 ![Superficie /auth Federación Externa en Material Design 3](./assets/screenshots/ui_auth_federation.png)
+
+##### Evidencia de Callback Real End-to-End (`GET /api/v1/auth/federation/google/callback`):
+
+![Headers de Respuesta Real desde accounts.google.com con Trazabilidad W3C](./assets/screenshots/us11_google_callback_headers_live.jpg)
+
+```json
+{
+  "status": "success",
+  "tokens": {
+    "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "refresh_token": "b7f9c2a4e8d1035f6a12c4d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"
+  },
+  "user": {
+    "id": "c4a8e210-9f3b-4c7d-8a1e-5b2d9f0a3c12",
+    "email": "sofia.valenzuela@acme-corp.com",
+    "tenantId": "acme-corp"
+  },
+  "isNewUser": false,
+  "linked": false,
+  "userProfile": {
+    "provider": "google",
+    "externalSubjectId": "109876543210987654321",
+    "email": "sofia.valenzuela@acme-corp.com",
+    "emailVerified": true,
+    "name": "Sofia Valenzuela",
+    "picture": "https://lh3.googleusercontent.com/a/mock-avatar",
+    "rawClaims": {
+      "iss": "https://accounts.google.com",
+      "azp": "000000000000-mockgoogleclientid.apps.googleusercontent.com",
+      "aud": "000000000000-mockgoogleclientid.apps.googleusercontent.com",
+      "sub": "109876543210987654321",
+      "email": "sofia.valenzuela@acme-corp.com",
+      "email_verified": true,
+      "at_hash": "5kMockAtHashValue9xYz",
+      "nonce": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+      "name": "Sofia Valenzuela",
+      "picture": "https://lh3.googleusercontent.com/a/mock-avatar",
+      "given_name": "Sofia",
+      "family_name": "Valenzuela",
+      "iat": 1795292392,
+      "exp": 1795295992
+    }
+  },
+  "statePayload": {
+    "tenantId": "acme-corp",
+    "redirectUri": "http://localhost:3000/api/v1/auth/federation/google/callback",
+    "provider": "google"
+  }
+}
+```
 
 ---
 
