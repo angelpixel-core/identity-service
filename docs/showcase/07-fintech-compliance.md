@@ -635,6 +635,17 @@ curl -s "${BASE_URL}/health/ready" | jq .
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-17`)
+
+1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform).
+2. **Inspección de Postura TLS en Vivo:**
+   - En la pestaña **`Postura & Gobernanza`**, verifica el chip **`DB TLS: TLSv1.2`** y el nodo `securityPosture.databaseTls` (`sslEnabled`, `minVersion`, `rejectUnauthorized: true`, `activeGeneration`) en **Snapshot de Postura Read-Only**.
+   - En **`Bóveda Criptográfica`**, pulsa **`Refrescar Bóveda`** para consultar `databasePool.ssl` desde `GET /api/v1/secrets/status`.
+   - *Nota:* La defensa activa `BLOCKED_ANTI_DOWNGRADE` (`?sslmode=no-verify`) se prueba por CLI/API (`./bin/identity secrets rotate-db-credentials`), mientras la UI expone la postura TLS en modo solo lectura.
+3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2 & 3).
+
+---
+
 ### 🧪 Verificación Automatizada: Suites de Cifrado y Hardening (US-17)
 
 La efectividad de la protección TLS, la postura reportada por `/api/v1/secrets/status` y la defensa anti-downgrade se validan mediante las suites unitarias y de integración dedicadas:
@@ -902,6 +913,14 @@ Probando caso negativo: networkPolicy.enabled tipo no booleano...
 Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)...
 ✓ Caso negativo validado (falló según lo esperado): networkPolicy.ingress.port fuera de rango IANA (> 65535).
 ```
+
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-18`)
+
+1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
+2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
+   - Verifica el chip **`NetPolicy: ENFORCED`** y el nodo `infrastructurePosture.networkPolicy` (`defaultDenyAll: true`, `allowedIngressPort: 4000`, `status: "ENFORCED"`) en **Snapshot de Postura Read-Only**.
+   - *Nota:* Las políticas de red se mantienen estrictamente `READ_ONLY_POSTURE` en la UI; el renderizado y validación de manifiestos Kubernetes se realiza vía `npm run test:helm`.
+3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2).
 
 ---
 
@@ -1251,6 +1270,19 @@ Si un usuario comercial (`alpha-corp`) intenta consultar el stream de auditoría
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-19`)
+
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`:4000`) y Vite (`:3000`) activos con sesión `system:superadmin` en `localStorage` (`identity_session`).
+2. **Caso Positivo (Explorador Forense `GET /api/v1/audit/events`):**
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Auditoría Forense`**.
+   - Ingresa **Tenant ID** = `acme-corp`, **Severidad** = `WARN` y/o **Tipo de Evento** = `CROSS_TENANT_VIOLATION`.
+   - Pulsa **`Buscar Eventos`** → verifica el chip `Eventos cargados: N`, las tarjetas con severidad/estado (`DENIED` / `GRANTED_ELEVATED`), el `Trace ID` correlacionado y **Payload Forense (JSON)** (`M3JsonViewer`).
+3. **Caso Negativo (Severidad Inválida `400 Bad Request`):**
+   - Ingresa en **Severidad** un valor no permitido (e.g., `DEBUG`) y pulsa **`Buscar Eventos`** → el servidor rechaza con `400` (`invalid_severity`) y la UI muestra `M3AlertBanner` **`Error de Auditoría`**.
+4. **Verificación Técnica & Trazabilidad E2E:** Comprueba `X-Request-ID` / `traceparent` W3C en DevTools; `tests/e2e/web/platform_console.spec.tsx` (Scenario 4).
+
+---
+
 ### 🧪 Verificación Automatizada: Suites de Pruebas de Auditoría E2E (US-19)
 
 La precisión del esquema de auditoría, la redacción obligatoria de secretos, la propagación de contexto W3C y el contrato HTTP de `GET /api/v1/audit/events` bajo gobernanza Root Tenant se certifican mediante las suites de integración:
@@ -1286,17 +1318,6 @@ Snapshots:   0 total
 Time:        3.129 s
 Ran all test suites matching tests/integration/identity/security/test_structured_audit_logging.ts|tests/integration/identity/security/test_audit_events_api.ts.
 ```
-
----
-
-## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
-
-Dentro de **`/platform`** (`US-26`), las pestañas **Bóveda Criptográfica** y **Auditoría Forense** llevan a navegador las capacidades de `US-16` a `US-19`:
-
-1. **Bóveda Criptográfica (`US-16`, `US-17`):** Consulta `GET /api/v1/secrets/status` mostrando `activeKeyId`, llaves retenidas en JWKS y postura TLS de PostgreSQL sin exponer material privado. La rotación (`POST /api/v1/secrets/rotate-signing-key`) exige confirmación explícita del operador.
-2. **Auditoría Forense (`US-19`):** Permite filtrar en vivo `GET /api/v1/audit/events` por `tenantId`, `severity` y `eventType`, correlacionando cada evento con su `traceId`.
-
-![Consola /platform Bóveda Criptográfica en Material Design 3](./assets/screenshots/ui_platform_vault_audit.png)
 
 ---
 
