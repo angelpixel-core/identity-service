@@ -98,6 +98,9 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
         email: resolvedEmail,
         tenantId: resolvedTenantId,
         roles: resolvedRoles,
+        name: payload.userProfile?.name,
+        picture: payload.userProfile?.picture,
+        provider: payload.userProfile?.provider ?? payload.statePayload?.provider ?? provider,
       });
     }
   };

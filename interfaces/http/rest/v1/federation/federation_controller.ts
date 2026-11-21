@@ -218,7 +218,10 @@ export class FederationController {
             userId: payload.user.id,
             email: payload.user.email,
             tenantId: payload.user.tenantId,
-            roles: payload.user.roles
+            roles: payload.user.roles,
+            name: payload.userProfile && payload.userProfile.name,
+            picture: payload.userProfile && payload.userProfile.picture,
+            provider: (payload.userProfile && payload.userProfile.provider) || (payload.statePayload && payload.statePayload.provider)
           }));
         }
       } catch (e) {}

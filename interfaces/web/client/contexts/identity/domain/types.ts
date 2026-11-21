@@ -13,6 +13,9 @@ export interface AuthSession {
   readonly email: string;
   readonly tenantId: string;
   readonly roles?: readonly string[];
+  readonly name?: string;
+  readonly picture?: string;
+  readonly provider?: 'google' | 'microsoft' | 'local';
 }
 
 export interface UserProfile {
@@ -20,6 +23,10 @@ export interface UserProfile {
   readonly userId?: string;
   readonly email: string;
   readonly tenantId: string;
+  readonly roles?: readonly string[];
+  readonly name?: string;
+  readonly picture?: string;
+  readonly provider?: 'google' | 'microsoft' | 'local';
   readonly createdAt?: Date | string;
   readonly updatedAt?: Date | string;
 }

@@ -61,13 +61,14 @@ export function AuthPortalView({
             <div>
               <div className="session-toolbar">
                 <span>
-                  Conectado como: <strong>{session.email}</strong> ({session.tenantId})
+                  Conectado como: <strong>{session.name || session.email}</strong>
+                  {session.name ? ` (${session.email})` : ''} ({session.tenantId})
                 </span>
                 <M3Button variant="outlined" onClick={onLogout}>
                   Cerrar Sesión
                 </M3Button>
               </div>
-              <UserProfileCard fetchProfile={fetchProfile} />
+              <UserProfileCard fetchProfile={fetchProfile} session={session} />
             </div>
           ) : (
             <div>
