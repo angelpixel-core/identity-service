@@ -309,6 +309,24 @@ POST http://localhost:4000/api/v1/oauth2/clients/validate
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-03`)
+
+1. **Prerrequisitos:** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos, con una sesión comercial (`acme-corp`) guardada en `localStorage` (`identity_session`, obtenida previamente en `/auth`).
+2. **Listado Seguro de Aplicaciones (`GET /api/v1/oauth2/clients`):**
+   - Abre [`http://localhost:3000/tenant`](http://localhost:3000/tenant) en la pestaña **`Clientes & CORS`**.
+   - Pulsa **`Recargar Clientes`** y verifica en pantalla las tarjetas de clientes (`portal-web`, `allowedOrigins`, `scopes`, chip `ACTIVE`/`INACTIVE`). Comprueba en **DevTools → Network** que `clientSecretHash` nunca se expone en el payload.
+3. **Caso Positivo (Validador en Vivo de Origen CORS):**
+   - En **Validador en Vivo de Origen CORS**, ingresa **Client ID** = `portal-web` y **Origin** = `https://portal.angelpixel.io`.
+   - Pulsa **`Validar Origen CORS`** → `POST /api/v1/oauth2/clients/validate` devuelve `{ "authorized": true, ... }` en **Resultado Validación CORS** (`M3JsonViewer`).
+4. **Caso Negativo (Origen No Autorizado):**
+   - Cambia **Origin** a `https://evil-app.example.com` y pulsa **`Validar Origen CORS`** → el servidor rechaza con `403 Forbidden` y la UI muestra el detalle de rechazo.
+5. **Verificación Técnica (`Network` & `traceparent`):** Comprueba las cabeceras `X-Request-ID` y `traceparent` W3C en DevTools y el badge de traza en `Resultado Validación CORS`.
+6. **Trazabilidad E2E:** `tests/e2e/web/tenant_console.spec.tsx` (Scenario 1 & 2) y `tests/e2e/web/client_registry_origin.spec.tsx`.
+
+![Consola /tenant Clientes & CORS en Material Design 3](./assets/screenshots/ui_tenant_clients_m2m.png)
+
+---
+
 ### 3. Cobertura de Pruebas Automatizadas
 
 El middleware y el caso de uso de validación de orígenes dinámicos están certificados al 100%:
