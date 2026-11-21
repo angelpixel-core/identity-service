@@ -12,6 +12,12 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
 | :--- | :--- | :--- | :--- |
 | `GOOGLE_CLIENT_ID` | Google OIDC | Para modo Live | Client ID de aplicación Web en Google Cloud. |
 | `GOOGLE_CLIENT_SECRET` | Google OIDC | Para modo Live | Client Secret asociado. |
+| `GOOGLE_PROJECT_ID` | Google OIDC | Opcional (metadato) | `project_id` del JSON descargado de Google Cloud. |
+| `GOOGLE_AUTH_URI` | Google OIDC | Opcional (metadato) | `auth_uri` (`https://accounts.google.com/o/oauth2/auth`). |
+| `GOOGLE_TOKEN_URI` | Google OIDC | Opcional (metadato) | `token_uri` (`https://oauth2.googleapis.com/token`). |
+| `GOOGLE_AUTH_PROVIDER_X509_CERT_URL` | Google OIDC | Opcional (metadato) | `auth_provider_x509_cert_url` del JSON de Google. |
+| `GOOGLE_REDIRECT_URI_CALLBACKS` | Google OIDC | Opcional (metadato) | Lista separada por comas de `redirect_uris` registradas. |
+| `GOOGLE_JAVASCRIPT_ORIGINS` | Google OIDC | Opcional (metadato) | Lista separada por comas de `javascript_origins` registrados. |
 | `MICROSOFT_CLIENT_ID` | Microsoft Entra ID | Para modo Live | Application (client) ID de Entra ID. |
 | `MICROSOFT_CLIENT_SECRET` | Microsoft Entra ID | Para modo Live | Value del Client Secret (no el Secret ID). |
 | `MICROSOFT_TENANT_ID` | Microsoft Entra ID | Opcional (`common`) | Tenant específico (UUID/dominio), `common`, `organizations` o `consumers`. |
