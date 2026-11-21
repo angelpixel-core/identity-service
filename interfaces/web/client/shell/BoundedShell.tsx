@@ -188,19 +188,23 @@ export function BoundedShell({ session, pathname, children }: BoundedShellProps)
 
   // Sesión activa en superficie /auth
   return (
-    <main
-      className="m3-auth-shell"
-      data-testid="auth-surface"
-    >
+    <main className="m3-auth-shell" data-testid="auth-surface">
       <header className="m3-auth-header">
-        <M3Chip label={`${session.tenantId}`} tone="primary" />
+        <div className="m3-brand-mark" aria-hidden="true">
+          ID
+        </div>
+        <M3Chip label="Zero-Trust IAM · Material 3" tone="primary" />
         <h1>Identity Service Portal</h1>
         <p>Multi-Tenant SaaS User Registration &amp; Profile Management</p>
       </header>
 
-      <M3Card variant="elevated" className="m3-auth-card">
+      <M3Card variant="elevated" className="m3-auth-card" testId="auth-card">
         {children}
       </M3Card>
+
+      <footer className="m3-auth-footer">
+        <span>W3C Trace Context Ready · RFC 7636 PKCE · Argon2id</span>
+      </footer>
     </main>
   );
 }
