@@ -431,6 +431,17 @@ http_request_duration_seconds_sum{method="GET",route="/.well-known/openid-config
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-21`)
+
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` en `localStorage` (`identity_session`).
+2. **Paso a Paso (Métricas Prometheus / OpenMetrics en Vivo):**
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Observabilidad SRE`**.
+   - Pulsa **`Refrescar Telemetría`** → el cliente invoca `GET /metrics` (`text/plain; version=0.0.4`).
+   - Verifica el chip **`OpenMetrics / Prometheus`** y el bloque **Métricas Clave (`/metrics`)** (`M3JsonViewer`) mostrando series reales como `http_requests_total` y confirmando rutas normalizadas (sin explosión de cardinalidad por IDs dinámicos).
+3. **Verificación Técnica & Trazabilidad E2E:** Comprueba `traceparent` W3C en **DevTools → Network**; `tests/e2e/web/platform_console.spec.tsx` (Scenario 5).
+
+---
+
 ### 🧪 Verificación Automatizada: Endpoint de Métricas y Normalización (US-21)
 
 La integridad de las métricas y la prevención de cardinalidad se verifican mediante la siguiente suite de pruebas:
