@@ -561,6 +561,19 @@ export function createApp(deps?: AppDependencies): Express {
     deps?.microsoftEntraAdapter ?? new MicrosoftEntraAdapter({ httpClient: devFederationHttpClient });
   const federationProviders = [googleAdapter, microsoftAdapter];
 
+  if (process.env.NODE_ENV !== 'test') {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      console.warn(
+        '[Federation] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set — Google OIDC running in local dev emulator mode (mock-google-client-id).'
+      );
+    }
+    if (!process.env.MICROSOFT_CLIENT_ID || !process.env.MICROSOFT_CLIENT_SECRET) {
+      console.warn(
+        '[Federation] MICROSOFT_CLIENT_ID/MICROSOFT_CLIENT_SECRET not set — Microsoft Entra ID running in local dev emulator mode (mock-msft-client-id).'
+      );
+    }
+  }
+
   const generateFederatedLoginUrlHandler = new GenerateFederatedLoginUrlQueryHandler(
     federationProviders,
     federationStateManager
@@ -853,6 +866,7 @@ export function createApp(deps?: AppDependencies): Express {
   app.post('/api/v1/oauth2/revoke', sessionController.revoke);
 
   // Rutas de Identidad Federada (External OIDC Providers - US-10)
+  app.get('/api/v1/auth/federation/status', federationController.status);
   app.get('/api/v1/auth/federation/:provider/login', federationController.login);
   app.get('/api/v1/auth/federation/:provider/callback', federationController.callback);
   app.post('/api/v1/auth/federation/:provider/callback', federationController.callback);

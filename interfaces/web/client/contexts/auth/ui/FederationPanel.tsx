@@ -1,12 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   M3AlertBanner,
   M3Button,
+  M3Chip,
   M3JsonViewer,
   M3TextField,
 } from '../../../design-system/components/M3Primitives';
 import { apiRequest } from '../../../shared/api_client';
 import { AuthSession } from '../../identity/domain/types';
+
+interface ProviderStatusEntry {
+  readonly configured: boolean;
+  readonly mode: 'live' | 'dev_emulator';
+  readonly envVar: string;
+}
+
+interface FederationStatusPayload {
+  readonly environment: string;
+  readonly providers: {
+    readonly google: ProviderStatusEntry;
+    readonly microsoft: ProviderStatusEntry;
+  };
+}
 
 export interface FederationPanelProps {
   onFederatedSession: (session: AuthSession) => void;
@@ -25,6 +40,19 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
   const [traceparent, setTraceparent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<FederationStatusPayload | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void apiRequest<FederationStatusPayload>('/api/v1/auth/federation/status').then((res) => {
+      if (active && res.ok && res.data?.providers) {
+        setProviderStatus(res.data);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleStartLogin = async (selectedProvider: 'google' | 'microsoft') => {
     setProvider(selectedProvider);
@@ -137,6 +165,37 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
           Inicia sesión con proveedores externos OIDC y vincula identidades en el inquilino.
         </p>
       </div>
+
+      {providerStatus && (
+        <div className="m3-stack" data-testid="federation-provider-status">
+          <div className="m3-chip-row">
+            <M3Chip
+              label={
+                providerStatus.providers.google.configured
+                  ? 'Google OIDC: Configurado (Live)'
+                  : 'Google OIDC: Emulador Dev (sin GOOGLE_CLIENT_ID)'
+              }
+              tone={providerStatus.providers.google.configured ? 'success' : 'warning'}
+            />
+            <M3Chip
+              label={
+                providerStatus.providers.microsoft.configured
+                  ? 'Microsoft Entra ID: Configurado (Live)'
+                  : 'Microsoft Entra ID: Emulador Dev (sin MICROSOFT_CLIENT_ID)'
+              }
+              tone={providerStatus.providers.microsoft.configured ? 'success' : 'warning'}
+            />
+          </div>
+          {(!providerStatus.providers.google.configured ||
+            !providerStatus.providers.microsoft.configured) && (
+            <M3AlertBanner
+              severity="info"
+              title="Modo Emulador Dev Local"
+              message="No hay credenciales OIDC reales configuradas en .env; el backend usa el emulador local con códigos dev_google_jit_2026 / dev_microsoft_jit_2026."
+            />
+          )}
+        </div>
+      )}
 
       <div className="m3-grid-2">
         <M3TextField

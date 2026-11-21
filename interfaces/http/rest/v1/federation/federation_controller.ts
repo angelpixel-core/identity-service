@@ -16,6 +16,31 @@ export class FederationController {
     private readonly linkOrProvisionHandler?: LinkOrProvisionFederatedUserCommandHandler
   ) { }
 
+  public status = (_req: Request, res: Response): void => {
+    const googleConfigured = Boolean(
+      process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    );
+    const microsoftConfigured = Boolean(
+      process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET
+    );
+
+    res.status(200).json({
+      environment: process.env.NODE_ENV || 'development',
+      providers: {
+        google: {
+          configured: googleConfigured,
+          mode: googleConfigured ? 'live' : 'dev_emulator',
+          envVar: 'GOOGLE_CLIENT_ID',
+        },
+        microsoft: {
+          configured: microsoftConfigured,
+          mode: microsoftConfigured ? 'live' : 'dev_emulator',
+          envVar: 'MICROSOFT_CLIENT_ID',
+        },
+      },
+    });
+  };
+
   public login = async (req: Request, res: Response): Promise<void> => {
     try {
       const providerResult = ProviderParamSchema.safeParse(req.params.provider);

@@ -101,6 +101,17 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
 
   it('Scenario 4: starts Google federation login and persists JIT session on callback (US-10 / US-11)', async () => {
     (globalThis as any).fetch = jest.fn().mockImplementation((url: string) => {
+      if (url === '/api/v1/auth/federation/status') {
+        return Promise.resolve(
+          mockJsonResponse({
+            environment: 'development',
+            providers: {
+              google: { configured: false, mode: 'dev_emulator', envVar: 'GOOGLE_CLIENT_ID' },
+              microsoft: { configured: false, mode: 'dev_emulator', envVar: 'MICROSOFT_CLIENT_ID' },
+            },
+          })
+        );
+      }
       if (url.includes('/federation/google/login')) {
         return Promise.resolve(
           mockJsonResponse({
@@ -130,6 +141,14 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
 
     render(<App />);
     fireEvent.click(screen.getByRole('tab', { name: 'Federación' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('federation-provider-status')).toHaveTextContent(
+        'Google OIDC: Emulador Dev (sin GOOGLE_CLIENT_ID)'
+      );
+      expect(screen.getByTestId('federation-provider-status')).toHaveTextContent(
+        'Microsoft Entra ID: Emulador Dev (sin MICROSOFT_CLIENT_ID)'
+      );
+    });
     fireEvent.click(screen.getByRole('button', { name: /Continuar con Google/i }));
 
     await waitFor(() => {

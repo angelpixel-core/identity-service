@@ -226,5 +226,23 @@ describe('Integration API: /api/v1/auth/federation Endpoints (US-10)', () => {
       expect(res.body.error_description).toContain('not verified');
     });
   });
+
+  describe('GET /api/v1/auth/federation/status', () => {
+    it('should report provider configuration status without exposing secrets', async () => {
+      const res = await request(app).get('/api/v1/auth/federation/status');
+
+      expect(res.status).toBe(200);
+      expect(res.body.providers.google).toMatchObject({
+        configured: false,
+        mode: 'dev_emulator',
+        envVar: 'GOOGLE_CLIENT_ID',
+      });
+      expect(res.body.providers.microsoft).toMatchObject({
+        configured: false,
+        mode: 'dev_emulator',
+        envVar: 'MICROSOFT_CLIENT_ID',
+      });
+    });
+  });
 });
 

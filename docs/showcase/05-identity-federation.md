@@ -239,7 +239,7 @@ npx jest tests/unit/identity/infrastructure/federation/ tests/unit/identity/appl
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-10`)
 
-1. **Prerrequisitos:** Backend (`:4000`) y Vite (`:3000`) activos. Abre [`http://localhost:3000/auth`](http://localhost:3000/auth) y selecciona la pestaña **`Federación`**.
+1. **Prerrequisitos:** Backend (`:4000`) y Vite (`:3000`) activos. Abre [`http://localhost:3000/auth`](http://localhost:3000/auth) y selecciona la pestaña **`Federación`**. Al cargar, la UI consulta `GET /api/v1/auth/federation/status` y muestra los 2 badges de estado (`Emulador Dev (sin GOOGLE_CLIENT_ID / MICROSOFT_CLIENT_ID)` o `Configurado (Live)` si ya configuraste credenciales reales en `.env`).
 2. **Paso a Paso (Inicio OIDC Externo & `state` Anti-CSRF):**
    - Verifica **Tenant ID** (`acme-corp`) y **Redirect URI**.
    - Pulsa **`Continuar con Google`** (o **`Continuar con Microsoft Entra ID`**).
