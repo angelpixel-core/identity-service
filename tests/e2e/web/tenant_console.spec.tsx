@@ -81,6 +81,14 @@ describe('Web UI E2E Spec: US-25 /tenant Console (Clients, M2M & RLS Lab)', () =
     await waitFor(() => {
       expect(screen.getByTestId('cors-validation-viewer')).toHaveTextContent('"authorized": true');
     });
+
+    const validateCall = ((globalThis as any).fetch as jest.Mock).mock.calls.find(
+      (call: unknown[]) => call[0] === '/api/v1/oauth2/clients/validate'
+    );
+    expect(JSON.parse((validateCall?.[1] as RequestInit).body as string)).toEqual({
+      clientId: 'portal-web',
+      origin: 'https://portal.angelpixel.io',
+    });
   });
 
   it('Scenario 3: issues M2M client_credentials token in M2M Playground (US-04)', async () => {

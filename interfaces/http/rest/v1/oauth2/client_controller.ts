@@ -37,7 +37,12 @@ export function extractClientValidationParams(req: Request): {
     (req.body && req.body.clientId) ||
     (req.query && (req.query.client_id as string));
 
-  let originHeader = req.headers.origin as string | undefined;
+  const rawBodyOrigin =
+    req.body && typeof req.body.origin === 'string' && req.body.origin.trim().length > 0
+      ? req.body.origin.trim()
+      : undefined;
+
+  let originHeader = rawBodyOrigin || (req.headers.origin as string | undefined);
   if (!originHeader && req.headers.referer) {
     try {
       originHeader = new URL(req.headers.referer).origin;

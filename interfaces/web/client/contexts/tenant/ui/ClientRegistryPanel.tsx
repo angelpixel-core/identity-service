@@ -71,8 +71,7 @@ export function ClientRegistryPanel({ session }: ClientRegistryPanelProps) {
     try {
       const res = await apiRequest('/api/v1/oauth2/clients/validate', {
         method: 'POST',
-        headers: { Origin: validateOrigin },
-        body: { clientId: validateClientId },
+        body: { clientId: validateClientId, origin: validateOrigin },
       });
       setValidationTrace(res.trace.traceparent);
       setValidationResult({ status: res.status, ...((res.data as object) || {}) });
