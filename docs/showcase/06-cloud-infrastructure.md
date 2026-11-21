@@ -339,6 +339,17 @@ Changes to Outputs:
 npm run docker:cloud:down
 ```
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-12`)
+
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos. Registra o autentica un operador en el Root Tenant (`x-tenant-id: system`) vía `POST /api/v1/auth/register` o `./bin/identity users create-root-admin` y guarda su sesión (`tenantId: "system"`, `roles: ["superadmin", "member"]`) en `localStorage.setItem('identity_session', ...)`.
+2. **Caso Negativo (Guardia `403 Forbidden` para Inquilino Comercial):** Si abres [`http://localhost:3000/platform`](http://localhost:3000/platform) con una sesión comercial (e.g., `acme-corp`), `BoundedShell` bloquea el acceso mostrando `M3AlertBanner` (`platform-access-denied`) sin renderizar pestañas administrativas.
+3. **Caso Positivo (Postura Read-Only Cloud/IaC):**
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) con sesión `system:superadmin` en la pestaña **`Postura & Gobernanza`**.
+   - Pulsa **`Actualizar Postura`** (`GET /api/v1/platform/posture`).
+   - Verifica el chip `Cloud IaC: VERIFIED_PARITY` y en **Snapshot de Postura Read-Only** (`M3JsonViewer`) el nodo `infrastructurePosture.cloudIac` (`provider: "Azure / Floci"`, `tlsEndpoint: "https://localhost:4577"`).
+   - *Nota:* Esta superficie es estrictamente `READ_ONLY_POSTURE`; el aprovisionamiento real se ejecuta vía Terraform/CLI (`npm run test:infra`).
+4. **Trazabilidad E2E:** `tests/e2e/web/m3_shell_and_route_guards.spec.tsx` (Scenario 2 & 3) y `tests/e2e/web/platform_console.spec.tsx` (Scenario 1 & 2).
+
 ---
 
 ## 🔒 US-13: Ingress Seguro con NGINX & Terminación TLS 1.3
@@ -501,6 +512,15 @@ Respuesta de /health/ready: {"status":"UP","checks":{"database":"OK","cache":"OK
 npm run docker:ingress:down
 ```
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-13`)
+
+1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
+2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
+   - Verifica el chip **`Ingress: TLS 1.3`** y el nodo `infrastructurePosture.ingressTls` (`protocol: "TLS 1.3"`, `proxyMode: "NGINX Ingress"`, `status: "ACTIVE"`) en `M3JsonViewer`.
+   - Comprueba en **DevTools → Network** la cabecera `traceparent` W3C emitida por la consola.
+   - *Nota:* La terminación TLS y cabeceras del proxy se validan en vivo mediante `npm run test:ingress`; la UI no expone toggles mutables para desactivar TLS.
+3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2).
+
 ---
 
 ## ☸️ US-14: Empaquetado Helm Chart v3 & Orquestación Kubernetes Resiliente
@@ -660,6 +680,14 @@ Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)
 ================================================================
 ```
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-14`)
+
+1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
+2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
+   - Verifica el chip **`Helm: STRICT`** y el nodo `infrastructurePosture.helmChart` (`release: "identity-service"`, `schemaValidation: "STRICT"`, `networkPolicyZeroTrust: true`) en **Snapshot de Postura Read-Only**.
+   - *Nota:* La validación de `values.schema.json` y el despliegue del chart se realizan exclusivamente por CLI/CI (`npm run test:helm`).
+3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2).
+
 ---
 
 ## 🚀 US-15: Pipeline CI/CD Automatizado & Despliegue Atómico con Circuit Breaker
@@ -814,14 +842,14 @@ deployment "identity-service" successfully rolled out
 ✓ Estado:    DESPLEGADO Y SALUDABLE (Zero-Downtime RollingUpdate)
 ```
 
----
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-15`)
 
-## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
-
-La superficie **`/platform`** (`US-26`, protegida por **Root Tenant Governance `ADR-0009`**) expone en la pestaña **Postura & Gobernanza** el estado agregado de infraestructura en modo **estrictamente de solo lectura**:
-
-1. Autenticarse en el tenant `system` con rol `superadmin` y navegar a `http://localhost:3000/platform` (cualquier inquilino comercial es bloqueado con `403 Forbidden` por `BoundedShell`).
-2. La vista consulta `GET /api/v1/platform/posture` propagando `traceparent` W3C y renderiza el estado de **Cloud IaC (`US-12`)**, **Ingress TLS 1.3 (`US-13`)**, **Helm Strict Schema (`US-14`)**, **CI/CD Guardrails (`US-15`)** y **NetworkPolicy Zero-Trust (`US-18`)**.
+1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
+2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
+   - Verifica el chip **`CI/CD UID: 1000`** y el nodo `infrastructurePosture.cicdGuardrails` (`nonRootUid: 1000`, `imageTagPolicy: "IMMUTABLE_SHA"`, `rollbackCircuitBreaker: true`).
+   - Comprueba la etiqueta `W3C Trace` debajo de los chips y pulsa **`Actualizar Postura`** para verificar la recarga sin secretos en claro.
+   - *Nota:* La construcción de la imagen Docker y el rollback automático se ejecutan en el pipeline (`npm run test:cicd`).
+3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2).
 
 ![Consola /platform Postura Read-Only en Material Design 3](./assets/screenshots/ui_platform_posture.png)
 
