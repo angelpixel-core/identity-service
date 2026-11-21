@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import { M3Button } from '../../../../design-system/components/M3Primitives';
 import { AuthSession, UserProfile } from '../../domain/types';
 
 export interface UserProfileCardProps {
   fetchProfile: () => Promise<UserProfile>;
   initialProfile?: UserProfile;
   session?: Partial<AuthSession>;
+  onLogout?: () => void;
 }
 
 function formatProviderLabel(provider?: string): string | null {
@@ -18,7 +20,12 @@ function formatProviderLabel(provider?: string): string | null {
  * Componente visual de tarjeta de perfil de usuario contextualizada por Tenant.
  * Muestra información del usuario activo, identificador de organización y estados de carga/error.
  */
-export function UserProfileCard({ fetchProfile, initialProfile, session }: UserProfileCardProps) {
+export function UserProfileCard({
+  fetchProfile,
+  initialProfile,
+  session,
+  onLogout,
+}: UserProfileCardProps) {
   const [profile, setProfile] = useState<UserProfile | null>(initialProfile ?? null);
   const [loading, setLoading] = useState<boolean>(!initialProfile);
   const [error, setError] = useState<string | null>(null);
@@ -72,46 +79,48 @@ export function UserProfileCard({ fetchProfile, initialProfile, session }: UserP
 
   return (
     <article className="user-profile-card">
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt={displayName || profile.email}
-              referrerPolicy="no-referrer"
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '999px',
-                objectFit: 'cover',
-              }}
-            />
-          ) : displayName ? (
-            <div
-              aria-hidden="true"
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '999px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 600,
-                background: 'var(--md-sys-color-primary-container, #d3e3fd)',
-                color: 'var(--md-sys-color-on-primary-container, #041e49)',
-              }}
-            >
-              {displayName.slice(0, 1).toUpperCase()}
-            </div>
-          ) : null}
-          <div>
-            <h2 style={{ margin: 0 }}>{displayName || 'User Profile'}</h2>
-            {displayName && (
-              <span style={{ fontSize: '0.85rem', opacity: 0.75 }}>{profile.email}</span>
-            )}
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          gap: '0.875rem',
+        }}
+      >
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={displayName || profile.email}
+            referrerPolicy="no-referrer"
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '999px',
+              objectFit: 'cover',
+            }}
+          />
+        ) : displayName ? (
+          <div
+            aria-hidden="true"
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '999px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 600,
+              background: 'var(--md-sys-color-primary-container, #d3e3fd)',
+              color: 'var(--md-sys-color-on-primary-container, #041e49)',
+            }}
+          >
+            {displayName.slice(0, 1).toUpperCase()}
           </div>
+        ) : null}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+          <h2 style={{ margin: 0 }}>{displayName || 'User Profile'}</h2>
+          <span className="badge-tenant">Tenant: {profile.tenantId}</span>
         </div>
-        <span className="badge-tenant">Tenant: {profile.tenantId}</span>
       </header>
       <section className="profile-details">
         <dl>
@@ -149,10 +158,15 @@ export function UserProfileCard({ fetchProfile, initialProfile, session }: UserP
           )}
         </dl>
       </section>
-      <footer>
+      <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
         <button type="button" onClick={loadData}>
           Reload
         </button>
+        {onLogout && (
+          <M3Button variant="outlined" onClick={onLogout}>
+            Cerrar Sesión
+          </M3Button>
+        )}
       </footer>
     </article>
   );

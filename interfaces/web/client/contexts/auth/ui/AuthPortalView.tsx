@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { AuthSession, UserProfile } from '../../identity/domain/types';
 import { RegisterForm } from '../../identity/ui/components/register_form';
 import { UserProfileCard } from '../../identity/ui/components/user_profile_card';
-import { M3Button } from '../../../design-system/components/M3Primitives';
 import { OidcDiscoveryPanel } from './OidcDiscoveryPanel';
 import { PkceAndSessionsPanel } from './PkceAndSessionsPanel';
 import { FederationPanel } from './FederationPanel';
@@ -58,18 +57,7 @@ export function AuthPortalView({
       {activeTab === 'account' && (
         <div>
           {session ? (
-            <div>
-              <div className="session-toolbar">
-                <span>
-                  Conectado como: <strong>{session.name || session.email}</strong>
-                  {session.name ? ` (${session.email})` : ''} ({session.tenantId})
-                </span>
-                <M3Button variant="outlined" onClick={onLogout}>
-                  Cerrar Sesión
-                </M3Button>
-              </div>
-              <UserProfileCard fetchProfile={fetchProfile} session={session} />
-            </div>
+            <UserProfileCard fetchProfile={fetchProfile} session={session} onLogout={onLogout} />
           ) : (
             <div>
               <h2 className="m3-section-title">Registro de Nuevo Usuario</h2>
