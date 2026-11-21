@@ -364,6 +364,23 @@ curl -s "${BASE_URL}/health/ready" | jq .
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-16`)
+
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` guardada en `localStorage` (`identity_session`).
+2. **Inspección de Metadatos (`GET /api/v1/secrets/status`):**
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Bóveda Criptográfica`**.
+   - Pulsa **`Refrescar Bóveda`** y verifica los chips `Active Key`, `JWKS Keys` y `Pool Gen`, junto con **Metadatos de Llaves y Pool** (`M3JsonViewer`), confirmando que no se expone ninguna clave privada PEM en claro.
+3. **Caso Negativo (Confirmación Explícita Obligatoria):** Comprueba que el botón **`Ejecutar Rotación de Llave`** permanece deshabilitado hasta marcar el checkbox de confirmación explícita.
+4. **Caso Positivo (Rotación en Caliente `POST /api/v1/secrets/rotate-signing-key`):**
+   - Ingresa opcionalmente en **Nuevo Key ID (opcional)** `kid_rsa_showcase_2026`.
+   - Marca el checkbox de confirmación y pulsa **`Ejecutar Rotación de Llave`**.
+   - Verifica en **Resultado de Rotación** el nuevo `activeKeyId` y en **Metadatos de Llaves y Pool** que `jwksKeysCount` incrementó reteniendo la llave previa durante el periodo de gracia.
+5. **Verificación Técnica & Trazabilidad E2E:** Comprueba `X-Request-ID` / `traceparent` W3C en DevTools; `tests/e2e/web/platform_console.spec.tsx` (Scenario 3).
+
+![Consola /platform Bóveda Criptográfica en Material Design 3](./assets/screenshots/ui_platform_vault_audit.png)
+
+---
+
 ### 🧪 Verificación Automatizada: Suites de Pruebas de Integración E2E (US-16)
 
 La resiliencia de la recarga dinámica, la gobernanza Root Tenant en `/api/v1/secrets/*` y la ausencia total de caídas en peticiones se certifican mediante las suites de integración E2E dedicadas:
