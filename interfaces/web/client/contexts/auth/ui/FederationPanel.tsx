@@ -80,6 +80,7 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [providerStatus, setProviderStatus] = useState<FederationStatusPayload | null>(null);
+  const [showUseCaseInfo, setShowUseCaseInfo] = useState(false);
 
   const applyFederatedPayload = (payload: FederatedCallbackResult) => {
     setResult(payload);
@@ -255,16 +256,40 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
   const federatedResult =
     result && typeof result === 'object' ? (result as FederatedCallbackResult) : null;
   const activeProfile = federatedResult?.userProfile;
+  const allLiveConfigured = Boolean(
+    providerStatus?.providers.google.configured && providerStatus?.providers.microsoft.configured
+  );
 
   return (
     <div className="m3-stack">
       <div>
-        <h2 className="m3-section-title" style={{ marginBottom: '0.25rem' }}>
-          Federación Social &amp; JIT Provisioning (US-10 / US-11)
-        </h2>
+        <div className="m3-title-with-info">
+          <h2 className="m3-section-title" style={{ marginBottom: 0 }}>
+            Federación Social &amp; JIT Provisioning
+          </h2>
+          <button
+            type="button"
+            className="m3-info-btn"
+            aria-label="Información de casos de uso"
+            aria-expanded={showUseCaseInfo}
+            title="US-10: Login OIDC Externo · US-11: Account Linking & JIT Provisioning"
+            onClick={() => setShowUseCaseInfo((prev) => !prev)}
+          >
+            i
+          </button>
+        </div>
         <p className="m3-workspace-subtitle">
           Inicia sesión con proveedores externos OIDC y vincula identidades en el inquilino.
         </p>
+        {showUseCaseInfo && (
+          <div className="m3-info-popover" role="note">
+            <strong>US-10:</strong> Inicio de sesión OIDC externo (Google / Microsoft) y validación
+            Anti-CSRF (<code>state</code> / <code>nonce</code>).
+            <br />
+            <strong>US-11:</strong> Vinculación automática de cuentas (Account Linking) y
+            aprovisionamiento Just-In-Time (JIT).
+          </div>
+        )}
       </div>
 
       {providerStatus && (
@@ -298,20 +323,12 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
         </div>
       )}
 
-      <div className="m3-grid-2">
-        <M3TextField
-          id="fed-tenant-id"
-          label="Tenant ID"
-          value={tenantId}
-          onChange={(e) => setTenantId(e.target.value)}
-        />
-        <M3TextField
-          id="fed-redirect-uri"
-          label="Redirect URI"
-          value={redirectUri}
-          onChange={(e) => setRedirectUri(e.target.value)}
-        />
-      </div>
+      <M3TextField
+        id="fed-tenant-id"
+        label="Tenant ID"
+        value={tenantId}
+        onChange={(e) => setTenantId(e.target.value)}
+      />
 
       <div className="m3-actions-row">
         <M3Button variant="outlined" onClick={() => handleStartLogin('google')} disabled={busy}>
@@ -342,30 +359,40 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
         </div>
       )}
 
-      <div className="m3-grid-2">
-        <M3TextField
-          id="fed-code"
-          label="Authorization Code"
-          value={authCode}
-          onChange={(e) => setAuthCode(e.target.value)}
-        />
-        <M3TextField
-          id="fed-state"
-          label="Anti-CSRF State"
-          value={stateToken}
-          onChange={(e) => setStateToken(e.target.value)}
-        />
-      </div>
-
-      <div>
-        <M3Button
-          variant="filled"
-          onClick={handleProcessCallback}
-          disabled={busy || !stateToken}
-        >
-          Procesar Callback JIT ({provider})
-        </M3Button>
-      </div>
+      <details className="m3-lab-details" open={!allLiveConfigured}>
+        <summary>Laboratorio OIDC / Callback Manual</summary>
+        <div className="m3-stack" style={{ marginTop: '0.75rem' }}>
+          <M3TextField
+            id="fed-redirect-uri"
+            label="Redirect URI"
+            value={redirectUri}
+            onChange={(e) => setRedirectUri(e.target.value)}
+          />
+          <div className="m3-grid-2">
+            <M3TextField
+              id="fed-code"
+              label="Authorization Code"
+              value={authCode}
+              onChange={(e) => setAuthCode(e.target.value)}
+            />
+            <M3TextField
+              id="fed-state"
+              label="Anti-CSRF State"
+              value={stateToken}
+              onChange={(e) => setStateToken(e.target.value)}
+            />
+          </div>
+          <div>
+            <M3Button
+              variant="filled"
+              onClick={handleProcessCallback}
+              disabled={busy || !stateToken}
+            >
+              Procesar Callback JIT ({provider})
+            </M3Button>
+          </div>
+        </div>
+      </details>
 
       {error && <M3AlertBanner severity="error" title="Error de Federación" message={error} />}
 

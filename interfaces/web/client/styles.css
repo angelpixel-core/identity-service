@@ -495,6 +495,62 @@ body {
   }
 }
 
+.m3-title-with-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.m3-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--md-sys-color-surface-container-low, #f1f4f9);
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-style: italic;
+  font-family: Georgia, serif;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease;
+}
+
+.m3-info-btn:hover {
+  background: var(--md-sys-color-primary-container, #e8f0fe);
+}
+
+.m3-info-popover {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--md-sys-color-on-surface, #1f1f1f);
+  background: var(--md-sys-color-surface-container-low, #f1f4f9);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.m3-lab-details {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  background: var(--md-sys-color-surface-container-lowest, #fafbfd);
+}
+
+.m3-lab-details summary {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
 form {
   display: flex;
   flex-direction: column;
