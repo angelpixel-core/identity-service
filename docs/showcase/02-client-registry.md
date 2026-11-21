@@ -345,6 +345,9 @@ npx jest tests/integration/identity/interfaces/test_client_authorization_middlew
 
 ## 🤖 US-04: Autenticación Machine-to-Machine (M2M) con Client Credentials
 
+> [!TIP]
+> **Demostración Interactiva en UI disponible:** Puedes probar este flujo directamente desde el navegador en [`http://localhost:3000/tenant`](http://localhost:3000/tenant) → pestaña **`M2M Playground`**. Consulta el paso a paso completo en [Demostración Interactiva en la UI (Navegador — `US-04`)](#-demostración-interactiva-en-la-ui-navegador--us-04).
+
 ### 1. Arquitectura y Protocolo RFC 6749 Section 4.4
 
 Para la comunicación segura entre microservicios, daemons de backend y tareas programadas sin intervención de un usuario final, el servicio implementa el flujo canónico **OAuth 2.0 Client Credentials Grant** expuesto en `POST /api/v1/oauth2/token` y `POST /oauth2/token`:
@@ -643,7 +646,7 @@ npm run db:reset
 1. **Prerrequisitos:** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos, con una sesión comercial (`acme-corp`) guardada en `localStorage` (`identity_session`) y el cliente confidencial `m2m-service-app` sembrado.
 2. **Caso Positivo (Emisión M2M `client_credentials`):**
    - Abre [`http://localhost:3000/tenant`](http://localhost:3000/tenant) y selecciona la pestaña **`M2M Playground`**.
-   - Ingresa **Client ID** = `m2m-service-app`, **Client Secret** = el secreto confidencial del cliente, y **Scopes Solicitados** = `identity:read`.
+   - Ingresa **Client ID** = `m2m-service-app`, **Client Secret** = `ValidSecret123!_SuperSecureSecretForTesting_2026` (semilla por defecto en PostgreSQL e In-Memory), y **Scopes Solicitados** = `identity:read`.
    - Pulsa **`Solicitar Token M2M`** → invoca `POST /api/v1/oauth2/token` (`grant_type: "client_credentials"`) y muestra `access_token`, `token_type: "Bearer"` y `scope` en **Respuesta Token M2M** (`M3JsonViewer`).
 3. **Caso Negativo (Scope No Autorizado o Secreto Inválido):**
    - Cambia **Scopes Solicitados** a `system:root` (o ingresa un **Client Secret** incorrecto) y pulsa **`Solicitar Token M2M`** → el servidor responde `400`/`401` (`invalid_scope` / `invalid_client`) y se renderiza `M3AlertBanner` **`Error M2M`**.

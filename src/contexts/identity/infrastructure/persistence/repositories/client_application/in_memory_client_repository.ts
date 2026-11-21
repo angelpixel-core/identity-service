@@ -67,9 +67,23 @@ export class InMemoryClientApplicationRepository implements ClientApplicationRep
       isActive: true,
     });
 
+    const m2mServiceApp = ClientApplication.create({
+      id: 'client-seed-4',
+      clientId: ClientId.create('m2m-service-app'),
+      clientSecretHash: '$2b$06$xEZUS7jmJ1CcedNxhaSU5.FoviZ/lI0sZ49qR8kQgSiwirWZohsTi',
+      clientName: 'Machine to Machine Service Worker',
+      clientType: 'confidential',
+      allowedOrigins: [OriginDomain.create('https://m2m.angelpixel.io')],
+      redirectUris: [],
+      allowedGrantTypes: ['client_credentials'],
+      scopes: ['identity:read', 'identity:write', 'audit:log'],
+      isActive: true,
+    });
+
     this.clients.set(portalWeb.getClientId().getValue(), portalWeb);
     this.clients.set(legacyApp.getClientId().getValue(), legacyApp);
     this.clients.set(eCommerceSpa.getClientId().getValue(), eCommerceSpa);
+    this.clients.set(m2mServiceApp.getClientId().getValue(), m2mServiceApp);
   }
 }
 
