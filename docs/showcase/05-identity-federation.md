@@ -245,7 +245,7 @@ npx jest tests/unit/identity/infrastructure/federation/ tests/unit/identity/appl
 2. **Paso a Paso (Inicio OIDC Externo & `state` Anti-CSRF):**
    - Verifica **Tenant ID** (`acme-corp`) y **Redirect URI**.
    - Pulsa **`Continuar con Google`** (o **`Continuar con Microsoft Entra ID`**).
-   - El cliente invoca `GET /api/v1/auth/federation/:provider/login`, autocompleta el campo **`Anti-CSRF State`** firmado con HMAC-SHA256 y muestra la `authorizationUrl` generada con `nonce` y `state`. En **Modo Live**, además habilita el botón **`Abrir Login en Google / Microsoft Entra ID`** para iniciar el consentimiento OIDC real en el proveedor externo.
+   - El cliente invoca `GET /api/v1/auth/federation/:provider/login`, autocompleta el campo **`Anti-CSRF State`** firmado con HMAC-SHA256 y muestra la `authorizationUrl` generada con `nonce` y `state`. En **Modo Live**, además habilita el botón **`Abrir Login en Google / Microsoft Entra ID`**, que abre el consentimiento OIDC real en un popup (con fallback automático en la misma pestaña). En Microsoft Entra ID, `MicrosoftEntraAdapter` consulta opcionalmente `GET /v1/me/photo/$value` en Microsoft Graph si el usuario tiene foto configurada.
 3. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4).
 
 ![Superficie /auth Federación Externa — Inicio OIDC & Chips de Estado](./assets/screenshots/ui_auth_federation.png)
@@ -569,14 +569,15 @@ npx jest tests/acceptance/step_defs/test_federated_account_linking_steps.ts
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-11`)
 
 1. **Prerrequisitos:** Haber iniciado el flujo en la pestaña **`Federación`** (`US-10`) obteniendo un **`Anti-CSRF State`** válido.
-2. **Paso a Paso (Aprovisionamiento JIT & Account Linking):**
-   - **En Modo Live:** Abre **`Abrir Login en Google / Microsoft Entra ID`**, autentícate en el proveedor externo y obtén el `code` real devuelto al callback (o deja que el callback `GET` del backend procese el retorno directamente), o bien pégalo manualmente en **`Authorization Code`**.
-   - **En Modo Emulador Dev:** Usa el código simulado precargado (`dev_google_jit_2026` o `dev_microsoft_jit_2026`).
-   - Pulsa **`Procesar Callback JIT (google)`** (o `microsoft`): invoca `POST /api/v1/auth/federation/:provider/callback`, vincula o crea la identidad local y persiste `identity_session` en `localStorage`.
+2. **Paso a Paso (Aprovisionamiento JIT, Puente Popup/`postMessage` & `UserProfileCard`):**
+   - **En Modo Live:** Pulsa **`Abrir Login en Google / Microsoft Entra ID`** y autentícate en el proveedor externo. Al retornar al backend (`GET /api/v1/auth/federation/:provider/callback` con `Accept: text/html`), el controlador responde con un puente HTML que envía la sesión verificada a la SPA vía `postMessage` (o `sessionStorage` + redirección a `/auth` si se abrió en la misma pestaña), persiste `identity_session` en `localStorage` y muestra tanto la **`federated-identity-card`** como el **`UserProfileCard`** enriquecido en **`Cuenta`** (avatar o inicial, `Name`, `Provider`, `Roles` y `Tenant`) sin almacenar PII extra en PostgreSQL.
+   - **En Modo Emulador Dev:** Usa el código simulado precargado (`dev_google_jit_2026` o `dev_microsoft_jit_2026`) y pulsa **`Procesar Callback JIT (google)`** (o `microsoft`): invoca `POST /api/v1/auth/federation/:provider/callback`, vincula o crea la identidad local y persiste `identity_session` en `localStorage`.
 3. **Caso Negativo (Anti-CSRF `state` Manipulado):** Modifica manualmente un carácter del campo **`Anti-CSRF State`** y pulsa **`Procesar Callback JIT`** → el servidor rechaza con `400`/`403` y la UI muestra `M3AlertBanner` (`Error de Federación`).
-4. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4).
+4. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4) y `tests/e2e/web/user_profile_card.spec.tsx`.
 
 ![Superficie /auth Federación Externa en Material Design 3](./assets/screenshots/ui_auth_federation.png)
+
+![UserProfileCard Enriquecido tras Login Federado](./assets/screenshots/us11_federated_profile_card.png)
 
 ##### Evidencia de Callback Real End-to-End (`GET /api/v1/auth/federation/google/callback`):
 
