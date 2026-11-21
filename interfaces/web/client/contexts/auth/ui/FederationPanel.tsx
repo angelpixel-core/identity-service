@@ -294,23 +294,47 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
 
       {providerStatus && (
         <div className="m3-stack" data-testid="federation-provider-status">
-          <div className="m3-chip-row">
-            <M3Chip
-              label={
-                providerStatus.providers.google.configured
-                  ? 'Google OIDC: Configurado (Live)'
-                  : 'Google OIDC: Emulador Dev (sin GOOGLE_CLIENT_ID)'
-              }
-              tone={providerStatus.providers.google.configured ? 'success' : 'warning'}
-            />
-            <M3Chip
-              label={
-                providerStatus.providers.microsoft.configured
-                  ? 'Microsoft Entra ID: Configurado (Live)'
-                  : 'Microsoft Entra ID: Emulador Dev (sin MICROSOFT_CLIENT_ID)'
-              }
-              tone={providerStatus.providers.microsoft.configured ? 'success' : 'warning'}
-            />
+          <div className="m3-status-table" role="table" aria-label="Estado de proveedores OIDC">
+            <div className="m3-status-row" role="row">
+              <span className="m3-status-label" role="cell">
+                Google OIDC
+              </span>
+              <span
+                className={`m3-status-dot ${providerStatus.providers.google.configured ? 'm3-status-dot--live' : 'm3-status-dot--offline'}`}
+                role="cell"
+                data-testid="federation-status-google"
+                title={
+                  providerStatus.providers.google.configured
+                    ? 'Configurado (Live)'
+                    : 'Emulador Dev (sin GOOGLE_CLIENT_ID)'
+                }
+                aria-label={
+                  providerStatus.providers.google.configured
+                    ? 'Google OIDC: Configurado (Live)'
+                    : 'Google OIDC: Emulador Dev (sin GOOGLE_CLIENT_ID)'
+                }
+              />
+            </div>
+            <div className="m3-status-row" role="row">
+              <span className="m3-status-label" role="cell">
+                Microsoft Entra ID
+              </span>
+              <span
+                className={`m3-status-dot ${providerStatus.providers.microsoft.configured ? 'm3-status-dot--live' : 'm3-status-dot--offline'}`}
+                role="cell"
+                data-testid="federation-status-microsoft"
+                title={
+                  providerStatus.providers.microsoft.configured
+                    ? 'Configurado (Live)'
+                    : 'Emulador Dev (sin MICROSOFT_CLIENT_ID)'
+                }
+                aria-label={
+                  providerStatus.providers.microsoft.configured
+                    ? 'Microsoft Entra ID: Configurado (Live)'
+                    : 'Microsoft Entra ID: Emulador Dev (sin MICROSOFT_CLIENT_ID)'
+                }
+              />
+            </div>
           </div>
           {(!providerStatus.providers.google.configured ||
             !providerStatus.providers.microsoft.configured) && (

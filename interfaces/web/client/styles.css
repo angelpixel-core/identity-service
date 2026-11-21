@@ -556,6 +556,47 @@ body {
   user-select: none;
 }
 
+.m3-status-table {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  align-items: center;
+  column-gap: 0.85rem;
+  row-gap: 0.4rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--md-sys-color-surface-container-low, #f1f4f9);
+}
+
+.m3-status-row {
+  display: contents;
+}
+
+.m3-status-label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface, #1f1f1f);
+}
+
+.m3-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  cursor: help;
+}
+
+.m3-status-dot--live {
+  background-color: #1e8e3e;
+  box-shadow: 0 0 0 3px rgba(30, 142, 62, 0.18);
+}
+
+.m3-status-dot--offline {
+  background-color: #d93025;
+  box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.18);
+}
+
 form {
   display: flex;
   flex-direction: column;

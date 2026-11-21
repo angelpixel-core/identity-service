@@ -148,10 +148,12 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
       target: { value: 'federation' },
     });
     await waitFor(() => {
-      expect(screen.getByTestId('federation-provider-status')).toHaveTextContent(
+      expect(screen.getByTestId('federation-status-google')).toHaveAttribute(
+        'aria-label',
         'Google OIDC: Emulador Dev (sin GOOGLE_CLIENT_ID)'
       );
-      expect(screen.getByTestId('federation-provider-status')).toHaveTextContent(
+      expect(screen.getByTestId('federation-status-microsoft')).toHaveAttribute(
+        'aria-label',
         'Microsoft Entra ID: Emulador Dev (sin MICROSOFT_CLIENT_ID)'
       );
     });
