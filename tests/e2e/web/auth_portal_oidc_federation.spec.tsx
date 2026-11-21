@@ -31,7 +31,7 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
 
   it('Scenario 1: defaults to Cuenta tab with RegisterForm for unauthenticated users', () => {
     render(<App />);
-    expect(screen.getByRole('tab', { name: 'Cuenta' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Flujos de Autenticación e Identidad')).toHaveValue('account');
     expect(screen.getByText('Registro de Nuevo Usuario')).toBeInTheDocument();
   });
 
@@ -49,7 +49,9 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
     });
 
     render(<App />);
-    fireEvent.click(screen.getByRole('tab', { name: 'OIDC & JWKS' }));
+    fireEvent.change(screen.getByLabelText('Flujos de Autenticación e Identidad'), {
+      target: { value: 'oidc' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Consultar Discovery & JWKS/i }));
 
     await waitFor(() => {
@@ -77,7 +79,9 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
     });
 
     render(<App />);
-    fireEvent.click(screen.getByRole('tab', { name: 'PKCE & Sesiones' }));
+    fireEvent.change(screen.getByLabelText('Flujos de Autenticación e Identidad'), {
+      target: { value: 'pkce' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Ejecutar Authorize \+ Token Exchange/i }));
 
     await waitFor(() => {
@@ -140,7 +144,9 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
     });
 
     render(<App />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Federación' }));
+    fireEvent.change(screen.getByLabelText('Flujos de Autenticación e Identidad'), {
+      target: { value: 'federation' },
+    });
     await waitFor(() => {
       expect(screen.getByTestId('federation-provider-status')).toHaveTextContent(
         'Google OIDC: Emulador Dev (sin GOOGLE_CLIENT_ID)'

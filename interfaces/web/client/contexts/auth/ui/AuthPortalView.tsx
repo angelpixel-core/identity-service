@@ -36,47 +36,46 @@ export function AuthPortalView({
 
   return (
     <div className="m3-stack">
-      <div role="tablist" aria-label="Flujos de Autenticación e Identidad" className="m3-tabs">
-        {AUTH_TABS.map((tab) => {
-          const isSelected = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={isSelected}
-              className={`m3-tab ${isSelected ? 'm3-tab--active' : ''}`.trim()}
-              onClick={() => setActiveTab(tab.id)}
-            >
+      <div className="m3-portal-selector">
+        <select
+          aria-label="Flujos de Autenticación e Identidad"
+          className="m3-select"
+          value={activeTab}
+          onChange={(e) => setActiveTab(e.target.value as AuthTab)}
+        >
+          {AUTH_TABS.map((tab) => (
+            <option key={tab.id} value={tab.id}>
               {tab.label}
-            </button>
-          );
-        })}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {activeTab === 'account' && (
-        <div>
-          {session ? (
-            <UserProfileCard fetchProfile={fetchProfile} session={session} onLogout={onLogout} />
-          ) : (
-            <div>
-              <h2 className="m3-section-title">Registro de Nuevo Usuario</h2>
-              <RegisterForm defaultTenantId="acme-corp" onSuccess={onSessionChange} />
-            </div>
-          )}
-        </div>
-      )}
+      <div key={activeTab} className="m3-view-panel">
+        {activeTab === 'account' && (
+          <div>
+            {session ? (
+              <UserProfileCard fetchProfile={fetchProfile} session={session} onLogout={onLogout} />
+            ) : (
+              <div>
+                <h2 className="m3-section-title">Registro de Nuevo Usuario</h2>
+                <RegisterForm defaultTenantId="acme-corp" onSuccess={onSessionChange} />
+              </div>
+            )}
+          </div>
+        )}
 
-      {activeTab === 'oidc' && <OidcDiscoveryPanel />}
-      {activeTab === 'pkce' && <PkceAndSessionsPanel />}
-      {activeTab === 'federation' && (
-        <FederationPanel
-          onFederatedSession={(fedSession) => {
-            onSessionChange(fedSession);
-            setActiveTab('account');
-          }}
-        />
-      )}
+        {activeTab === 'oidc' && <OidcDiscoveryPanel />}
+        {activeTab === 'pkce' && <PkceAndSessionsPanel />}
+        {activeTab === 'federation' && (
+          <FederationPanel
+            onFederatedSession={(fedSession) => {
+              onSessionChange(fedSession);
+              setActiveTab('account');
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

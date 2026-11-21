@@ -163,7 +163,7 @@ export function UserProfileCard({
           Reload
         </button>
         {onLogout && (
-          <M3Button variant="outlined" onClick={onLogout}>
+          <M3Button variant="outlined" className="m3-btn--danger" onClick={onLogout}>
             Cerrar Sesión
           </M3Button>
         )}
