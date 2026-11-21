@@ -42,6 +42,9 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
      - Local (vía proxy Vite): `http://localhost:3000/api/v1/auth/federation/google/callback`
      - Local (API directa): `http://localhost:4000/api/v1/auth/federation/google/callback`
      - Producción: `https://<tu-dominio>/api/v1/auth/federation/google/callback`
+
+   ![Formulario ID de cliente de OAuth Web en Google Auth Platform](./assets/google_oauth_client_form.jpg)
+
 4. Copia **ID de cliente** (*Client ID*) y **Secreto del cliente** (*Client secret*) a tu archivo `.env`:
    ```dotenv
    GOOGLE_CLIENT_ID=tu-google-client-id.apps.googleusercontent.com
