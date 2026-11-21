@@ -23,26 +23,32 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
 
 ## 2. Google Cloud Console (Google OIDC)
 
+> [!IMPORTANT]
+> **No necesitas habilitar ninguna API en "Biblioteca de APIs"** (tampoco `Cloud OAuth Service API`). Ve directamente al menú lateral **APIs y servicios** (*APIs & Services*) o **Google Auth Platform**.
+
 1. Ingresa a [Google Cloud Console](https://console.cloud.google.com/) y selecciona o crea un proyecto.
-2. Ve a **APIs & Services → OAuth consent screen**:
-   - Elige **External** (o **Internal** si es Google Workspace corporativo).
+2. Ve a **APIs y servicios → Pantalla de consentimiento de OAuth** (*APIs & Services → OAuth consent screen*, o **Google Auth Platform → Público / Branding**):
+   - Elige **Externo** (*External*) o **Interno** (*Internal*, si usas Google Workspace corporativo).
    - Completa el nombre de la aplicación (`Identity Service Portal`) y correos de contacto.
-   - En **Scopes**, añade los scopes estándar OIDC: `openid`, `email`, `profile`.
-   - Si la app está en estado *Testing*, agrega tu correo en **Test users**.
-3. Ve a **APIs & Services → Credentials → + Create Credentials → OAuth client ID**:
-   - **Application type:** `Web application`.
-   - **Authorized JavaScript origins:**
+   - En **Permisos / Scopes**, añade los scopes estándar OIDC: `openid`, `email`, `profile`.
+   - Si la app está en estado *Testing* (*Pruebas*), agrega tu correo en **Usuarios de prueba** (*Test users*).
+3. Ve a **APIs y servicios → Credenciales → + Crear credenciales → ID de cliente de OAuth** (*Credentials → + Create Credentials → OAuth client ID*, o **Google Auth Platform → Clientes → Crear cliente**):
+   - **Tipo de aplicación (*Application type*):** `Aplicación web` (*Web application*).
+   - **Orígenes de JavaScript autorizados (*Authorized JavaScript origins*):**
      - Local: `http://localhost:3000` y `http://localhost:4000`
      - Producción: `https://<tu-dominio>`
-   - **Authorized redirect URIs:**
+   - **URIs de redireccionamiento autorizados (*Authorized redirect URIs*):**
      - Local (vía proxy Vite): `http://localhost:3000/api/v1/auth/federation/google/callback`
      - Local (API directa): `http://localhost:4000/api/v1/auth/federation/google/callback`
      - Producción: `https://<tu-dominio>/api/v1/auth/federation/google/callback`
-4. Copia **Client ID** y **Client secret** a tu archivo `.env`:
+4. Copia **ID de cliente** (*Client ID*) y **Secreto del cliente** (*Client secret*) a tu archivo `.env`:
    ```dotenv
    GOOGLE_CLIENT_ID=tu-google-client-id.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=tu-google-client-secret
    ```
+
+> [!TIP]
+> Si deseas adjuntar capturas de estas pantallas en `docs/guides/assets/` (por ejemplo `google_oauth_client.png` y `entra_app_registration.png`), recuerda **ocultar correos, project IDs personales y secretos** antes de confirmarlas en Git.
 
 ---
 
