@@ -98,13 +98,23 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
    ![Add a client secret form](./assets/entra_add_client_secret_form.png)
 
 7. Configura los scopes OIDC y el claim `email` en el `id_token`:
-   - En **Manage → API permissions**, haz clic en **`+ Add a permission` → `Microsoft Graph` → `Delegated permissions` → `OpenId permissions`** y marca `openid`, `profile` y `email`:
+   - En **Manage → API permissions**, haz clic en **`+ Add a permission` → `Microsoft Graph` → `Delegated permissions` → `OpenId permissions`**, marca `email`, `openid` y `profile`, y confirma con **Add permissions** hasta ver los 4 permisos configurados bajo `Microsoft Graph`:
 
      ![API permissions Microsoft Graph OpenId permissions](./assets/entra_api_permissions.png)
 
-   - En **Manage → Token configuration**, haz clic en **`+ Add optional claim` → `ID`** y marca `email` (y opcionalmente `preferred_username`) para garantizar que el claim `email` venga incluido explícitamente en el `id_token`:
+     ![Request API permissions Select Microsoft Graph](./assets/entra_api_select_graph.jpg)
+
+     ![Request API permissions Delegated OpenId permissions](./assets/entra_api_openid_permissions.jpg)
+
+     ![API permissions Configured Microsoft Graph scopes](./assets/entra_api_permissions_configured.jpg)
+
+   - En **Manage → Token configuration**, haz clic en **`+ Add optional claim` → `ID`**, marca `email` (y opcionalmente `preferred_username`) y confirma con **Add** (si aparece el aviso superior, asegúrate de que el permiso `email` de Microsoft Graph ya esté habilitado o marca la casilla de confirmación) para garantizar que el claim `email` venga incluido explícitamente en el `id_token`:
 
      ![Token configuration Optional claims ID token](./assets/entra_token_configuration.png)
+
+     ![Token configuration Add optional claim ID email](./assets/entra_token_add_email_claim.jpg)
+
+     ![Token configuration Turn on Microsoft Graph email permission prompt](./assets/entra_token_email_permission_prompt.jpg)
 8. Configura tu `.env`:
    ```dotenv
    MICROSOFT_CLIENT_ID=00000000-0000-0000-0000-000000000000
