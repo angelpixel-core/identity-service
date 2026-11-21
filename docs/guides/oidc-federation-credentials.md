@@ -84,10 +84,21 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
    - **Service management reference (optional):** déjalo vacío (solo se usa para enlazar un registro CMDB interno).
 
    ![Formulario Register an application en Microsoft Entra ID](./assets/entra_register_application.jpg)
-3. En la pantalla **Overview** de la app registrada, copia **Application (client) ID** (`MICROSOFT_CLIENT_ID`) y opcionalmente **Directory (tenant) ID** (`MICROSOFT_TENANT_ID`).
-4. Ve a **Manage → Certificates & secrets → + New client secret**, crea un secreto y copia su **Value** (no el *Secret ID*) como `MICROSOFT_CLIENT_SECRET`.
-5. Ve a **Manage → Token configuration / API permissions** y verifica que `openid`, `profile` y `email` estén habilitados (asegura que el claim `email` / `preferred_username` venga en el `id_token`).
-6. Configura tu `.env`:
+4. En la pantalla **Overview** de la app registrada, copia **Application (client) ID** (`MICROSOFT_CLIENT_ID`) y opcionalmente **Directory (tenant) ID** (`MICROSOFT_TENANT_ID`).
+5. Ve a **Manage → Authentication (Preview)**, haz clic en **Edit** sobre la plataforma **Web** y añade `http://localhost:4000/api/v1/auth/federation/microsoft/callback` junto a `:3000`:
+
+   ![Authentication Preview Edit Web Redirect URI](./assets/entra_auth_edit_redirect.jpg)
+
+   ![Edit Redirect URI Web platform 3000 y 4000](./assets/entra_edit_redirect_uris.png)
+
+6. Ve a **Manage → Certificates & secrets → `+ New client secret`**, crea un secreto (`identity-service-dev`) y copia inmediatamente su **Value** (no el *Secret ID*) como `MICROSOFT_CLIENT_SECRET`:
+
+   ![Certificates and secrets New client secret](./assets/entra_new_client_secret.jpg)
+
+   ![Add a client secret form](./assets/entra_add_client_secret_form.png)
+
+7. Ve a **Manage → Token configuration / API permissions** y verifica que `openid`, `profile` y `email` estén habilitados (asegura que el claim `email` / `preferred_username` venga en el `id_token`).
+8. Configura tu `.env`:
    ```dotenv
    MICROSOFT_CLIENT_ID=00000000-0000-0000-0000-000000000000
    MICROSOFT_CLIENT_SECRET=tu-microsoft-client-secret-value
