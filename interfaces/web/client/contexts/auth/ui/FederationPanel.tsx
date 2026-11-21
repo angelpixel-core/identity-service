@@ -272,7 +272,7 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
             className="m3-info-btn"
             aria-label="Información de casos de uso"
             aria-expanded={showUseCaseInfo}
-            title="US-10: Login OIDC Externo · US-11: Account Linking & JIT Provisioning"
+            title={'US-10: Login OIDC Externo\nUS-11: Account Linking & JIT Provisioning'}
             onClick={() => setShowUseCaseInfo((prev) => !prev)}
           >
             i
