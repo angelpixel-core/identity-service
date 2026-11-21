@@ -152,7 +152,7 @@ export class FederationController {
         sessionData = sessionResult;
       }
 
-      res.status(200).json({
+      const responsePayload = {
         status: 'success',
         ...(sessionData
           ? {
@@ -174,7 +174,63 @@ export class FederationController {
           redirectUri: result.statePayload.redirectUri,
           provider: result.statePayload.provider,
         },
-      });
+      };
+
+      const acceptsHtml =
+        req.method === 'GET' &&
+        req.query.format !== 'json' &&
+        Boolean(req.headers.accept?.includes('text/html'));
+
+      if (acceptsHtml) {
+        const serializedPayload = JSON.stringify(responsePayload).replace(/</g, '\\u003c');
+        res.status(200).type('html').send(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Autenticación Federada Completada</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f7fb; color: #1a1c1e; }
+    .card { background: #fff; border-radius: 16px; padding: 24px 28px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 420px; text-align: center; }
+    .btn { display: inline-block; margin-top: 16px; padding: 10px 20px; border-radius: 999px; background: #0b57d0; color: #fff; text-decoration: none; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Autenticación completada</h2>
+    <p>Identidad verificada correctamente. Redirigiendo al portal...</p>
+    <a class="btn" href="/auth">Volver al Portal</a>
+  </div>
+  <script>
+    (function () {
+      var payload = ${serializedPayload};
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'identity-service:federation-callback', payload: payload }, window.location.origin);
+          window.close();
+          return;
+        } catch (e) {}
+      }
+      try {
+        sessionStorage.setItem('identity_federation_last_result', JSON.stringify(payload));
+        if (payload.tokens && payload.tokens.access_token && payload.user) {
+          localStorage.setItem('identity_session', JSON.stringify({
+            token: payload.tokens.access_token,
+            userId: payload.user.id,
+            email: payload.user.email,
+            tenantId: payload.user.tenantId,
+            roles: payload.user.roles
+          }));
+        }
+      } catch (e) {}
+      window.location.replace('/auth');
+    })();
+  </script>
+</body>
+</html>`);
+        return;
+      }
+
+      res.status(200).json(responsePayload);
     } catch (err: any) {
       const message = err.message || 'Federation callback processing failed';
       const status = message.includes('Anti-CSRF') || message.includes('state') || message.includes('required')

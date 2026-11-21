@@ -27,6 +27,37 @@ export interface FederationPanelProps {
   onFederatedSession: (session: AuthSession) => void;
 }
 
+interface FederatedCallbackResult {
+  readonly accessToken?: string;
+  readonly userId?: string;
+  readonly email?: string;
+  readonly tenantId?: string;
+  readonly roles?: string[];
+  readonly isNewUser?: boolean;
+  readonly linked?: boolean;
+  readonly tokens?: { readonly access_token?: string };
+  readonly user?: {
+    readonly id?: string;
+    readonly email?: string;
+    readonly tenantId?: string;
+    readonly roles?: string[];
+  };
+  readonly userProfile?: {
+    readonly provider?: 'google' | 'microsoft';
+    readonly externalSubjectId?: string;
+    readonly email?: string;
+    readonly emailVerified?: boolean;
+    readonly name?: string;
+    readonly picture?: string;
+  };
+  readonly statePayload?: {
+    readonly tenantId?: string;
+    readonly provider?: 'google' | 'microsoft';
+  };
+  readonly error?: string;
+  readonly error_description?: string;
+}
+
 const DEFAULT_DEV_REDIRECT_URI = 'https://portal.angelpixel.io/callback';
 
 function buildLiveRedirectUri(selectedProvider: 'google' | 'microsoft'): string {
@@ -50,6 +81,27 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
   const [busy, setBusy] = useState(false);
   const [providerStatus, setProviderStatus] = useState<FederationStatusPayload | null>(null);
 
+  const applyFederatedPayload = (payload: FederatedCallbackResult) => {
+    setResult(payload);
+    setError(null);
+    const token = payload.tokens?.access_token ?? payload.accessToken;
+    const resolvedUserId = payload.user?.id ?? payload.userId;
+    const resolvedEmail = payload.user?.email ?? payload.email;
+    const resolvedTenantId =
+      payload.user?.tenantId ?? payload.tenantId ?? payload.statePayload?.tenantId ?? tenantId;
+    const resolvedRoles = payload.user?.roles ?? payload.roles;
+
+    if (token && resolvedUserId && resolvedEmail) {
+      onFederatedSession({
+        token,
+        userId: resolvedUserId,
+        email: resolvedEmail,
+        tenantId: resolvedTenantId,
+        roles: resolvedRoles,
+      });
+    }
+  };
+
   useEffect(() => {
     let active = true;
     void apiRequest<FederationStatusPayload>('/api/v1/auth/federation/status').then((res) => {
@@ -61,8 +113,32 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
         }
       }
     });
+
+    try {
+      const stored = window.sessionStorage.getItem('identity_federation_last_result');
+      if (stored) {
+        window.sessionStorage.removeItem('identity_federation_last_result');
+        const parsed = JSON.parse(stored) as FederatedCallbackResult;
+        applyFederatedPayload(parsed);
+      }
+    } catch {
+      // Ignore invalid sessionStorage payload
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (
+        event.origin === window.location.origin &&
+        event.data?.type === 'identity-service:federation-callback' &&
+        event.data?.payload
+      ) {
+        applyFederatedPayload(event.data.payload as FederatedCallbackResult);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
     return () => {
       active = false;
+      window.removeEventListener('message', handleMessage);
     };
   }, []);
 
@@ -133,29 +209,30 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
     }
   };
 
+  const handleOpenLiveLogin = () => {
+    if (!authorizationUrl) return;
+    const popup = window.open(authorizationUrl, 'oidc-federation-login', 'width=540,height=680');
+    if (!popup) {
+      window.location.assign(authorizationUrl);
+    }
+  };
+
   const handleProcessCallback = async () => {
     setBusy(true);
     setError(null);
     try {
-      const res = await apiRequest<{
-        accessToken?: string;
-        userId?: string;
-        email?: string;
-        tenantId?: string;
-        roles?: string[];
-        tokens?: { access_token?: string };
-        user?: { id?: string; email?: string; tenantId?: string; roles?: string[] };
-        error?: string;
-        error_description?: string;
-      }>(`/api/v1/auth/federation/${provider}/callback`, {
-        method: 'POST',
-        body: { code: authCode, state: stateToken },
-      });
+      const res = await apiRequest<FederatedCallbackResult>(
+        `/api/v1/auth/federation/${provider}/callback`,
+        {
+          method: 'POST',
+          body: { code: authCode, state: stateToken },
+        }
+      );
 
       setTraceparent(res.trace.traceparent);
-      setResult(res.data);
 
       if (!res.ok) {
+        setResult(res.data);
         setError(
           res.data?.error_description ??
             res.data?.error ??
@@ -164,25 +241,17 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
         return;
       }
 
-      const token = res.data?.tokens?.access_token ?? res.data?.accessToken;
-      const resolvedUserId = res.data?.user?.id ?? res.data?.userId;
-      const resolvedEmail = res.data?.user?.email ?? res.data?.email;
-      const resolvedTenantId = res.data?.user?.tenantId ?? res.data?.tenantId ?? tenantId;
-      const resolvedRoles = res.data?.user?.roles ?? res.data?.roles;
-
-      if (token && resolvedUserId && resolvedEmail) {
-        onFederatedSession({
-          token,
-          userId: resolvedUserId,
-          email: resolvedEmail,
-          tenantId: resolvedTenantId,
-          roles: resolvedRoles,
-        });
+      if (res.data) {
+        applyFederatedPayload(res.data);
       }
     } finally {
       setBusy(false);
     }
   };
+
+  const federatedResult =
+    result && typeof result === 'object' ? (result as FederatedCallbackResult) : null;
+  const activeProfile = federatedResult?.userProfile;
 
   return (
     <div className="m3-stack">
@@ -258,15 +327,14 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
             message={`Abre la URL oficial del proveedor para autenticarte y recibir el código real en ${redirectUri}.`}
           />
           <div className="m3-actions-row">
-            <a
-              href={authorizationUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="m3-button m3-button--tonal"
+            <M3Button
+              variant="tonal"
+              onClick={handleOpenLiveLogin}
+              disabled={busy}
               data-testid="federation-live-auth-link"
             >
               Abrir Login en {provider === 'google' ? 'Google' : 'Microsoft Entra ID'}
-            </a>
+            </M3Button>
           </div>
         </div>
       )}
@@ -297,6 +365,87 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
       </div>
 
       {error && <M3AlertBanner severity="error" title="Error de Federación" message={error} />}
+
+      {activeProfile && (
+        <div
+          className="m3-card m3-stack"
+          data-testid="federated-identity-card"
+          style={{ padding: '1rem', borderRadius: '16px', gap: '0.75rem' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+            {activeProfile.picture ? (
+              <img
+                src={activeProfile.picture}
+                alt={activeProfile.name || activeProfile.email || 'Federated avatar'}
+                referrerPolicy="no-referrer"
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '999px',
+                  objectFit: 'cover',
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '999px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 600,
+                  background: 'var(--md-sys-color-primary-container, #d3e3fd)',
+                  color: 'var(--md-sys-color-on-primary-container, #041e49)',
+                }}
+              >
+                {(activeProfile.name || activeProfile.email || 'U').slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: '1rem' }}>
+                {activeProfile.name || activeProfile.email}
+              </div>
+              <div className="m3-workspace-subtitle" style={{ margin: 0 }}>
+                {activeProfile.email}
+              </div>
+            </div>
+          </div>
+
+          <div className="m3-chip-row">
+            <M3Chip
+              label={
+                activeProfile.provider === 'microsoft' ? 'Microsoft Entra ID' : 'Google OIDC'
+              }
+              tone="primary"
+            />
+            <M3Chip
+              label={activeProfile.emailVerified ? 'Correo Verificado' : 'Correo No Verificado'}
+              tone={activeProfile.emailVerified ? 'success' : 'warning'}
+            />
+            <M3Chip
+              label={`Tenant: ${
+                federatedResult?.user?.tenantId ??
+                federatedResult?.statePayload?.tenantId ??
+                tenantId
+              }`}
+              tone="neutral"
+            />
+            {typeof federatedResult?.isNewUser === 'boolean' && (
+              <M3Chip
+                label={
+                  federatedResult.isNewUser
+                    ? 'Aprovisionamiento JIT (Nuevo Usuario)'
+                    : federatedResult.linked
+                      ? 'Account Linking (Vinculado)'
+                      : 'Identidad Federada Existente'
+                }
+                tone="success"
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {result !== null && (
         <M3JsonViewer
