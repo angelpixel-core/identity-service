@@ -638,6 +638,20 @@ npm run db:reset
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-04`)
+
+1. **Prerrequisitos:** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos, con una sesión comercial (`acme-corp`) guardada en `localStorage` (`identity_session`) y el cliente confidencial `m2m-service-app` sembrado.
+2. **Caso Positivo (Emisión M2M `client_credentials`):**
+   - Abre [`http://localhost:3000/tenant`](http://localhost:3000/tenant) y selecciona la pestaña **`M2M Playground`**.
+   - Ingresa **Client ID** = `m2m-service-app`, **Client Secret** = el secreto confidencial del cliente, y **Scopes Solicitados** = `identity:read`.
+   - Pulsa **`Solicitar Token M2M`** → invoca `POST /api/v1/oauth2/token` (`grant_type: "client_credentials"`) y muestra `access_token`, `token_type: "Bearer"` y `scope` en **Respuesta Token M2M** (`M3JsonViewer`).
+3. **Caso Negativo (Scope No Autorizado o Secreto Inválido):**
+   - Cambia **Scopes Solicitados** a `system:root` (o ingresa un **Client Secret** incorrecto) y pulsa **`Solicitar Token M2M`** → el servidor responde `400`/`401` (`invalid_scope` / `invalid_client`) y se renderiza `M3AlertBanner` **`Error M2M`**.
+4. **Verificación Técnica (`Network` & `traceparent`):** Comprueba las cabeceras `X-Request-ID` y `traceparent` W3C en **DevTools → Network** y el badge de traza en **Respuesta Token M2M**.
+5. **Trazabilidad E2E:** `tests/e2e/web/tenant_console.spec.tsx` (Scenario 3).
+
+---
+
 ### 5. Cobertura de Pruebas Automatizadas
 
 El flujo completo de Client Credentials M2M está certificado por la suite de pruebas de integración:
@@ -650,18 +664,6 @@ npx jest tests/integration/identity/interfaces/test_oauth2_token_m2m.ts
 - **Validaciones de Protocolo:** Rechazo ante `grant_type` no soportado o ausencia de `client_id`.
 - **Gobernanza de Clientes:** Rechazo si un cliente público intenta el flujo M2M o si el cliente está desactivado.
 - **Defensa en Profundidad:** Rechazo de scopes no autorizados y redacción de secretos en eventos de auditoría.
-
----
-
-## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
-
-La superficie **`/tenant`** (`US-25`, Material Design 3) centraliza la gobernanza de aplicaciones OAuth2 del inquilino autenticado:
-
-1. Navegar a `http://localhost:3000/tenant` con una sesión comercial activa.
-2. En la pestaña **Clientes & CORS**, el panel consulta `GET /api/v1/oauth2/clients` listando aplicaciones registradas sin exponer `clientSecretHash` y permite validar orígenes CORS contra `POST /api/v1/oauth2/clients/validate`.
-3. En la pestaña **M2M Playground**, el desarrollador ejecuta flujos `client_credentials` en vivo contra `POST /oauth2/token` e inspecciona los claims del JWT emitido.
-
-![Consola /tenant Clientes & M2M en Material Design 3](./assets/screenshots/ui_tenant_clients_m2m.png)
 
 ---
 
