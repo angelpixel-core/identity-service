@@ -27,12 +27,13 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
 > **No necesitas habilitar ninguna API en "Biblioteca de APIs"** (tampoco `Cloud OAuth Service API`). Ve directamente al menú lateral **APIs y servicios** (*APIs & Services*) o **Google Auth Platform**.
 
 1. Ingresa a [Google Cloud Console](https://console.cloud.google.com/) y selecciona o crea un proyecto.
-2. Ve a **APIs y servicios → Pantalla de consentimiento de OAuth** (*APIs & Services → OAuth consent screen*, o **Google Auth Platform → Público / Branding**):
-   - Elige **Externo** (*External*) o **Interno** (*Internal*, si usas Google Workspace corporativo).
-   - Completa el nombre de la aplicación (`Identity Service Portal`) y correos de contacto.
-   - En **Permisos / Scopes**, añade los scopes estándar OIDC: `openid`, `email`, `profile`.
-   - Si la app está en estado *Testing* (*Pruebas*), agrega tu correo en **Usuarios de prueba** (*Test users*).
+2. Ve a **APIs y servicios → Pantalla de consentimiento de OAuth** (*APIs & Services → OAuth consent screen*, o en el nuevo menú **Google Auth Platform**):
+   - En **Público** (*Audience*): elige **Externo** (*External*) o **Interno** (*Internal*, si usas Google Workspace corporativo). Si la app está en estado *Pruebas* (*Testing*), agrega tu correo en **Usuarios de prueba** (*Test users*).
+   - En **Acceso a los datos** (*Data access*): haz clic en **Agregar o quitar permisos** (*Add or remove scopes*) y añade `openid`, `.../auth/userinfo.email` y `.../auth/userinfo.profile`.
 3. Ve a **APIs y servicios → Credenciales → + Crear credenciales → ID de cliente de OAuth** (*Credentials → + Create Credentials → OAuth client ID*, o **Google Auth Platform → Clientes → Crear cliente**):
+
+   ![Crear ID de cliente de OAuth en Google Cloud Console](./assets/google_oauth_client_menu.jpg)
+
    - **Tipo de aplicación (*Application type*):** `Aplicación web` (*Web application*).
    - **Orígenes de JavaScript autorizados (*Authorized JavaScript origins*):**
      - Local: `http://localhost:3000` y `http://localhost:4000`
