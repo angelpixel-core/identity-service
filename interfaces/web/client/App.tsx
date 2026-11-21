@@ -29,15 +29,25 @@ export function App() {
   };
 
   const fetchProfile = async (): Promise<UserProfile> => {
-    if (!session) {
+    let activeSession = session;
+    try {
+      const latestStored = localStorage.getItem('identity_session');
+      if (latestStored) {
+        activeSession = JSON.parse(latestStored) as AuthSession;
+      }
+    } catch {
+      throw new Error('Invalid identity_session in localStorage');
+    }
+
+    if (!activeSession) {
       throw new Error('No active session');
     }
 
     const response = await fetch('/api/v1/auth/me', {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${session.token}`,
-        'x-tenant-id': session.tenantId,
+        Authorization: `Bearer ${activeSession.token}`,
+        'x-tenant-id': activeSession.tenantId,
       },
     });
 

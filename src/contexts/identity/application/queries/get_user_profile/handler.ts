@@ -18,12 +18,19 @@ export class GetUserProfileQueryHandler {
   ) {}
 
   public async execute(query: GetUserProfileQuery): Promise<UserProfileDTO> {
+    const { profile } = await this.executeWithMeta(query);
+    return profile;
+  }
+
+  public async executeWithMeta(
+    query: GetUserProfileQuery
+  ): Promise<{ readonly profile: UserProfileDTO; readonly cacheStatus: 'HIT' | 'MISS' }> {
     const cacheKey = `user_profile:${query.tenantId}:${query.userId}`;
 
     // 1. Intento de lectura desde caché
     const cachedProfile = await this.cacheProvider.get<UserProfileDTO>(cacheKey);
     if (cachedProfile) {
-      return cachedProfile;
+      return { profile: cachedProfile, cacheStatus: 'HIT' };
     }
 
     // 2. Cache Miss: Consulta a la persistencia respetando el aislamiento multi-tenant
@@ -46,7 +53,7 @@ export class GetUserProfileQueryHandler {
     // 4. Poblar caché con TTL
     await this.cacheProvider.set(cacheKey, profileDto, this.defaultTtlSeconds);
 
-    return profileDto;
+    return { profile: profileDto, cacheStatus: 'MISS' };
   }
 }
 

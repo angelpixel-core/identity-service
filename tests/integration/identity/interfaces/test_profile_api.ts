@@ -32,12 +32,22 @@ describe('Integration API: GET /api/v1/auth/me', () => {
         .set('x-tenant-id', 'acme-corp');
 
       expect(response.status).toBe(200);
+      expect(response.headers['x-cache']).toBe('MISS');
       expect(response.body).toHaveProperty('id', userId);
       expect(response.body).toHaveProperty('email', uniqueEmail);
       expect(response.body).toHaveProperty('tenantId', 'acme-corp');
       expect(response.body).toHaveProperty('createdAt');
       expect(response.body).toHaveProperty('updatedAt');
       expect(response.body).not.toHaveProperty('passwordHash');
+
+      // 3. Second request must hit Redis/in-memory cache
+      const cachedResponse = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${token}`)
+        .set('x-tenant-id', 'acme-corp');
+
+      expect(cachedResponse.status).toBe(200);
+      expect(cachedResponse.headers['x-cache']).toBe('HIT');
     });
   });
 

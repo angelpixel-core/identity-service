@@ -76,7 +76,16 @@ export class AuthController {
         return;
       }
 
-      const profile = await this.getProfileHandler.execute({ userId, tenantId });
+      const { profile, cacheStatus } = await this.getProfileHandler.executeWithMeta({
+        userId,
+        tenantId,
+      });
+      res.setHeader('X-Cache', cacheStatus);
+      if (process.env.NODE_ENV !== 'test') {
+        console.info(
+          `[Cache-Aside] GET /api/v1/auth/me -> X-Cache=${cacheStatus} tenant=${tenantId} userId=${userId}`
+        );
+      }
       res.status(200).json(profile);
     } catch (error: any) {
       if (error?.message?.includes('not found')) {

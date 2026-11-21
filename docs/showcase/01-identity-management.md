@@ -507,9 +507,9 @@ GET http://localhost:4000/api/v1/auth/me
 
 1. **Prerrequisitos:** Haber completado el registro de `US-01` (o contar con `identity_session` activo en `localStorage` para `acme-corp`).
 2. **Flujo Positivo (Perfil Autenticado & Cache-Aside):**
-   - Al completar el registro en [`http://localhost:3000/auth`](http://localhost:3000/auth), la pestaña **Cuenta** reemplaza `RegisterForm` por **`UserProfileCard`** y dispara automáticamente `GET /api/v1/auth/me` enviando `Authorization: Bearer <JWT>` y `X-Tenant-ID: acme-corp`.
-   - Pulsa el botón de recarga del perfil para observar el segundo hit servido desde Redis (`Cache Hit`) y verifica en pantalla el `userId`, `email` y `tenantId`.
-3. **Caso Negativo (Token Expirado o Alterado):** En **DevTools → Application → Local Storage**, altera un carácter del `token` dentro de `identity_session` y recarga el perfil → la tarjeta muestra el banner de error (`401 Unauthorized` / `403 Forbidden`).
+   - Al completar el registro en [`http://localhost:3000/auth`](http://localhost:3000/auth), la pestaña **Cuenta** reemplaza `RegisterForm` por **`UserProfileCard`** y dispara automáticamente `GET /api/v1/auth/me` (`X-Cache: MISS` en la primera lectura).
+   - Pulsa el botón **`Reload`** de la tarjeta para disparar la segunda consulta y verificar en **DevTools → Network → `me` → Response Headers** la cabecera **`X-Cache: HIT`** (y en la terminal de la API o `npm run docker:logs` la línea `[Cache-Aside] GET /api/v1/auth/me -> X-Cache=HIT`).
+3. **Caso Negativo (Token Expirado o Alterado):** En **DevTools → Application → Local Storage**, altera un carácter del campo `token` dentro de `identity_session` (preservando JSON válido) y pulsa **`Reload`** → `GET /api/v1/auth/me` responde `401 Unauthorized` y la tarjeta renderiza el banner de error (`role="alert"`) con el botón **`Retry`**.
 4. **Verificación Técnica:** En **DevTools → Network**, inspecciona las cabeceras de `GET /api/v1/auth/me` confirmando `X-Request-ID` / `traceparent` W3C.
 5. **Trazabilidad E2E:** `tests/e2e/web/user_profile_card.spec.tsx`.
 
