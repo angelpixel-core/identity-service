@@ -65,15 +65,25 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
 ## 3. Microsoft Entra ID (Azure Portal)
 
 1. Ingresa al [Centro de administración de Microsoft Entra](https://entra.microsoft.com/) (o [Azure Portal](https://portal.azure.com/) → **Microsoft Entra ID**).
-2. Ve a **Identity → Applications → App registrations → + New registration**:
+2. En el menú lateral izquierdo, ve a **Entra ID → App registrations**:
+
+   ![Menú Entra ID App registrations](./assets/entra_nav_app_registrations.jpg)
+
+3. Haz clic en **`+ New registration`**:
+
+   ![Listado App registrations y botón New registration](./assets/entra_app_registrations_list.jpg)
+
    - **Name:** `identity-service`
    - **Supported account types:**
-     - *Accounts in any organizational directory and personal Microsoft accounts* (para `MICROSOFT_TENANT_ID=common`), o
-     - *Accounts in this organizational directory only* (para un `MICROSOFT_TENANT_ID` específico).
-   - **Redirect URI (Web):**
+     - **`Any Entra ID Tenant + Personal Microsoft accounts`** (recomendado para `MICROSOFT_TENANT_ID=common`, permite cuentas corporativas Entra ID y cuentas personales `@hotmail.com`/`@outlook.com`), o
+     - *Single tenant only* (solo si usarás un `MICROSOFT_TENANT_ID` UUID específico).
+   - **Redirect URI (optional):** selecciona la plataforma **`Web`** (no `SPA` ni `Public client`, ya que el backend Express intercambia el código con `MICROSOFT_CLIENT_SECRET`):
      - Local (vía proxy Vite): `http://localhost:3000/api/v1/auth/federation/microsoft/callback`
-     - Local (API directa): `http://localhost:4000/api/v1/auth/federation/microsoft/callback`
+     - Local (API directa, añadir luego en *Manage → Authentication*): `http://localhost:4000/api/v1/auth/federation/microsoft/callback`
      - Producción: `https://<tu-dominio>/api/v1/auth/federation/microsoft/callback`
+   - **Service management reference (optional):** déjalo vacío (solo se usa para enlazar un registro CMDB interno).
+
+   ![Formulario Register an application en Microsoft Entra ID](./assets/entra_register_application.jpg)
 3. En la pantalla **Overview** de la app registrada, copia **Application (client) ID** (`MICROSOFT_CLIENT_ID`) y opcionalmente **Directory (tenant) ID** (`MICROSOFT_TENANT_ID`).
 4. Ve a **Manage → Certificates & secrets → + New client secret**, crea un secreto y copia su **Value** (no el *Secret ID*) como `MICROSOFT_CLIENT_SECRET`.
 5. Ve a **Manage → Token configuration / API permissions** y verifica que `openid`, `profile` y `email` estén habilitados (asegura que el claim `email` / `preferred_username` venga en el `id_token`).
