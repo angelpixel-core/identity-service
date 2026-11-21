@@ -308,6 +308,19 @@ Snapshots:   0 total
 Time:        1.792 s
 ```
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-07`)
+
+1. **Prerrequisitos:** Backend activo en `:4000` y frontend Vite en `:3000`. Abre [`http://localhost:3000/auth`](http://localhost:3000/auth).
+2. **Paso a Paso:**
+   - Selecciona la pestaña **`OIDC & JWKS`**.
+   - Pulsa **`Consultar Discovery & JWKS`**.
+3. **Resultado Esperado & Verificación:**
+   - El cliente ejecuta en paralelo `GET /.well-known/openid-configuration` y `GET /.well-known/jwks.json` con `X-Request-ID` / `traceparent` W3C.
+   - El componente `M3JsonViewer` muestra `issuer`, `authorization_endpoint`, `token_endpoint` y el arreglo `keys` (RSA-2048 `kid`, `n`, `e`) sin exponer ninguna clave privada.
+4. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 2).
+
+![Superficie /auth OIDC Discovery & JWKS](./assets/screenshots/ui_auth_oidc_jwks.png)
+
 ---
 
 ## 🛡️ US-08: Flujo de Autorización OAuth2 con PKCE (RFC 7636) & Canje Criptográfico
@@ -626,6 +639,17 @@ npx jest tests/acceptance/step_defs/test_oauth2_pkce_flow_steps.ts
 - **Invariante 1:** Rechazo obligatorio del método degradado `plain`, admitiendo exclusivamente `S256`.
 - **Invariante 2:** Validación en tiempo constante (`crypto.timingSafeEqual`) del par `code_verifier` / `code_challenge`.
 - **Invariante 3:** Consumo atómico de un solo uso (*Single-Use*) y expiración estricta a los 60 segundos.
+
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-08`)
+
+1. **Prerrequisitos:** Backend (`:4000`) y Vite (`:3000`) activos con el cliente público `portal-web` sembrado (`npm run db:reset` o modo in-memory).
+2. **Paso a Paso (Flujo Positivo PKCE S256):**
+   - En [`http://localhost:3000/auth`](http://localhost:3000/auth), abre la pestaña **`PKCE & Sesiones`**.
+   - Verifica **Client ID** (`portal-web`) y **Redirect URI** (`https://portal.angelpixel.io/callback`).
+   - Pulsa **`Generar Par PKCE S256`**: el navegador genera `code_verifier` y `code_challenge` vía WebCrypto (`RFC 7636`) y los muestra en `Estado PKCE (WebCrypto S256)`.
+   - Pulsa **`Ejecutar Authorize + Token Exchange`**: invoca `GET /oauth2/authorize` y canjea el `code` en `POST /oauth2/token`, mostrando `access_token`, `id_token` y `refresh_token`.
+3. **Caso Negativo:** Cambiar `Redirect URI` a un dominio no registrado (e.g., `https://evil.example/cb`) y pulsar **`Ejecutar Authorize + Token Exchange`** muestra `M3AlertBanner` de error OAuth2 (`invalid_redirect_uri` / `400`).
+4. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 3).
 
 ---
 
@@ -974,16 +998,14 @@ npx jest tests/acceptance/step_defs/test_refresh_token_rotation_steps.ts
 - **Invariante 2:** Cada rotación consume irreversiblemente el token padre y emite un único hijo en la misma `familyId`.
 - **Invariante 3:** Cualquier intento de reutilizar un token consumido dispara la revocación atómica de toda la familia (`revokeFamily`) y emite alerta de auditoría de seguridad.
 
----
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-09`)
 
-## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
-
-En **`/auth`** (`US-24`), las pestañas **OIDC & JWKS** y **PKCE & Sesiones** exponen los flujos estándar RFC 6749 / RFC 7636 / RFC 7009:
-
-1. **OIDC & JWKS (`US-07`):** Consulta en vivo `GET /.well-known/openid-configuration` y `GET /.well-known/jwks.json`, renderizando las llaves públicas RSA-2048 (`kid`) sin material privado.
-2. **PKCE & Sesiones (`US-08`, `US-09`):** Genera un par `code_verifier` / `code_challenge` (`S256`), intercambia el código en `POST /oauth2/token`, rota la familia de sesiones con `POST /oauth2/refresh` y revoca en caliente vía `POST /oauth2/revoke`.
-
-![Superficie /auth OIDC Discovery & JWKS](./assets/screenshots/ui_auth_oidc_jwks.png)
+1. **Prerrequisitos:** Haber emitido un `refresh_token` en la pestaña **`PKCE & Sesiones`** (`US-08`), tras lo cual se habilitan los botones **`Rotar Refresh Token`** y **`Revocar Sesión`**.
+2. **Paso a Paso (Rotación & Revocación):**
+   - Pulsa **`Rotar Refresh Token`**: dispara `POST /oauth2/refresh` y actualiza en `Respuesta OAuth2 Token / Session` el nuevo par `access_token` + `refresh_token` rotado (invalidando el anterior).
+   - Pulsa **`Revocar Sesión`**: dispara `POST /oauth2/revoke` (`RFC 7009`) y limpia la familia de sesión activa.
+3. **Caso Negativo (Detección de Reúso / Sesión Revocada):** Tras revocar la sesión, si se reintenta rotar con el token revocado en Network/cURL, el servidor responde `401 Unauthorized` y revoca toda la familia.
+4. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 3).
 
 ![Superficie /auth PKCE S256 & Sesiones Refresh](./assets/screenshots/ui_auth_pkce_sessions.png)
 

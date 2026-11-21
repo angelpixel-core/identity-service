@@ -205,6 +205,25 @@ POST http://localhost:4000/api/v1/auth/register
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-01`)
+
+1. **Prerrequisitos:** Inicia el backend (`npm run dev:api` en `:4000`) y la aplicación Vite (`npm run dev:web` en `:3000`). Asegúrate de no tener una sesión previa activa (si existe, pulsa `Cerrar sesión` o limpia `localStorage.removeItem('identity_session')`).
+2. **Navegación:** Abre [`http://localhost:3000/auth`](http://localhost:3000/auth). `BoundedShell` renderizará la superficie centrada `/auth` en la pestaña **Cuenta** (`RegisterForm`, sin menús de `/tenant` ni `/platform`).
+3. **Caso Negativo (Validación en Cliente `< 8` caracteres):**
+   - **Tenant ID:** `acme-corp`
+   - **Email:** `lead.architect@acme-corp.com`
+   - **Password:** `1234`
+   - Pulsa **`Create Account`**. La UI bloquea el envío sin llamar al servidor y muestra la alerta inline de validación de contraseña mínima.
+4. **Caso Positivo (Registro Multi-Tenant `201 Created`):**
+   - Cambia **Password** a `SuperSecretPassword2026!` y pulsa **`Create Account`**.
+   - En **DevTools → Network**, verifica `POST /api/v1/auth/register` (`201 Created`) sin `password_hash` en el JSON de respuesta. En **Application → Local Storage**, confirma la clave `identity_session` con el JWT y `tenantId: "acme-corp"`.
+5. **Caso Negativo (Duplicidad `409 Conflict`):** Cierra sesión (`Cerrar sesión`) e intenta registrar nuevamente el mismo correo en `acme-corp` → el formulario muestra el mensaje de error devuelto por el servidor (`409`).
+6. **Trazabilidad E2E:** `tests/e2e/web/register_form.spec.tsx` y `tests/e2e/web/auth_portal_oidc_federation.spec.tsx`.
+
+![Formulario de Registro Multi-Tenant en Material Design 3](./assets/screenshots/us01_registration_form.png)
+
+---
+
 ### 4. Cobertura de Pruebas Automatizadas
 
 El comportamiento de registro multi-tenant y manejo seguro de contraseñas está certificado por la suite de pruebas unitarias:
@@ -484,6 +503,20 @@ GET http://localhost:4000/api/v1/auth/me
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-02`)
+
+1. **Prerrequisitos:** Haber completado el registro de `US-01` (o contar con `identity_session` activo en `localStorage` para `acme-corp`).
+2. **Flujo Positivo (Perfil Autenticado & Cache-Aside):**
+   - Al completar el registro en [`http://localhost:3000/auth`](http://localhost:3000/auth), la pestaña **Cuenta** reemplaza `RegisterForm` por **`UserProfileCard`** y dispara automáticamente `GET /api/v1/auth/me` enviando `Authorization: Bearer <JWT>` y `X-Tenant-ID: acme-corp`.
+   - Pulsa el botón de recarga del perfil para observar el segundo hit servido desde Redis (`Cache Hit`) y verifica en pantalla el `userId`, `email` y `tenantId`.
+3. **Caso Negativo (Token Expirado o Alterado):** En **DevTools → Application → Local Storage**, altera un carácter del `token` dentro de `identity_session` y recarga el perfil → la tarjeta muestra el banner de error (`401 Unauthorized` / `403 Forbidden`).
+4. **Verificación Técnica:** En **DevTools → Network**, inspecciona las cabeceras de `GET /api/v1/auth/me` confirmando `X-Request-ID` / `traceparent` W3C.
+5. **Trazabilidad E2E:** `tests/e2e/web/user_profile_card.spec.tsx`.
+
+![Tarjeta de Perfil Autenticado en /auth Cuenta](./assets/screenshots/ui_auth_account.png)
+
+---
+
 ### 5. Cobertura de Pruebas Automatizadas
 
 El slice de consulta y el patrón Cache-Aside están garantizados por pruebas de integración y unitarias:
@@ -495,18 +528,6 @@ npx jest tests/unit/identity/application/test_get_user_profile_handler.ts tests/
 - **Prueba 1 (Cache Miss):** Verifica la consulta inicial a PostgreSQL, la sanitización del DTO y el guardado en caché con clave `user_profile:{tenantId}:{userId}` y TTL de 300s.
 - **Prueba 2 (Cache Hit):** Simula peticiones subsecuentes y confirma que la respuesta se sirve directamente desde memoria sin interactuar con la base de datos.
 - **Prueba 3 (Seguridad Multi-Tenant):** Valida que el middleware rechaza con `403 Forbidden` cualquier discrepancia de inquilino y con `401 Unauthorized` tokens corruptos o expirados.
-
----
-
-## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
-
-La superficie **`/auth`** (`US-24`, Material Design 3) expone el flujo completo de registro y gestión de perfil multi-tenant sobre el navegador sin menús administrativos (`BoundedShell` centrado):
-
-1. Abrir `http://localhost:3000/auth` en la pestaña **Cuenta**.
-2. Completar **Tenant ID**, **Correo electrónico** y **Contraseña** (`Argon2id`/`bcrypt`), disparando `POST /api/v1/auth/register`.
-3. Al persistirse la sesión en `localStorage`, el portal renderiza la tarjeta **UserProfileCard** alimentada por `GET /api/v1/auth/me` (con propagación automática de `X-Request-ID` y `traceparent` W3C).
-
-![Superficie /auth Cuenta en Material Design 3](./assets/screenshots/ui_auth_account.png)
 
 ---
 

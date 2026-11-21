@@ -237,6 +237,15 @@ npx jest tests/unit/identity/infrastructure/federation/ tests/unit/identity/appl
 - **Invariante 2 (`JwksTokenVerifier`):** Cacheo de claves públicas, refresco automático ante rotación de `kid` con *cooldown* y *exponential backoff*.
 - **Invariante 3 (Adaptadores Google y Microsoft):** Validación estricta de `nonce`, `aud`, `iss` y normalización de claims (`oid`/`sub`, `preferred_username`/`upn`).
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-10`)
+
+1. **Prerrequisitos:** Backend (`:4000`) y Vite (`:3000`) activos. Abre [`http://localhost:3000/auth`](http://localhost:3000/auth) y selecciona la pestaña **`Federación`**.
+2. **Paso a Paso (Inicio OIDC Externo & `state` Anti-CSRF):**
+   - Verifica **Tenant ID** (`acme-corp`) y **Redirect URI**.
+   - Pulsa **`Continuar con Google`** (o **`Continuar con Microsoft Entra ID`**).
+   - El cliente invoca `GET /api/v1/auth/federation/:provider/login`, autocompleta el campo **`Anti-CSRF State`** firmado con HMAC-SHA256 y muestra la `authorizationUrl` generada con `nonce` y `state`.
+3. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4).
+
 ---
 
 ## 🔗 US-11: Vinculación Automática de Cuentas (Account Linking) & Aprovisionamiento JIT
@@ -551,15 +560,14 @@ npx jest tests/acceptance/step_defs/test_federated_account_linking_steps.ts
 - **Invariante 2:** Vinculación multi-proveedor (Google + Microsoft Entra ID) hacia una misma identidad local por correo electrónico verificado.
 - **Invariante 3:** Rechazo estricto de correos con `email_verified: false` y bloqueo de violaciones cross-tenant con registro de auditoría forense.
 
----
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-11`)
 
-## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
-
-La pestaña **Federación** de **`/auth`** (`US-24`, conectada a `US-10` & `US-11`) permite iniciar y completar flujos de identidad externa:
-
-1. Abrir `http://localhost:3000/auth` y seleccionar la pestaña **Federación**.
-2. Elegir el proveedor **Google OIDC** o **Microsoft Entra ID** para obtener la URL de autorización con `state`/`nonce` anti-CSRF (`GET /api/v1/auth/federation/:provider/login`).
-3. Simular o completar el callback (`POST /api/v1/auth/federation/:provider/callback`) para verificar el aprovisionamiento Just-In-Time (JIT) y la persistencia de sesión nativa.
+1. **Prerrequisitos:** Haber iniciado el flujo en la pestaña **`Federación`** (`US-10`) obteniendo un **`Anti-CSRF State`** válido.
+2. **Paso a Paso (Aprovisionamiento JIT):**
+   - Ingresa un **`Authorization Code`** válido en el campo correspondiente.
+   - Pulsa **`Procesar Callback JIT (google)`** (o `microsoft`): invoca `POST /api/v1/auth/federation/:provider/callback`, vincula o crea la identidad local y persiste `identity_session` en `localStorage`.
+3. **Caso Negativo (Anti-CSRF `state` Manipulado):** Modifica manualmente un carácter del campo **`Anti-CSRF State`** y pulsa **`Procesar Callback JIT`** → el servidor rechaza con `400`/`403` y la UI muestra `M3AlertBanner` (`Error de Federación`).
+4. **Trazabilidad E2E:** `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 4).
 
 ![Superficie /auth Federación Externa en Material Design 3](./assets/screenshots/ui_auth_federation.png)
 
