@@ -97,7 +97,14 @@ El servicio lee las siguientes variables desde `.env` (o secretos de Kubernetes 
 
    ![Add a client secret form](./assets/entra_add_client_secret_form.png)
 
-7. Ve a **Manage → Token configuration / API permissions** y verifica que `openid`, `profile` y `email` estén habilitados (asegura que el claim `email` / `preferred_username` venga en el `id_token`).
+7. Configura los scopes OIDC y el claim `email` en el `id_token`:
+   - En **Manage → API permissions**, haz clic en **`+ Add a permission` → `Microsoft Graph` → `Delegated permissions` → `OpenId permissions`** y marca `openid`, `profile` y `email`:
+
+     ![API permissions Microsoft Graph OpenId permissions](./assets/entra_api_permissions.png)
+
+   - En **Manage → Token configuration**, haz clic en **`+ Add optional claim` → `ID`** y marca `email` (y opcionalmente `preferred_username`) para garantizar que el claim `email` venga incluido explícitamente en el `id_token`:
+
+     ![Token configuration Optional claims ID token](./assets/entra_token_configuration.png)
 8. Configura tu `.env`:
    ```dotenv
    MICROSOFT_CLIENT_ID=00000000-0000-0000-0000-000000000000
