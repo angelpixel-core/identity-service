@@ -68,21 +68,24 @@ async function runCapture() {
       fullPage: false,
     });
 
-    await page.selectOption('select[aria-label="Flujos de Autenticación e Identidad"]', 'oidc');
+    await page.click('button[aria-haspopup="listbox"]');
+    await page.click('ul[role="listbox"] button:has-text("OIDC & JWKS")');
     await page.waitForTimeout(800);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, 'ui_auth_oidc_jwks.png'),
       fullPage: false,
     });
 
-    await page.selectOption('select[aria-label="Flujos de Autenticación e Identidad"]', 'pkce');
+    await page.click('button[aria-haspopup="listbox"]');
+    await page.click('ul[role="listbox"] button:has-text("PKCE & Sesiones")');
     await page.waitForTimeout(600);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, 'ui_auth_pkce_sessions.png'),
       fullPage: false,
     });
 
-    await page.selectOption('select[aria-label="Flujos de Autenticación e Identidad"]', 'federation');
+    await page.click('button[aria-haspopup="listbox"]');
+    await page.click('ul[role="listbox"] button:has-text("Federación")');
     await page.waitForTimeout(600);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, 'ui_auth_federation.png'),

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AuthSession, UserProfile } from '../../identity/domain/types';
 import { RegisterForm } from '../../identity/ui/components/register_form';
 import { UserProfileCard } from '../../identity/ui/components/user_profile_card';
@@ -33,22 +33,85 @@ export function AuthPortalView({
   fetchProfile,
 }: AuthPortalViewProps) {
   const [activeTab, setActiveTab] = useState<AuthTab>('account');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  const activeLabel = AUTH_TABS.find((t) => t.id === activeTab)?.label ?? 'Cuenta';
 
   return (
     <div className="m3-stack">
-      <div className="m3-portal-selector">
-        <select
-          aria-label="Flujos de Autenticación e Identidad"
-          className="m3-select"
-          value={activeTab}
-          onChange={(e) => setActiveTab(e.target.value as AuthTab)}
-        >
-          {AUTH_TABS.map((tab) => (
-            <option key={tab.id} value={tab.id}>
-              {tab.label}
-            </option>
-          ))}
-        </select>
+      <div className="m3-portal-selector" ref={dropdownRef}>
+        <span id="portal-flow-label" className="m3-portal-selector__label">
+          Flujo de Identidad
+        </span>
+        <div className="m3-dropdown">
+          <button
+            type="button"
+            className="m3-dropdown__trigger"
+            aria-haspopup="listbox"
+            aria-expanded={menuOpen}
+            aria-labelledby="portal-flow-label"
+            onClick={() => setMenuOpen((prev) => !prev)}
+          >
+            <span>{activeLabel}</span>
+            <svg
+              className={`m3-dropdown__chevron ${menuOpen ? 'm3-dropdown__chevron--open' : ''}`.trim()}
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              aria-hidden="true"
+            >
+              <path fill="currentColor" d="M2.5 4.5 6 8l3.5-3.5z" />
+            </svg>
+          </button>
+
+          {menuOpen && (
+            <ul
+              role="listbox"
+              aria-labelledby="portal-flow-label"
+              className="m3-dropdown__menu"
+            >
+              {AUTH_TABS.map((tab) => {
+                const isSelected = activeTab === tab.id;
+                return (
+                  <li key={tab.id} role="option" aria-selected={isSelected}>
+                    <button
+                      type="button"
+                      className={`m3-dropdown__option ${isSelected ? 'm3-dropdown__option--active' : ''}`.trim()}
+                      onClick={() => {
+                        setActiveTab(tab.id);
+                        setMenuOpen(false);
+                      }}
+                    >
+                      <span>{tab.label}</span>
+                      {isSelected && <span aria-hidden="true">✓</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </div>
 
       <div key={activeTab} className="m3-view-panel">

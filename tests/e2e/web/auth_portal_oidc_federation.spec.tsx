@@ -31,7 +31,7 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
 
   it('Scenario 1: defaults to Cuenta tab with RegisterForm for unauthenticated users', () => {
     render(<App />);
-    expect(screen.getByLabelText('Flujos de Autenticación e Identidad')).toHaveValue('account');
+    expect(screen.getByRole('button', { name: 'Flujo de Identidad' })).toHaveTextContent('Cuenta');
     expect(screen.getByText('Registro de Nuevo Usuario')).toBeInTheDocument();
   });
 
@@ -49,9 +49,8 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
     });
 
     render(<App />);
-    fireEvent.change(screen.getByLabelText('Flujos de Autenticación e Identidad'), {
-      target: { value: 'oidc' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Flujo de Identidad' }));
+    fireEvent.click(screen.getByRole('button', { name: 'OIDC & JWKS' }));
     fireEvent.click(screen.getByRole('button', { name: /Consultar Discovery & JWKS/i }));
 
     await waitFor(() => {
@@ -79,9 +78,8 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
     });
 
     render(<App />);
-    fireEvent.change(screen.getByLabelText('Flujos de Autenticación e Identidad'), {
-      target: { value: 'pkce' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Flujo de Identidad' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PKCE & Sesiones' }));
     fireEvent.click(screen.getByRole('button', { name: /Ejecutar Authorize \+ Token Exchange/i }));
 
     await waitFor(() => {
@@ -144,9 +142,8 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
     });
 
     render(<App />);
-    fireEvent.change(screen.getByLabelText('Flujos de Autenticación e Identidad'), {
-      target: { value: 'federation' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Flujo de Identidad' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Federación' }));
     await waitFor(() => {
       expect(screen.getByTestId('federation-status-google')).toHaveAttribute(
         'aria-label',
