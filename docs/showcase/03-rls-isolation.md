@@ -264,6 +264,17 @@ PostgreSQL rechaza la transacción con código de error **42501 (insufficient_pr
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-05`)
+
+1. **Prerrequisitos:** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos, con una sesión comercial (`acme-corp`) guardada en `localStorage` (`identity_session`).
+2. **Flujo Positivo (Aislamiento RLS en Mismo Inquilino):**
+   - Abre [`http://localhost:3000/tenant`](http://localhost:3000/tenant) y selecciona la pestaña **`Laboratorio RLS / Cross-Tenant`**.
+   - Pulsa **`Consultar Mi Inquilino (acme-corp)`** → invoca `GET /api/v1/users/<userId>` con `X-Tenant-ID: acme-corp`, devolviendo `200 OK` y mostrando `M3AlertBanner` **`200 OK — Aislamiento RLS Verificado`**.
+3. **Verificación Técnica (`Network` & `traceparent`):** Inspecciona **Evidencia de Aislamiento RLS / Zero-Trust** (`M3JsonViewer`) confirmando `requestedTenant: "acme-corp"` y la cabecera W3C `traceparent` / `X-Request-ID` en DevTools.
+4. **Trazabilidad E2E:** `tests/e2e/web/tenant_console.spec.tsx` (Scenario 4) y `tests/e2e/security/tenant_rls_isolation.spec.ts`.
+
+---
+
 ### 3. Cobertura de Pruebas Automatizadas
 
 El motor de políticas RLS y el runner de transacciones están certificados por suites de pruebas de integración dedicadas:
@@ -636,6 +647,19 @@ Ambas operaciones retornan `HTTP/1.1 204 No Content`, garantizando que la base d
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-06`)
+
+1. **Prerrequisitos:** En [`http://localhost:3000/tenant`](http://localhost:3000/tenant) → pestaña **`Laboratorio RLS / Cross-Tenant`**, con sesión activa de `acme-corp`.
+2. **Flujo Negativo / Defensa Zero-Trust (Salto Cross-Tenant `403 Forbidden`):**
+   - En el campo **Inquilino Objetivo (Prueba Cross-Tenant)**, mantén `beta-corp` (o ingresa cualquier otro inquilino distinto a `acme-corp`).
+   - Pulsa **`Probar Acceso Cross-Tenant (beta-corp)`** → el middleware detecta la divergencia entre el claim `tenantId` del JWT (`acme-corp`) y la cabecera `X-Tenant-ID: beta-corp`, abortando con `403 Forbidden` y registrando `CROSS_TENANT_VIOLATION`.
+   - En pantalla se despliega `M3AlertBanner` **`403 Forbidden — Bloqueo Zero-Trust Activado`** y el payload de rechazo en **Evidencia de Aislamiento RLS / Zero-Trust** (`M3JsonViewer`).
+3. **Trazabilidad E2E:** `tests/e2e/web/tenant_console.spec.tsx` (Scenario 4).
+
+![Consola /tenant Laboratorio RLS y Cross-Tenant en Material Design 3](./assets/screenshots/ui_tenant_rls_lab.png)
+
+---
+
 ### 5. Cobertura de Pruebas Automatizadas
 
 La suite de penetración y pruebas de estrés valida los 5 vectores de ataque:
@@ -649,18 +673,6 @@ npx jest tests/integration/security/test_cross_tenant_penetration.ts
 - **Vector 3 (Header Spoofing):** Detecta divergencia entre JWT claims y `X-Tenant-ID`.
 - **Vector 4 (SQL Injection):** Rechaza payloads maliciosos (`UNION SELECT`, subconsultas, `DROP TABLE`, `../path`).
 - **Vector 5 (Domain Assertions):** Valida que el agregado de dominio arroja `CrossTenantContextViolationError`.
-
----
-
-## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
-
-Dentro de **`/tenant`** (`US-25`), la pestaña **Laboratorio RLS / Cross-Tenant** permite demostrar en vivo el aislamiento multi-inquilino:
-
-1. Abrir la pestaña **Laboratorio RLS / Cross-Tenant** en `http://localhost:3000/tenant`.
-2. Seleccionar un **Tenant objetivo ajeno** (distinto al de la sesión JWT) y disparar la petición controlada contra `GET /api/v1/auth/me`.
-3. Verificar que el backend responde `403 Forbidden` (registrando `CROSS_TENANT_VIOLATION`) y que la UI muestra la evidencia forense junto con el `traceparent` W3C.
-
-![Consola /tenant Laboratorio RLS y Cross-Tenant en Material Design 3](./assets/screenshots/ui_tenant_rls_lab.png)
 
 ---
 
