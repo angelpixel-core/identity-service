@@ -497,7 +497,21 @@ export function createApp(deps?: AppDependencies): Express {
     process.env.NODE_ENV !== 'production'
       ? async (url: string, init?: any) => {
           if (url.includes('certs') || url.includes('keys')) {
-            return asymmetricKeyProvider.getPublicKeyJwks();
+            const localJwks = await asymmetricKeyProvider.getPublicKeyJwks();
+            const isLiveGoogle = url.includes('google') && Boolean(process.env.GOOGLE_CLIENT_ID);
+            const isLiveMicrosoft =
+              url.includes('microsoft') && Boolean(process.env.MICROSOFT_CLIENT_ID);
+            if (isLiveGoogle || isLiveMicrosoft) {
+              const res = await fetch(url, init);
+              if (res.ok) {
+                const remoteJwks = (await res.json()) as { keys?: unknown[] };
+                return {
+                  ...remoteJwks,
+                  keys: [...(remoteJwks.keys ?? []), ...(localJwks.keys ?? [])],
+                };
+              }
+            }
+            return localJwks;
           }
           if (url.includes('token') && init?.body) {
             const params = new URLSearchParams(String(init.body));
