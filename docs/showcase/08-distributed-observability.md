@@ -674,6 +674,21 @@ curl -s "${BASE_URL}/health" | jq .
 
 ---
 
+#### 🌐 Demostración Interactiva en la UI (Navegador — `US-22`)
+
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` en `localStorage` (`identity_session`).
+2. **Caso Positivo (Sondas Kubernetes `liveness` & `readiness`):**
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Observabilidad SRE`**.
+   - Pulsa **`Refrescar Telemetría`** → consulta simultáneamente `GET /health/live` y `GET /health/ready`.
+   - Verifica los chips **`/health/live: HTTP 200`** (verde) y **`/health/ready: HTTP 200`** (verde), junto con el detalle JSON en **Estado de Sondas Kubernetes (`/health/live & /health/ready`)** (`M3JsonViewer`).
+3. **Caso Negativo (Degradación de Readiness `503`):**
+   - Si una dependencia crítica (PostgreSQL o Redis) se detiene y pulsas **`Refrescar Telemetría`**, `/health/ready` cambia de verde a tono de advertencia/error reflejando el código HTTP `503` mientras `/health/live` permanece en `HTTP 200`.
+4. **Verificación Técnica & Trazabilidad E2E:** Comprueba `traceparent` W3C en **DevTools → Network**; `tests/e2e/web/platform_console.spec.tsx` (Scenario 5).
+
+![Consola /platform Observabilidad SRE en Material Design 3](./assets/screenshots/ui_platform_sre.png)
+
+---
+
 ### 🧪 Verificación Automatizada: Sondas de Salud & Readiness (US-22)
 
 La suite de integración valida de forma exhaustiva los 10 escenarios de liveness, readiness, degradación controlada y reporte consolidado:
@@ -706,17 +721,6 @@ Snapshots:   0 total
 Time:        1.982 s
 Ran all test suites matching tests/integration/interfaces/http/test_health_readiness_endpoints.ts.
 ```
-
----
-
-## 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador
-
-La pestaña **Observabilidad SRE** de **`/platform`** (`US-26`) unifica en vivo las capacidades de `US-20`, `US-21` y `US-22`:
-
-1. Navegar a `http://localhost:3000/platform` y seleccionar **Observabilidad SRE**.
-2. El panel consulta simultáneamente `GET /health/live`, `GET /health/ready` y `GET /metrics` (OpenMetrics/Prometheus), mostrando el estado de sondas Kubernetes, métricas clave parseadas y el header `traceparent` W3C propagado en la sesión.
-
-![Consola /platform Observabilidad SRE en Material Design 3](./assets/screenshots/ui_platform_sre.png)
 
 ---
 
