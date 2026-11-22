@@ -37,6 +37,7 @@
     "test:helm": "bash scripts/test-helm-chart.sh",
     "test:cicd": "bash scripts/test-cicd-pipeline.sh",
     "test:infra": "bash scripts/test-terraform-floci.sh",
+    "test:infra:apply": "bash scripts/test-terraform-floci.sh --apply",
     "test": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {

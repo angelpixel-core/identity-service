@@ -202,6 +202,10 @@ Captura en alta resolución del panel web nativo de **Floci Azure ARM** (`http:/
 
 ![Floci Azure ARM Local Emulator Dashboard](./assets/screenshots/us12_floci_azure_dashboard.png)
 
+Además, tras montar el socket de Docker en el servicio `floci` ([`compose.yml`](../../compose.yml)), **Floci UI** (`floci/floci-ui:0.7.0` en `http://localhost:4500/console/azure`) expone el explorador visual de servicios en estado inicial limpio (`RESOURCES: 0`, `ACTIVE SERVICES: 12`) previo al aprovisionamiento:
+
+![Floci UI Console Home — Estado inicial sin recursos](./assets/screenshots/us12_floci_ui_empty.png)
+
 ---
 
 ### 3. Verificación Interactiva Real: Terraform + Emulador Floci Azure ARM
@@ -343,7 +347,26 @@ Changes to Outputs:
 ================================================================
 ```
 
-#### Paso 5: Teardown del Emulador Local (Opcional)
+#### Paso 5: Aprovisionamiento Real en Floci (`terraform apply` vía `npm run test:infra:apply`) y Verificación en Floci UI
+
+Para materializar los recursos en el emulador local (más allá del `plan` no destructivo de `npm run test:infra`), [`scripts/test-terraform-floci.sh`](../../scripts/test-terraform-floci.sh) acepta `--apply` reutilizando exactamente la misma configuración TLS (`SSL_CERT_FILE` y proxy `:4578`):
+
+```bash
+npm run test:infra:apply
+```
+
+Al ejecutarse contra Floci (`v0.17.0`), los recursos raíz soportados por el emulador (`azurerm_resource_group.this`, `module.acr.azurerm_container_registry.this`, `module.aks.azurerm_kubernetes_cluster.this`, `module.keyvault.azurerm_key_vault.this`, `module.log_analytics.azurerm_log_analytics_workspace.this` y `module.postgres.azurerm_postgresql_flexible_server.this`) quedan persistidos en el estado local de Terraform y visibles en **Floci UI** (`http://localhost:4500/console/azure`):
+
+> [!NOTE]
+> Algunos subrecursos dependientes de DNS externo (`*.vault.azure.net`) o polling LRO específico de `azurerm` pueden reportar error parcial en el emulador local tras crear los recursos padre; esto no impide inspeccionar los recursos ya aprovisionados en Floci UI.
+
+![Floci UI Console Home — Con recursos aprovisionados](./assets/screenshots/us12_floci_ui_applied.png)
+
+Navegando al explorador de **AKS** (`http://localhost:4500/cloud-explorer/azure/k8s`), se verifica el clúster `id-local-aks` en estado `Succeeded`:
+
+![Floci UI Cloud Explorer — Clúster AKS id-local-aks](./assets/screenshots/us12_floci_ui_aks.png)
+
+#### Paso 6: Teardown del Emulador Local (Opcional)
 
 ```bash
 npm run docker:cloud:down

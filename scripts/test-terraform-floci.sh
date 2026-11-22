@@ -16,6 +16,14 @@ TF_ENV_DIR="${ROOT_DIR}/infrastructure/terraform/environments/local"
 TLS_DIR="${ROOT_DIR}/infrastructure/local/floci/.tls"
 PROXY_SCRIPT="${ROOT_DIR}/scripts/floci-proxy.mjs"
 
+TF_ACTION="plan"
+if [[ "${1:-}" == "--apply" ]]; then
+  TF_ACTION="apply"
+elif [[ -n "${1:-}" ]]; then
+  echo -e "${RED}Error: Unknown option '${1}'. Usage: $0 [--apply]${NC}"
+  exit 1
+fi
+
 echo -e "${BLUE}=== [1/5] Checking Prerequisites & Formatting ===${NC}"
 command -v terraform >/dev/null 2>&1 || { echo -e "${RED}Error: terraform CLI is not installed.${NC}"; exit 1; }
 command -v docker >/dev/null 2>&1 || { echo -e "${RED}Error: docker is not installed.${NC}"; exit 1; }
@@ -101,8 +109,12 @@ echo -e "\n${BLUE}=== [4/5] Validating Terraform Modules & Providers ===${NC}"
 TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" validate
 echo -e "${GREEN}✓ Terraform configuration is valid.${NC}"
 
-echo -e "\n${BLUE}=== [5/5] Executing Terraform Plan against Floci Emulator ===${NC}"
-SSL_CERT_FILE="${CA_BUNDLE}" TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" plan -no-color
+echo -e "\n${BLUE}=== [5/5] Executing Terraform ${TF_ACTION} against Floci Emulator ===${NC}"
+if [[ "${TF_ACTION}" == "apply" ]]; then
+  SSL_CERT_FILE="${CA_BUNDLE}" TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" apply -auto-approve -no-color
+else
+  SSL_CERT_FILE="${CA_BUNDLE}" TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" plan -no-color
+fi
 
 echo -e "\n${GREEN}================================================================${NC}"
 echo -e "${GREEN}✓ All infrastructure tests passed! US-12 verification complete.${NC}"
