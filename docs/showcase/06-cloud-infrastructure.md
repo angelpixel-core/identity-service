@@ -708,9 +708,19 @@ Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)
 
 1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
 2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
-   - Verifica el chip **`Helm: STRICT`** y el nodo `infrastructurePosture.helmChart` (`release: "identity-service"`, `schemaValidation: "STRICT"`, `networkPolicyZeroTrust: true`) en **Snapshot de Postura Read-Only**.
+   - Verifica el chip **`Helm: STRICT`** y el nodo `infrastructurePosture.helmChart` en **Snapshot de Postura Read-Only**:
+     ```json
+     "helmChart": {
+       "story": "US-14",
+       "release": "identity-service",
+       "schemaValidation": "STRICT",
+       "networkPolicyZeroTrust": true
+     }
+     ```
    - *Nota:* La validación de `values.schema.json` y el despliegue del chart se realizan exclusivamente por CLI/CI (`npm run test:helm`).
 3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2).
+
+![Consola /platform — Postura Helm Strict (US-14)](./assets/screenshots/us14_platform_helm_strict.png)
 
 ---
 
