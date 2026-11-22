@@ -265,7 +265,7 @@ npm run test:infra
 ```
 
 > [!NOTE]
-> **Certificado CA de Floci en macOS (`darwin`):** En macOS, el proveedor `azurerm` (Go) valida TLS contra el llavero del sistema (`Security.framework`) e ignora `SSL_CERT_FILE`. La primera vez —o tras recrear el contenedor/volumen `floci-azure-arm`— confía la nueva CA raíz local ejecutando:
+> **Certificado CA de Floci en macOS (`darwin`):** En macOS, el proveedor `azurerm` (Go) valida TLS contra el llavero del sistema (`Security.framework`) e ignora `SSL_CERT_FILE`. `scripts/test-terraform-floci.sh` verifica automáticamente si el fingerprint SHA-256 de `floci-az-ca.crt` ya está confiado en `~/Library/Keychains/login.keychain-db` y, si es nuevo (primera ejecución o volumen recreado), ejecuta:
 > ```bash
 > security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db infrastructure/local/floci/.tls/floci-az-ca.crt
 > ```

@@ -68,6 +68,15 @@ else
   cp "${TLS_DIR}/floci-az-ca.crt" "${CA_BUNDLE}"
 fi
 
+# On macOS, Go's azurerm provider validates TLS against Security.framework Keychain.
+if [[ "$(uname -s)" == "Darwin" ]] && command -v security >/dev/null 2>&1 && command -v openssl >/dev/null 2>&1; then
+  CA_SHA256="$(openssl x509 -in "${TLS_DIR}/floci-az-ca.crt" -noout -fingerprint -sha256 | sed 's/.*=//;s/://g')"
+  if ! security find-certificate -a -Z -c "floci-az-ca" "${HOME}/Library/Keychains/login.keychain-db" 2>/dev/null | grep -qi "${CA_SHA256}"; then
+    echo "Trusting Floci CA certificate in macOS login Keychain (may prompt for Touch ID / password)..."
+    security add-trusted-cert -r trustRoot -k "${HOME}/Library/Keychains/login.keychain-db" "${TLS_DIR}/floci-az-ca.crt"
+  fi
+fi
+
 PROXY_PID=""
 # Check if port 4578 is already listening
 if ! lsof -i :4578 -sTCP:LISTEN -t >/dev/null 2>&1; then
