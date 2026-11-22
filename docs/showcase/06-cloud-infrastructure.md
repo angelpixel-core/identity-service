@@ -143,24 +143,24 @@ sequenceDiagram
     autonumber
     actor DevOps as Ingeniero DevOps / Pipeline CD
     participant TF as Terraform CLI (environments/local)
-    participant ARM as Azure ARM / Emulador Local Floci (:4577)
-    participant LawMod as Module: log_analytics
-    participant StorageMod as Module: storage
-    participant KVMod as Module: keyvault
-    participant PGMod as Module: postgres
-    participant ACRMod as Module: acr
-    participant AKSMod as Module: aks
+    participant CloudAPI as Cloud Control Plane (ARM / Floci :4577)
+    participant AuditLogMod as Module: audit_logging (Log Analytics)
+    participant StorageMod as Module: object_storage (Blob / WORM)
+    participant VaultMod as Module: secrets_vault (Key Vault)
+    participant DatabaseMod as Module: relational_database (PostgreSQL)
+    participant RegistryMod as Module: container_registry (ACR)
+    participant ClusterMod as Module: container_cluster (AKS)
 
     DevOps->>TF: terraform init & terraform plan (environments/local)
-    TF->>ARM: POST /subscriptions/.../resourcegroups/identity-local-rg
-    ARM-->>TF: 200 OK (Resource Group Provisioned)
-    TF->>LawMod: Provisionar Log Analytics Workspace (retention_in_days = 365)
+    TF->>CloudAPI: POST /subscriptions/.../resourcegroups/identity-local-rg
+    CloudAPI-->>TF: 200 OK (Resource Group Provisioned)
+    TF->>AuditLogMod: Provisionar Log Analytics Workspace (retention_in_days = 365)
     TF->>StorageMod: Provisionar Storage Account + Containers (audit-logs, identity-backups)
-    TF->>KVMod: Provisionar Key Vault + Secrets (jwt-secret, database-url, redis-url, encryption-key)
-    TF->>PGMod: Provisionar PostgreSQL Flexible Server (identity_db, TLS 1.2+)
-    TF->>ACRMod: Provisionar Azure Container Registry (Basic/Premium SKU)
-    TF->>AKSMod: Provisionar AKS Cluster + RoleAssignment AcrPull sobre ACR
-    AKSMod-->>DevOps: Outputs (aks_cluster_name, key_vault_uri, postgres_fqdn, acr_login_server)
+    TF->>VaultMod: Provisionar Key Vault + Secrets (jwt-secret, database-url, redis-url, encryption-key)
+    TF->>DatabaseMod: Provisionar PostgreSQL Flexible Server (identity_db, TLS 1.2+)
+    TF->>RegistryMod: Provisionar Azure Container Registry (Basic/Premium SKU)
+    TF->>ClusterMod: Provisionar AKS Cluster + RoleAssignment AcrPull sobre ACR
+    ClusterMod-->>DevOps: Outputs (aks_cluster_name, key_vault_uri, postgres_fqdn, acr_login_server)
 ```
 
 #### A. Glosario de Actores y Componentes (Cajas del Diagrama)
@@ -169,26 +169,26 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | **`DevOps` (Ingeniero / Pipeline CD)** | `actor` | Operador o workflow automatizado que ejecuta el ciclo de vida declarativo de Terraform. |
 | **`TF` (`environments/local/main.tf`)** | `participant` | Orquestador raíz de Terraform que inyecta variables, etiquetas de gobernanza (`common_tags`) y encadena dependencias entre módulos. |
-| **`ARM` (Azure ARM / Floci `:4577`)** | `participant` | Plano de control de Azure Resource Manager (o su emulador local `floci-azure-arm` en Docker) que materializa los recursos REST. |
-| **`LawMod` (`modules/log_analytics`)** | `participant` | Módulo de observabilidad forense con retención de 365 días para cumplimiento regulatorio. |
-| **`StorageMod` (`modules/storage`)** | `participant` | Módulo de almacenamiento de blobs para archivo de auditoría y respaldos. |
-| **`KVMod` (`modules/keyvault`)** | `participant` | Bóveda criptográfica que centraliza secretos de aplicación consumidos vía CSI Driver en Kubernetes. |
-| **`PGMod` (`modules/postgres`)** | `participant` | Servidor relacional administrado PostgreSQL 16 con aislamiento de red y cifrado activo. |
-| **`ACRMod` (`modules/acr`)** | `participant` | Registro privado de artefactos OCI / imágenes Docker de producción. |
-| **`AKSMod` (`modules/aks`)** | `participant` | Clúster Kubernetes administrado donde se despliega el Helm Chart de `identity-service`. |
+| **`CloudAPI` (Cloud Control Plane — ARM / Floci `:4577`)** | `participant` | Plano de control de infraestructura cloud (Azure Resource Manager o su emulador local `floci-azure-arm` en Docker) que materializa los recursos REST. |
+| **`AuditLogMod` (`modules/log_analytics` — Log Analytics)** | `participant` | Módulo de observabilidad forense con retención de 365 días para cumplimiento regulatorio. |
+| **`StorageMod` (`modules/storage` — Blob / WORM)** | `participant` | Módulo de almacenamiento de objetos para archivo de auditoría y respaldos. |
+| **`VaultMod` (`modules/keyvault` — Key Vault)** | `participant` | Bóveda criptográfica que centraliza secretos de aplicación consumidos vía CSI Driver en Kubernetes. |
+| **`DatabaseMod` (`modules/postgres` — PostgreSQL)** | `participant` | Servidor relacional administrado PostgreSQL 16 con aislamiento de red y cifrado activo. |
+| **`RegistryMod` (`modules/acr` — ACR)** | `participant` | Registro privado de artefactos OCI / imágenes Docker de producción. |
+| **`ClusterMod` (`modules/aks` — AKS)** | `participant` | Clúster Kubernetes administrado donde se despliega el Helm Chart de `identity-service`. |
 
 #### B. Desglose Secuencial del Flujo (Pasos 1 al 10)
 
 1. **Paso 1 (`DevOps -> TF`):** Se inicializa el backend y los módulos locales mediante `terraform init` y se calcula el grafo de ejecución con `terraform plan`.
-2. **Paso 2 (`TF -> ARM`):** Terraform solicita la creación del grupo de recursos raíz (`azurerm_resource_group.this`) con las etiquetas corporativas (`Environment`, `Project`, `ManagedBy`).
-3. **Paso 3 (`ARM -->> TF`):** El proveedor confirma la creación del contenedor lógico de recursos.
-4. **Paso 4 (`TF -> LawMod`):** Se despliega el workspace de Log Analytics configurando `retention_in_days = 365` y etiquetas de cumplimiento PCI-DSS/SOC 2.
+2. **Paso 2 (`TF -> CloudAPI`):** Terraform solicita la creación del grupo de recursos raíz (`azurerm_resource_group.this`) con las etiquetas corporativas (`Environment`, `Project`, `ManagedBy`).
+3. **Paso 3 (`CloudAPI -->> TF`):** El plano de control confirma la creación del contenedor lógico de recursos.
+4. **Paso 4 (`TF -> AuditLogMod`):** Se despliega el workspace de Log Analytics configurando `retention_in_days = 365` y etiquetas de cumplimiento PCI-DSS/SOC 2.
 5. **Paso 5 (`TF -> StorageMod`):** Se aprovisiona la cuenta de almacenamiento y los contenedores `audit-logs` e `identity-backups`.
-6. **Paso 6 (`TF -> KVMod`):** Se despliega el Key Vault y se inyectan los secretos iniciales de conexión y firmado.
-7. **Paso 7 (`TF -> PGMod`):** Se instancia el servidor PostgreSQL Flexible Server junto con la base de datos `identity_db`.
-8. **Paso 8 (`TF -> ACRMod`):** Se aprovisiona el registro privado de contenedores ACR.
-9. **Paso 9 (`TF -> AKSMod`):** Se despliega el clúster AKS vinculando su identidad administrada al `registry_id` exportado por el módulo ACR.
-10. **Paso 10 (`AKSMod -->> DevOps`):** Terraform exporta los `outputs` tipados (`aks_cluster_name`, `key_vault_uri`, `postgres_fqdn`, `acr_login_server`) para alimentar el despliegue de Helm.
+6. **Paso 6 (`TF -> VaultMod`):** Se despliega el Key Vault y se inyectan los secretos iniciales de conexión y firmado.
+7. **Paso 7 (`TF -> DatabaseMod`):** Se instancia el servidor PostgreSQL Flexible Server junto con la base de datos `identity_db`.
+8. **Paso 8 (`TF -> RegistryMod`):** Se aprovisiona el registro privado de contenedores ACR.
+9. **Paso 9 (`TF -> ClusterMod`):** Se despliega el clúster AKS vinculando su identidad administrada al `registry_id` exportado por el módulo de registro.
+10. **Paso 10 (`ClusterMod -->> DevOps`):** Terraform exporta los `outputs` tipados (`aks_cluster_name`, `key_vault_uri`, `postgres_fqdn`, `acr_login_server`) para alimentar el despliegue de Helm.
 
 ---
 
