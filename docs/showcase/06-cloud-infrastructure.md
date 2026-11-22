@@ -530,10 +530,20 @@ npm run docker:ingress:down
 
 1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
 2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
-   - Verifica el chip **`Ingress: TLS 1.3`** y el nodo `infrastructurePosture.ingressTls` (`protocol: "TLS 1.3"`, `proxyMode: "NGINX Ingress"`, `status: "ACTIVE"`) en `M3JsonViewer`.
+   - Verifica el chip **`Ingress: TLS 1.3`** y el nodo `infrastructurePosture.ingressTls` en `M3JsonViewer`:
+     ```json
+     "ingressTls": {
+       "story": "US-13",
+       "protocol": "TLS 1.3",
+       "proxyMode": "NGINX Ingress",
+       "status": "ACTIVE"
+     }
+     ```
    - Comprueba en **DevTools → Network** la cabecera `traceparent` W3C emitida por la consola.
    - *Nota:* La terminación TLS y cabeceras del proxy se validan en vivo mediante `npm run test:ingress`; la UI no expone toggles mutables para desactivar TLS.
 3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2).
+
+![Consola /platform — Postura Ingress TLS 1.3 (US-13)](./assets/screenshots/us13_platform_ingress_tls.png)
 
 ---
 
