@@ -145,6 +145,32 @@ async function runCapture() {
       fullPage: false,
     });
 
+    const postureShots: Array<{ file: string; chipPrefix: string }> = [
+      { file: 'us12_platform_iac_posture.png', chipPrefix: 'Cloud IaC:' },
+      { file: 'us13_platform_ingress_tls.png', chipPrefix: 'Ingress:' },
+      { file: 'us14_platform_helm_strict.png', chipPrefix: 'Helm:' },
+    ];
+    for (const shot of postureShots) {
+      await page.evaluate((prefix) => {
+        const chips = Array.from(document.querySelectorAll('.m3-chip'));
+        chips.forEach((el) => {
+          const htmlEl = el as HTMLElement;
+          if (htmlEl.textContent?.includes(prefix)) {
+            htmlEl.style.outline = '2px solid #0b57d0';
+            htmlEl.style.outlineOffset = '2px';
+          } else {
+            htmlEl.style.outline = '';
+            htmlEl.style.outlineOffset = '';
+          }
+        });
+      }, shot.chipPrefix);
+      await page.waitForTimeout(200);
+      await page.screenshot({
+        path: path.join(SCREENSHOT_DIR, shot.file),
+        fullPage: false,
+      });
+    }
+
     await page.click('button[role="tab"]:has-text("Bóveda Criptográfica")');
     await page.waitForSelector('[data-testid="vault-status-summary"]', { timeout: 10000 });
     await page.waitForTimeout(600);
