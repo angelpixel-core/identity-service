@@ -42,10 +42,22 @@ echo -e "${GREEN}✓ Floci Azure ARM emulator is healthy on port 4577.${NC}"
 
 echo -e "\n${BLUE}=== [3/5] Setting up Floci ARM Proxy & TLS ===${NC}"
 mkdir -p "${TLS_DIR}"
-if [[ ! -f "${TLS_DIR}/floci-az.crt" || ! -f "${TLS_DIR}/floci-az.key" ]]; then
-  echo "Extracting TLS certificates from floci-azure-arm container..."
-  docker exec floci-azure-arm cat /app/data/tls/floci-az-selfsigned.crt > "${TLS_DIR}/floci-az.crt"
-  docker exec floci-azure-arm cat /app/data/tls/floci-az-selfsigned.key > "${TLS_DIR}/floci-az.key"
+echo "Syncing TLS certificates from floci-azure-arm container..."
+docker exec floci-azure-arm cat /app/data/tls/floci-az-selfsigned.crt > "${TLS_DIR}/floci-az.crt"
+docker exec floci-azure-arm cat /app/data/tls/floci-az-selfsigned.key > "${TLS_DIR}/floci-az.key"
+if docker exec floci-azure-arm test -f /app/data/tls/floci-az-selfsigned-ca.crt; then
+  docker exec floci-azure-arm cat /app/data/tls/floci-az-selfsigned-ca.crt > "${TLS_DIR}/floci-az-ca.crt"
+else
+  cp "${TLS_DIR}/floci-az.crt" "${TLS_DIR}/floci-az-ca.crt"
+fi
+
+CA_BUNDLE="${TLS_DIR}/floci-ca-bundle.pem"
+if [[ -f "/etc/ssl/cert.pem" ]]; then
+  cat /etc/ssl/cert.pem "${TLS_DIR}/floci-az-ca.crt" > "${CA_BUNDLE}"
+elif [[ -f "/etc/ssl/certs/ca-certificates.crt" ]]; then
+  cat /etc/ssl/certs/ca-certificates.crt "${TLS_DIR}/floci-az-ca.crt" > "${CA_BUNDLE}"
+else
+  cp "${TLS_DIR}/floci-az-ca.crt" "${CA_BUNDLE}"
 fi
 
 PROXY_PID=""
@@ -90,7 +102,7 @@ TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" validate
 echo -e "${GREEN}✓ Terraform configuration is valid.${NC}"
 
 echo -e "\n${BLUE}=== [5/5] Executing Terraform Plan against Floci Emulator ===${NC}"
-TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" plan -no-color
+SSL_CERT_FILE="${CA_BUNDLE}" TF_CLI_CONFIG_FILE=/dev/null terraform -chdir="${TF_ENV_DIR}" plan -no-color
 
 echo -e "\n${GREEN}================================================================${NC}"
 echo -e "${GREEN}✓ All infrastructure tests passed! US-12 verification complete.${NC}"

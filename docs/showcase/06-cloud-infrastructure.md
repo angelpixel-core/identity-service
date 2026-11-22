@@ -260,6 +260,12 @@ El pipeline oficial `npm run test:infra` ([`scripts/test-terraform-floci.sh`](..
 npm run test:infra
 ```
 
+> [!NOTE]
+> **Certificado CA de Floci en macOS (`darwin`):** En macOS, el proveedor `azurerm` (Go) valida TLS contra el llavero del sistema (`Security.framework`) e ignora `SSL_CERT_FILE`. La primera vez —o tras recrear el contenedor/volumen `floci-azure-arm`— confía la nueva CA raíz local ejecutando:
+> ```bash
+> security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db infrastructure/local/floci/.tls/floci-az-ca.crt
+> ```
+
 <details>
 <summary><b>Ver Ejecución Manual del Proxy TLS y <code>terraform plan</code></b></summary>
 
