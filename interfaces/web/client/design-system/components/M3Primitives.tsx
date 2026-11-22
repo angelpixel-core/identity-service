@@ -89,37 +89,68 @@ export interface M3NavItem {
   readonly label: string;
   readonly shortCode: string;
   readonly href: string;
+  readonly icon?: React.ReactNode;
   readonly active?: boolean;
 }
 
 export interface M3NavigationRailProps {
   ariaLabel: string;
   items: readonly M3NavItem[];
+  onSelect?: (id: string) => void;
   testId?: string;
 }
 
 export function M3NavigationRail({
   ariaLabel,
   items,
+  onSelect,
   testId,
 }: M3NavigationRailProps) {
   return (
     <nav aria-label={ariaLabel} className="m3-nav-rail" data-testid={testId}>
-      <ul className="m3-nav-rail__list">
-        {items.map((item) => (
-          <li key={item.id}>
-            <a
-              href={item.href}
-              aria-current={item.active ? 'page' : undefined}
-              className={`m3-nav-item ${item.active ? 'm3-nav-item--active' : ''}`.trim()}
-            >
+      <ul
+        className="m3-nav-rail__list"
+        role={onSelect ? 'tablist' : undefined}
+        aria-orientation={onSelect ? 'vertical' : undefined}
+      >
+        {items.map((item) => {
+          const content = (
+            <>
               <span className="m3-nav-item__pill" aria-hidden="true">
-                {item.shortCode}
+                {item.icon ?? item.shortCode}
               </span>
-              <span className="m3-nav-item__label">{item.label}</span>
-            </a>
-          </li>
-        ))}
+              <span className="m3-nav-item__label" title={item.shortCode}>
+                {item.label}
+              </span>
+            </>
+          );
+
+          return (
+            <li key={item.id} role={onSelect ? 'presentation' : undefined}>
+              {onSelect ? (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={Boolean(item.active)}
+                  title={`${item.label} (${item.shortCode})`}
+                  className={`m3-nav-item ${item.active ? 'm3-nav-item--active' : ''}`.trim()}
+                  onClick={() => onSelect(item.id)}
+                >
+                  {content}
+                </button>
+              ) : (
+                <a
+                  href={item.href}
+                  aria-current={item.active ? 'page' : undefined}
+                  title={`${item.label} (${item.shortCode})`}
+                  className={`m3-nav-item ${item.active ? 'm3-nav-item--active' : ''}`.trim()}
+                >
+                  {content}
+                </a>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </nav>
   );

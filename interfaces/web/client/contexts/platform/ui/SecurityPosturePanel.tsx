@@ -101,7 +101,7 @@ export function SecurityPosturePanel({ session }: SecurityPosturePanelProps) {
           <div>
             <h2>Postura de Seguridad &amp; Gobernanza Root</h2>
             <p className="m3-muted">
-              Vista estrictamente de solo lectura (`ADR-0009`) para controles de infraestructura (`US-12`–`US-15`, `US-18`).
+              Vista estrictamente de solo lectura (<code>ADR-0009</code>) para controles de infraestructura (<code>US-12</code>–<code>US-15</code>, <code>US-18</code>).
             </p>
           </div>
           <M3Button variant="tonal" onClick={loadPosture} disabled={loading}>
@@ -124,17 +124,94 @@ export function SecurityPosturePanel({ session }: SecurityPosturePanelProps) {
               <M3Chip label={`DB TLS: ${posture.securityPosture.databaseTls.minVersion}`} tone="primary" />
             </div>
 
+            <div className="m3-posture-grid">
+              <section className="m3-posture-card" aria-label="Gobernanza Root">
+                <div className="m3-posture-card__header">
+                  <h3 className="m3-posture-card__title">Gobernanza Root</h3>
+                  <M3Chip label={posture.governance.adr} tone="primary" />
+                </div>
+                <dl className="m3-posture-kv">
+                  <dt>Inquilino</dt>
+                  <dd>{posture.governance.rootTenantId}</dd>
+                  <dt>Operador</dt>
+                  <dd>{posture.governance.actor.userId ?? 'N/A'}</dd>
+                  <dt>Roles</dt>
+                  <dd>{posture.governance.actor.roles.join(', ')}</dd>
+                </dl>
+              </section>
+
+              <section className="m3-posture-card" aria-label="Infraestructura Cloud y Entrega">
+                <div className="m3-posture-card__header">
+                  <h3 className="m3-posture-card__title">Cloud IaC &amp; Entrega</h3>
+                  <M3Chip label={posture.infrastructurePosture.cloudIac.status} tone="success" />
+                </div>
+                <dl className="m3-posture-kv">
+                  <dt>Proveedor IaC</dt>
+                  <dd>{posture.infrastructurePosture.cloudIac.provider}</dd>
+                  <dt>Ingress TLS</dt>
+                  <dd>
+                    {posture.infrastructurePosture.ingressTls.protocol} ·{' '}
+                    {posture.infrastructurePosture.ingressTls.proxyMode}
+                  </dd>
+                  <dt>Helm Chart</dt>
+                  <dd>
+                    {posture.infrastructurePosture.helmChart.release} (
+                    {posture.infrastructurePosture.helmChart.schemaValidation})
+                  </dd>
+                  <dt>CI/CD</dt>
+                  <dd>
+                    UID {posture.infrastructurePosture.cicdGuardrails.nonRootUid} ·{' '}
+                    {posture.infrastructurePosture.cicdGuardrails.imageTagPolicy}
+                  </dd>
+                </dl>
+              </section>
+
+              <section className="m3-posture-card" aria-label="Seguridad y Red">
+                <div className="m3-posture-card__header">
+                  <h3 className="m3-posture-card__title">Seguridad &amp; Red</h3>
+                  <M3Chip label={posture.infrastructurePosture.networkPolicy.status} tone="success" />
+                </div>
+                <dl className="m3-posture-kv">
+                  <dt>NetworkPolicy</dt>
+                  <dd>
+                    {posture.infrastructurePosture.networkPolicy.defaultDenyAll
+                      ? `Default Deny · Puerto ${posture.infrastructurePosture.networkPolicy.allowedIngressPort}`
+                      : 'Permissive'}
+                  </dd>
+                  <dt>Base de Datos</dt>
+                  <dd>
+                    {posture.securityPosture.databaseTls.minVersion} ·{' '}
+                    {posture.securityPosture.databaseTls.mode}
+                  </dd>
+                  <dt>Cabeceras HTTP</dt>
+                  <dd>
+                    {posture.securityPosture.securityHeaders.helmetEnabled ? 'Helmet' : 'Off'} ·{' '}
+                    {posture.securityPosture.securityHeaders.hstsEnabled ? 'HSTS' : 'No HSTS'}
+                  </dd>
+                  <dt>Rate Limit</dt>
+                  <dd>
+                    {posture.securityPosture.rateLimiting.enabled
+                      ? `${posture.securityPosture.rateLimiting.maxRequestsPerWindow} req / ${Math.round(posture.securityPosture.rateLimiting.windowMs / 1000)}s`
+                      : 'Deshabilitado'}
+                  </dd>
+                </dl>
+              </section>
+            </div>
+
             {traceHeader && (
               <p className="m3-muted" data-testid="posture-traceparent">
                 W3C Trace: <code>{traceHeader}</code>
               </p>
             )}
 
-            <M3JsonViewer
-              title="Snapshot de Postura Read-Only (GET /api/v1/platform/posture)"
-              data={posture}
-              testId="platform-posture-json"
-            />
+            <details className="m3-collapsible-json">
+              <summary>Ver Snapshot JSON técnico (GET /api/v1/platform/posture)</summary>
+              <M3JsonViewer
+                title="Snapshot de Postura Read-Only (GET /api/v1/platform/posture)"
+                data={posture}
+                testId="platform-posture-json"
+              />
+            </details>
           </div>
         )}
       </M3Card>

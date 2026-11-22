@@ -42,11 +42,45 @@ export function isRootSuperadminSession(session: AuthSession): boolean {
   return roles.includes('superadmin');
 }
 
+export type PlatformNavTab = 'posture' | 'vault' | 'audit' | 'sre';
+
 export interface BoundedShellProps {
   session: AuthSession | null;
   pathname?: string;
+  activePlatformTab?: PlatformNavTab;
+  onPlatformTabChange?: (tab: PlatformNavTab) => void;
   children: React.ReactNode;
 }
+
+const RAIL_ICONS = {
+  posture: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l7 3v5c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-3z" />
+      <path d="M9.5 12l1.8 1.8 3.5-3.8" />
+    </svg>
+  ),
+  vault: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="15" r="4" />
+      <path d="M11 12l8-8" />
+      <path d="M16 7l2 2" />
+      <path d="M18.5 4.5l2 2" />
+    </svg>
+  ),
+  audit: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6" />
+      <path d="M9 17h4" />
+    </svg>
+  ),
+  sre: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />
+    </svg>
+  ),
+};
 
 /**
  * BoundedShell (US-23):
@@ -55,7 +89,13 @@ export interface BoundedShellProps {
  * - /tenant: Consola de inquilino (requiere sesión activa).
  * - /platform: Consola Root Governance (requiere system:superadmin, ADR-0009).
  */
-export function BoundedShell({ session, pathname, children }: BoundedShellProps) {
+export function BoundedShell({
+  session,
+  pathname,
+  activePlatformTab = 'posture',
+  onPlatformTabChange,
+  children,
+}: BoundedShellProps) {
   const activePath =
     pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '/auth');
   const requestedSurface = resolveSurfaceFromPath(activePath);
@@ -122,11 +162,38 @@ export function BoundedShell({ session, pathname, children }: BoundedShellProps)
   // Scenario 3 (US-23): Consola /platform para Root Tenant Superadmin (ADR-0009)
   if (requestedSurface === 'platform') {
     const platformNav: M3NavItem[] = [
-      { id: 'overview', label: 'Resumen', shortCode: 'OV', href: '/platform', active: true },
-      { id: 'secrets', label: 'Secretos & TLS', shortCode: 'KM', href: '/platform#secrets-tls' },
-      { id: 'audit', label: 'Auditoría NDJSON', shortCode: 'AU', href: '/platform#audit' },
-      { id: 'obs', label: 'Observabilidad', shortCode: 'OB', href: '/platform#observability' },
-      { id: 'posture', label: 'Postura Cloud', shortCode: 'CL', href: '/platform#posture' },
+      {
+        id: 'posture',
+        label: 'Postura & Gobernanza',
+        shortCode: 'OV',
+        href: '/platform#posture',
+        icon: RAIL_ICONS.posture,
+        active: activePlatformTab === 'posture',
+      },
+      {
+        id: 'vault',
+        label: 'Bóveda Criptográfica',
+        shortCode: 'KM',
+        href: '/platform#vault',
+        icon: RAIL_ICONS.vault,
+        active: activePlatformTab === 'vault',
+      },
+      {
+        id: 'audit',
+        label: 'Auditoría Forense',
+        shortCode: 'AU',
+        href: '/platform#audit',
+        icon: RAIL_ICONS.audit,
+        active: activePlatformTab === 'audit',
+      },
+      {
+        id: 'sre',
+        label: 'Observabilidad SRE',
+        shortCode: 'OB',
+        href: '/platform#observability',
+        icon: RAIL_ICONS.sre,
+        active: activePlatformTab === 'sre',
+      },
     ];
 
     return (
@@ -134,6 +201,11 @@ export function BoundedShell({ session, pathname, children }: BoundedShellProps)
         <M3NavigationRail
           ariaLabel="Navegación Root Platform Governance"
           items={platformNav}
+          onSelect={
+            onPlatformTabChange
+              ? (id) => onPlatformTabChange(id as PlatformNavTab)
+              : undefined
+          }
           testId="platform-nav-rail"
         />
         <div className="m3-workspace-body">

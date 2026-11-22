@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { AuthSession, UserProfile } from './contexts/identity/domain/types';
-import { BoundedShell, resolveSurfaceFromPath } from './shell/BoundedShell';
+import { BoundedShell, PlatformNavTab, resolveSurfaceFromPath } from './shell/BoundedShell';
 import { AuthPortalView } from './contexts/auth/ui/AuthPortalView';
 import { TenantConsoleView } from './contexts/tenant/ui/TenantConsoleView';
 import { PlatformConsoleView } from './contexts/platform/ui/PlatformConsoleView';
 
 export function App() {
+  const [platformTab, setPlatformTab] = useState<PlatformNavTab>('posture');
   const [session, setSession] = useState<AuthSession | null>(() => {
     const stored = localStorage.getItem('identity_session');
     if (stored) {
@@ -65,9 +66,17 @@ export function App() {
   const surface = resolveSurfaceFromPath(activePath);
 
   return (
-    <BoundedShell session={session}>
+    <BoundedShell
+      session={session}
+      activePlatformTab={platformTab}
+      onPlatformTabChange={setPlatformTab}
+    >
       {session && surface === 'platform' ? (
-        <PlatformConsoleView session={session} />
+        <PlatformConsoleView
+          session={session}
+          activeTab={platformTab}
+          onTabChange={setPlatformTab}
+        />
       ) : session && surface === 'tenant' ? (
         <TenantConsoleView session={session} />
       ) : (

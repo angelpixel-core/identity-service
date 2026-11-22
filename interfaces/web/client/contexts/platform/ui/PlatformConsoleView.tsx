@@ -9,6 +9,8 @@ export type PlatformTab = 'posture' | 'vault' | 'audit' | 'sre';
 
 export interface PlatformConsoleViewProps {
   session: AuthSession;
+  activeTab?: PlatformTab;
+  onTabChange?: (tab: PlatformTab) => void;
 }
 
 const PLATFORM_TABS: readonly { id: PlatformTab; label: string }[] = [
@@ -23,28 +25,44 @@ const PLATFORM_TABS: readonly { id: PlatformTab; label: string }[] = [
  * Gobernanza Root Read-Only (US-12 a US-15, US-18), Bóveda (US-16/17),
  * Auditoría Forense (US-19) y Observabilidad SRE (US-20 a US-22).
  */
-export function PlatformConsoleView({ session }: PlatformConsoleViewProps) {
-  const [activeTab, setActiveTab] = useState<PlatformTab>('posture');
+export function PlatformConsoleView({
+  session,
+  activeTab: controlledTab,
+  onTabChange,
+}: PlatformConsoleViewProps) {
+  const [internalTab, setInternalTab] = useState<PlatformTab>('posture');
+  const activeTab = controlledTab ?? internalTab;
+  const isControlled = controlledTab !== undefined;
+
+  const handleSelect = (tab: PlatformTab) => {
+    if (onTabChange) {
+      onTabChange(tab);
+    } else {
+      setInternalTab(tab);
+    }
+  };
 
   return (
     <div className="m3-stack">
-      <div role="tablist" aria-label="Consola de Plataforma Root" className="m3-tabs">
-        {PLATFORM_TABS.map((tab) => {
-          const isSelected = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={isSelected}
-              className={`m3-tab ${isSelected ? 'm3-tab--active' : ''}`.trim()}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {!isControlled && (
+        <div role="tablist" aria-label="Consola de Plataforma Root" className="m3-tabs">
+          {PLATFORM_TABS.map((tab) => {
+            const isSelected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                className={`m3-tab ${isSelected ? 'm3-tab--active' : ''}`.trim()}
+                onClick={() => handleSelect(tab.id)}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {activeTab === 'posture' && <SecurityPosturePanel session={session} />}
       {activeTab === 'vault' && <VaultAndRotationPanel session={session} />}
