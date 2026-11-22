@@ -384,19 +384,19 @@ npm run docker:cloud:down
      --email "${ROOT_EMAIL}" \
      --password "${ROOT_PASS}" \
      --raw-json)
-   echo "${REG_RESP}" | jq '{ userId, tenantId: "system", roles: ["superadmin", "member"], token: .accessToken }'
+   echo "${REG_RESP}" | jq '{ userId, email: env.ROOT_EMAIL, tenantId: "system", roles: ["superadmin", "member"], token: .accessToken }'
    ```
 
    ```js
-   // 2) En DevTools Console de http://localhost:3000 (pegar los valores de REG_RESP):
-   localStorage.setItem('identity_session', JSON.stringify({
-     token: '<accessToken>',
-     userId: '<userId>',
-     email: '<ROOT_EMAIL>',
-     tenantId: 'system',
-     roles: ['superadmin', 'member'],
-   }));
+   // 2) En DevTools Console de http://localhost:3000 (pegar el objeto JSON impreso arriba):
+   localStorage.setItem('identity_session', JSON.stringify(/* pegá acá el JSON */));
+   location.href = '/platform';
    ```
+
+   > [!TIP]
+   > **Aislamiento y Vigencia de la Sesión Root (`localStorage` & TTL 1h):**
+   > - **Evitar `403 Forbidden (ADR-0009)` al probar otros inquilinos:** Todas las pestañas de `http://localhost:3000` comparten `localStorage.identity_session`. Si iniciás sesión con un usuario comercial (`acme-corp` o federación Google en `/auth`), se sobrescribirá la sesión `system:superadmin`. Usá una **ventana incógnito** o perfil separado para las pruebas de inquilinos comerciales.
+   > - **Renovar ante `Error de Postura: Invalid or expired token`:** El JWT emitido por `create-root-admin` tiene un TTL de **1 hora** (`BoundedShell` valida `tenantId`/`roles` en cliente, pero la API rechaza tokens vencidos con `401`). Si expiró, volvé a ejecutar el paso `1)` y actualizá `identity_session` en DevTools.
 2. **Caso Negativo (Guardia `403 Forbidden` para Inquilino Comercial):** Si abres [`http://localhost:3000/platform`](http://localhost:3000/platform) con una sesión comercial (e.g., `acme-corp`), `BoundedShell` bloquea el acceso mostrando `M3AlertBanner` (`platform-access-denied`) sin renderizar pestañas administrativas.
 3. **Caso Positivo (Postura Read-Only Cloud/IaC):**
    - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) con sesión `system:superadmin` en la pestaña **`Postura & Gobernanza`**.
@@ -593,7 +593,7 @@ npm run docker:ingress:down
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-13`)
 
-1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
+1. **Prerrequisitos:** Sesión `system:superadmin` activa y vigente (ver pasos y nota de TTL/aislamiento en `US-12`) en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
 2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
    - Verifica el chip **`Ingress: TLS 1.3`** y el nodo `infrastructurePosture.ingressTls` en `M3JsonViewer`:
      ```json
@@ -771,7 +771,7 @@ Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-14`)
 
-1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
+1. **Prerrequisitos:** Sesión `system:superadmin` activa y vigente (ver pasos y nota de TTL/aislamiento en `US-12`) en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
 2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
    - Verifica el chip **`Helm: STRICT`** y el nodo `infrastructurePosture.helmChart` en **Snapshot de Postura Read-Only**:
      ```json
@@ -943,7 +943,7 @@ deployment "identity-service" successfully rolled out
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-15`)
 
-1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
+1. **Prerrequisitos:** Sesión `system:superadmin` activa y vigente (ver pasos y nota de TTL/aislamiento en `US-12`) en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
 2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
    - Verifica el chip **`CI/CD UID: 1000`** y el nodo `infrastructurePosture.cicdGuardrails` (`nonRootUid: 1000`, `imageTagPolicy: "IMMUTABLE_SHA"`, `rollbackCircuitBreaker: true`).
    - Comprueba la etiqueta `W3C Trace` debajo de los chips y pulsa **`Actualizar Postura`** para verificar la recarga sin secretos en claro.
