@@ -717,9 +717,9 @@ sequenceDiagram
     participant CI as GitHub Actions CI (ci.yml)
     participant CD as GitHub Actions CD (cd.yml)
     participant Sec as Container Security Auditor
-    participant ACR as Azure Container Registry
+    participant Registry as Container Registry (ACR)
     participant Helm as Helm Engine (deploy-helm-rollout.sh)
-    participant AKS as Azure Kubernetes Service (AKS)
+    participant Cluster as Container Cluster (AKS)
     participant Rollback as Circuit Breaker (helm rollback)
 
     Dev->>CI: Push de commit a main / PR
@@ -728,14 +728,14 @@ sequenceDiagram
     CD->>CD: Generación de etiquetas inmutables (sha-1b258bb, v0.1.0)
     CD->>Sec: Construcción de Dockerfile.production y auditoría de seguridad
     Sec->>Sec: Verificación de invariantes (usuario node, sin devDeps y tamaño < 250MB)
-    Sec->>ACR: Push de imagen inmutable autenticado por Azure Service Principal
+    Sec->>Registry: Push de imagen inmutable autenticado por Azure Service Principal
     CD->>Helm: Invocación de script de despliegue atómico con timeout de 120s
-    Helm->>AKS: helm upgrade --install con nuevo digest de imagen
+    Helm->>Cluster: helm upgrade --install con nuevo digest de imagen
     alt Rollout Exitoso (2/2 réplicas listas en < 120s)
-        AKS-->>Helm: Despliegue completado con Zero-Downtime
+        Cluster-->>Helm: Despliegue completado con Zero-Downtime
     else Rollout Bloqueado o Probes Fallidas (> 120s)
         Helm->>Rollback: Disparo de Circuit Breaker de Rollback
-        Rollback->>AKS: Restauración automática inmediata a la revisión anterior
+        Rollback->>Cluster: Restauración automática inmediata a la revisión anterior
     end
 ```
 
@@ -747,9 +747,9 @@ sequenceDiagram
 | **`CI` (`GitHub Actions CI — ci.yml`)** | `participant` | Orquestador de integración continua que ejecuta las 7 compuertas de calidad obligatorias antes de habilitar cualquier entrega. |
 | **`CD` (`GitHub Actions CD — cd.yml`)** | `participant` | Orquestador de entrega continua encargado del etiquetado inmutable doble (`sha-<commit>` y `v<version>`) y del disparo controlado del despliegue. |
 | **`Sec` (Container Security Auditor)** | `participant` | Etapa de auditoría automatizada que verifica usuario no-root (`node` UID 1000), ausencia de `.ts` / `devDependencies` y límite estricto de tamaño `< 250MB`. |
-| **`ACR` (Azure Container Registry)** | `participant` | Registro privado de artefactos OCI en Azure que almacena las imágenes firmadas e inmutables (rechazando etiquetas mutables como `:latest`). |
+| **`Registry` (Container Registry — ACR)** | `participant` | Registro privado de artefactos OCI que almacena las imágenes firmadas e inmutables (rechazando etiquetas mutables como `:latest`). |
 | **`Helm` (`deploy-helm-rollout.sh`)** | `participant` | Script de despliegue atómico que ejecuta `helm upgrade --install` y supervisa activamente la convergencia del rollout con timeout de 120s. |
-| **`AKS` (Azure Kubernetes Service)** | `participant` | Clúster Kubernetes de producción que aplica el `RollingUpdate` y valida las sondas `/health/live` y `/health/ready` de cada nueva réplica. |
+| **`Cluster` (Container Cluster — AKS)** | `participant` | Clúster Kubernetes de producción que aplica el `RollingUpdate` y valida las sondas `/health/live` y `/health/ready` de cada nueva réplica. |
 | **`Rollback` (`helm rollback`)** | `participant` | Mecanismo Circuit Breaker que revierte automáticamente a la última revisión saludable ante un fallo de probes o timeout, evitando degradación del servicio. |
 
 #### B. Desglose Secuencial del Flujo (Pasos 1 al 12)
@@ -760,12 +760,12 @@ sequenceDiagram
 4. **Paso 4 (`CD -> CD`):** El pipeline calcula etiquetas inmutables simultáneas a partir del hash del commit (`sha-<commit>`) y la versión semántica (`v<version>`).
 5. **Paso 5 (`CD -> Sec`):** Se construye la imagen multi-stage productiva (`Dockerfile.production`) y se entrega al auditor de seguridad de contenedores.
 6. **Paso 6 (`Sec -> Sec`):** El auditor comprueba de forma determinista que la imagen corre bajo usuario `node` (UID 1000), no contiene fuentes TypeScript ni `devDependencies` y pesa menos de `250MB`.
-7. **Paso 7 (`Sec -> ACR`):** Validados los invariantes, la imagen inmutable se publica en Azure Container Registry autenticándose mediante Azure Service Principal.
+7. **Paso 7 (`Sec -> Registry`):** Validados los invariantes, la imagen inmutable se publica en el Container Registry (ACR) autenticándose mediante Azure Service Principal.
 8. **Paso 8 (`CD -> Helm`):** El workflow invoca `scripts/deploy-helm-rollout.sh` con el digest/tag inmutable y un presupuesto máximo de convergencia de `120s`.
-9. **Paso 9 (`Helm -> AKS`):** Helm aplica `helm upgrade --install` sobre el clúster AKS, iniciando el reemplazo progresivo de réplicas (`maxUnavailable: 0`).
-10. **Paso 10 — Rama `alt` Rollout Exitoso (`AKS -->> Helm`):** Si las `2/2` réplicas alcanzan estado `200 UP` en `/health/live` y `/health/ready` dentro de los `120s`, el despliegue se certifica completo con Zero-Downtime.
+9. **Paso 9 (`Helm -> Cluster`):** Helm aplica `helm upgrade --install` sobre el Container Cluster (AKS), iniciando el reemplazo progresivo de réplicas (`maxUnavailable: 0`).
+10. **Paso 10 — Rama `alt` Rollout Exitoso (`Cluster -->> Helm`):** Si las `2/2` réplicas alcanzan estado `200 UP` en `/health/live` y `/health/ready` dentro de los `120s`, el despliegue se certifica completo con Zero-Downtime.
 11. **Paso 11 — Rama `else` Rollout Fallido (`Helm -> Rollback`):** Si alguna sonda responde `503 DOWN` o el rollout excede el timeout de `120s`, el script dispara automáticamente el Circuit Breaker.
-12. **Paso 12 — Rama `else` Rollout Fallido (`Rollback -> AKS`):** Se ejecuta `helm rollback` para restaurar de inmediato la revisión estable anterior y se detiene el pipeline con código de error (`exit code 1`).
+12. **Paso 12 — Rama `else` Rollout Fallido (`Rollback -> Cluster`):** Se ejecuta `helm rollback` para restaurar de inmediato la revisión estable anterior y se detiene el pipeline con código de error (`exit code 1`).
 
 ---
 
