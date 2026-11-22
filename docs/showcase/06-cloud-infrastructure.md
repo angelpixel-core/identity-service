@@ -194,7 +194,11 @@ sequenceDiagram
 
 ### 2. Evidencia Visual: Dashboard Local de Floci Azure ARM
 
-Captura en alta resolución del panel web nativo de **Floci Azure ARM** (`https://localhost:4577/`, protocolo dual HTTP/HTTPS), el emulador local que expone los 33 servicios de Azure (`arm`, `acr`, `aks`, `keyvault`, `postgres`, `blob`, `monitor`, entre otros) utilizados por nuestros 6 módulos de Terraform:
+Captura en alta resolución del panel web nativo de **Floci Azure ARM** (`http://localhost:4577`), el emulador local que expone paridad determinista para nuestros 6 módulos de Terraform:
+
+- **Estado y Runtime:** Indicador **`Online`**, versión **`v0.16.0`** (`floci-az-always-free` / `AzureCloud`).
+- **Conexión y Región:** Endpoint **`http://localhost:4577`** · Región **`eastus`** · Cuenta local **`devstoreaccount1`**.
+- **Catálogo de Servicios:** **`33 enabled`** services activos (incluyendo `acr`, `aks`, `keyvault`, `postgres`, `blob`, `arm` y `monitor`).
 
 ![Floci Azure ARM Local Emulator Dashboard](./assets/screenshots/us12_floci_azure_dashboard.png)
 
@@ -346,9 +350,19 @@ npm run docker:cloud:down
 3. **Caso Positivo (Postura Read-Only Cloud/IaC):**
    - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) con sesión `system:superadmin` en la pestaña **`Postura & Gobernanza`**.
    - Pulsa **`Actualizar Postura`** (`GET /api/v1/platform/posture`).
-   - Verifica el chip `Cloud IaC: VERIFIED_PARITY` y en **Snapshot de Postura Read-Only** (`M3JsonViewer`) el nodo `infrastructurePosture.cloudIac` (`provider: "Azure / Floci"`, `tlsEndpoint: "https://localhost:4577"`).
+   - Verifica el chip `Cloud IaC: VERIFIED_PARITY` y en **Snapshot de Postura Read-Only** (`M3JsonViewer`) el nodo `infrastructurePosture.cloudIac`:
+     ```json
+     "cloudIac": {
+       "story": "US-12",
+       "provider": "Azure / Floci",
+       "tlsEndpoint": "https://localhost:4577",
+       "status": "VERIFIED_PARITY"
+     }
+     ```
    - *Nota:* Esta superficie es estrictamente `READ_ONLY_POSTURE`; el aprovisionamiento real se ejecuta vía Terraform/CLI (`npm run test:infra`).
 4. **Trazabilidad E2E:** `tests/e2e/web/m3_shell_and_route_guards.spec.tsx` (Scenario 2 & 3) y `tests/e2e/web/platform_console.spec.tsx` (Scenario 1 & 2).
+
+![Consola /platform — Postura Cloud IaC (US-12)](./assets/screenshots/us12_platform_iac_posture.png)
 
 ---
 
