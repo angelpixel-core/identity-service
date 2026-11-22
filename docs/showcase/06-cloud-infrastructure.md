@@ -374,7 +374,29 @@ npm run docker:cloud:down
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-12`)
 
-1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos. Registra o autentica un operador en el Root Tenant (`x-tenant-id: system`) vía `POST /api/v1/auth/register` o `./bin/identity users create-root-admin` y guarda su sesión (`tenantId: "system"`, `roles: ["superadmin", "member"]`) en `localStorage.setItem('identity_session', ...)`.
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos. Registra o autentica un operador en el Root Tenant (`x-tenant-id: system`) vía `POST /api/v1/auth/register` o `./bin/identity users create-root-admin` y guarda su sesión (`tenantId: "system"`, `roles: ["superadmin", "member"]`) en `localStorage.setItem('identity_session', ...)`:
+
+   ```bash
+   # 1) Crear operador superadmin en el Root Tenant ('system')
+   export ROOT_EMAIL="admin.$(date +%s)@angelpixel.io"
+   export ROOT_PASS='SuperAdmin2026!'
+   REG_RESP=$(./bin/identity users create-root-admin \
+     --email "${ROOT_EMAIL}" \
+     --password "${ROOT_PASS}" \
+     --raw-json)
+   echo "${REG_RESP}" | jq '{ userId, tenantId: "system", roles: ["superadmin", "member"], token: .accessToken }'
+   ```
+
+   ```js
+   // 2) En DevTools Console de http://localhost:3000 (pegar los valores de REG_RESP):
+   localStorage.setItem('identity_session', JSON.stringify({
+     token: '<accessToken>',
+     userId: '<userId>',
+     email: '<ROOT_EMAIL>',
+     tenantId: 'system',
+     roles: ['superadmin', 'member'],
+   }));
+   ```
 2. **Caso Negativo (Guardia `403 Forbidden` para Inquilino Comercial):** Si abres [`http://localhost:3000/platform`](http://localhost:3000/platform) con una sesión comercial (e.g., `acme-corp`), `BoundedShell` bloquea el acceso mostrando `M3AlertBanner` (`platform-access-denied`) sin renderizar pestañas administrativas.
 3. **Caso Positivo (Postura Read-Only Cloud/IaC):**
    - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) con sesión `system:superadmin` en la pestaña **`Postura & Gobernanza`**.
