@@ -268,9 +268,27 @@ body {
 .m3-toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
+  align-items: center;
+  gap: 1.25rem;
   flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.m3-toolbar > :first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.m3-toolbar > .m3-btn {
+  flex-shrink: 0;
+}
+
+.m3-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.35rem 0;
 }
 
 .m3-posture-grid {
