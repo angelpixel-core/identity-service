@@ -511,7 +511,35 @@ Server: nginx/1.27.5
 Location: https://auth.angelpixel.local/health/live
 ```
 
-#### Paso 3: Terminación TLS 1.3 en `:443` y Propagación de `X-Forwarded-Proto`
+#### Paso 3: Terminación TLS 1.3 en `:443` y Propagación de `X-Forwarded-Proto` (`./bin/identity`)
+
+Usando el binario unificado `./bin/identity ops health` con `--cacert` y `--resolve`, verificamos el endpoint `/health/live` a través del túnel TLS del Ingress sin necesidad de editar `/etc/hosts`:
+
+```bash
+./bin/identity ops health --probe live \
+  --url "https://${INGRESS_HOST}" \
+  --cacert "${INGRESS_CA_CERT}" \
+  --resolve "${INGRESS_HOST}:443:127.0.0.1"
+```
+
+##### Respuesta Real Obtenida a través del Túnel TLS (HTTP 200 OK):
+```text
+HTTP/1.1 200 OK [814ms]
+GET https://auth.angelpixel.local/health/live
+Trace: traceparent=00-0853cc6f2695e64bebc96b787d0dcfde-8bd2b6d6a9f3080a-01 | X-Request-ID=4b4145a121054e5a7b7f97a0165bbf40
+
+{
+  "status": "UP",
+  "checks": {
+    "liveness": "OK"
+  },
+  "protocol": "https",
+  "timestamp": "2026-11-22T22:41:51.165Z"
+}
+```
+
+<details>
+<summary><b>Ver Receta Equivalente con cURL (Cabeceras HTTP Crudas)</b></summary>
 
 ```bash
 curl -s -i --cacert "${INGRESS_CA_CERT}" \
@@ -519,21 +547,7 @@ curl -s -i --cacert "${INGRESS_CA_CERT}" \
   "https://${INGRESS_HOST}/health/live"
 ```
 
-##### Respuesta Real Obtenida a través del Túnel TLS (HTTP 200 OK):
-```http
-HTTP/1.1 200 OK
-Server: nginx/1.27.5
-Date: Thu, 19 Nov 2026 01:56:35 GMT
-Content-Type: application/json; charset=utf-8
-Content-Length: 100
-Connection: keep-alive
-X-Powered-By: Express
-X-Request-ID: 7da3e3120e12a486c6433d0b247af189
-X-Correlation-ID: 7da3e3120e12a486c6433d0b247af189
-traceparent: 00-c81c7e9c84704ea16b13a6cccdedb6d1-7567a11144dc607c-01
-
-{"status":"UP","checks":{"liveness":"OK"},"protocol":"https","timestamp":"2026-11-20T01:56:35.715Z"}
-```
+</details>
 
 #### Paso 4: Suite Automatizada Completa (`npm run test:ingress`)
 

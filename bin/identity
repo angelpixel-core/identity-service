@@ -8,6 +8,10 @@
 
 import { performance } from 'perf_hooks';
 import crypto from 'crypto';
+import fs from 'fs';
+import http from 'http';
+import https from 'https';
+import dns from 'dns';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
 const VERSION = '0.1.0';
@@ -102,6 +106,65 @@ function parseArgs(args) {
 
 // --- CLIENTE HTTP ---
 let globalTraceHeaders = {};
+let globalTlsOptions = { ca: null, resolveHost: null, resolveIp: null };
+
+function requestWithNodeTransport(method, fullUrl, headers, bodyStr) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(fullUrl);
+    const isHttps = target.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const reqOptions = {
+      method,
+      hostname: target.hostname,
+      port: target.port || (isHttps ? 443 : 80),
+      path: `${target.pathname}${target.search}`,
+      headers,
+      ...(isHttps && globalTlsOptions.ca ? { ca: globalTlsOptions.ca } : {}),
+      ...(globalTlsOptions.resolveHost && globalTlsOptions.resolveIp
+        ? {
+            lookup: (hostname, opts, cb) => {
+              if (hostname === globalTlsOptions.resolveHost) {
+                const family = 4;
+                if (opts && opts.all) {
+                  return cb(null, [{ address: globalTlsOptions.resolveIp, family }]);
+                }
+                return cb(null, globalTlsOptions.resolveIp, family);
+              }
+              return dns.lookup(hostname, opts, cb);
+            },
+          }
+        : {}),
+    };
+
+    const req = transport.request(reqOptions, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        const rawText = Buffer.concat(chunks).toString('utf8');
+        const normalizedHeaders = new Headers();
+        for (const [key, val] of Object.entries(res.headers)) {
+          if (Array.isArray(val)) {
+            val.forEach((v) => normalizedHeaders.append(key, v));
+          } else if (val !== undefined) {
+            normalizedHeaders.set(key, String(val));
+          }
+        }
+        resolve({
+          status: res.statusCode || 0,
+          statusText: res.statusMessage || '',
+          headers: normalizedHeaders,
+          rawText,
+        });
+      });
+    });
+
+    req.on('error', reject);
+    if (bodyStr !== undefined) {
+      req.write(bodyStr);
+    }
+    req.end();
+  });
+}
 
 async function requestHttp(method, path, options = {}) {
   const baseUrl = options.baseUrl || DEFAULT_BASE_URL;
@@ -122,27 +185,48 @@ async function requestHttp(method, path, options = {}) {
   }
 
   const start = performance.now();
-  const response = await fetch(fullUrl, {
-    method,
-    headers,
-    body: bodyStr,
-  });
+  let status;
+  let statusText;
+  let responseHeaders;
+  let rawText;
+
+  if (globalTlsOptions.ca || globalTlsOptions.resolveHost) {
+    const res = await requestWithNodeTransport(method, fullUrl, headers, bodyStr);
+    status = res.status;
+    statusText = res.statusText;
+    responseHeaders = res.headers;
+    rawText = res.rawText;
+  } else {
+    const response = await fetch(fullUrl, {
+      method,
+      headers,
+      body: bodyStr,
+    });
+    status = response.status;
+    statusText = response.statusText;
+    responseHeaders = response.headers;
+    rawText = await response.text();
+  }
   const latencyMs = Math.round(performance.now() - start);
 
-  const contentType = response.headers.get('content-type') || '';
+  const contentType = responseHeaders.get('content-type') || '';
   let data = null;
   if (contentType.includes('application/json')) {
-    data = await response.json();
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = rawText;
+    }
   } else {
-    data = await response.text();
+    data = rawText;
   }
 
-  const setCookie = response.headers.get('set-cookie');
+  const setCookie = responseHeaders.get('set-cookie');
 
   return {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
+    status,
+    statusText,
+    headers: responseHeaders,
     setCookie,
     data,
     latencyMs,
@@ -1465,8 +1549,20 @@ async function handleOpsDomain(action, flags, baseUrl, rawJson) {
 // --- FUNCIÓN PRINCIPAL (ENTRYPOINT) ---
 async function main() {
   const parsed = parseArgs(process.argv.slice(2));
-  const baseUrl = parsed.flags['base-url'] || DEFAULT_BASE_URL;
+  const baseUrl = parsed.flags['base-url'] || parsed.flags.url || DEFAULT_BASE_URL;
   const rawJson = Boolean(parsed.flags['raw-json'] || parsed.flags.q);
+
+  globalTlsOptions = { ca: null, resolveHost: null, resolveIp: null };
+  if (parsed.flags.cacert) {
+    globalTlsOptions.ca = fs.readFileSync(String(parsed.flags.cacert));
+  }
+  if (parsed.flags.resolve) {
+    const parts = String(parsed.flags.resolve).split(':');
+    if (parts.length >= 2) {
+      globalTlsOptions.resolveHost = parts[0];
+      globalTlsOptions.resolveIp = parts[parts.length - 1];
+    }
+  }
 
   globalTraceHeaders = {};
   if (parsed.flags['traceparent']) {
