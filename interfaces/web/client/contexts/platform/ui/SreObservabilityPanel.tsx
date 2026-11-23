@@ -16,10 +16,67 @@ export interface ProbeSnapshot {
 }
 
 function extractKeyMetrics(metricsText: string): readonly string[] {
-  return metricsText
+  const nonComment = metricsText
     .split('\n')
-    .filter((line) => line.trim().length > 0 && !line.startsWith('#'))
-    .slice(0, 12);
+    .filter((line) => line.trim().length > 0 && !line.startsWith('#'));
+  const prioritized = nonComment.filter(
+    (line) =>
+      line.startsWith('http_requests_total') ||
+      line.startsWith('http_request_duration_seconds_count') ||
+      line.startsWith('http_request_duration_seconds_sum')
+  );
+  const rest = nonComment.filter((line) => !prioritized.includes(line));
+  return [...prioritized, ...rest].slice(0, 12);
+}
+
+interface GoldenSignalsSummary {
+  readonly totalRequests: number;
+  readonly errorRequests: number;
+  readonly avgLatencyMs: string;
+  readonly normalizedRoutesCount: number;
+}
+
+function extractGoldenSignals(metricsText: string): GoldenSignalsSummary {
+  const lines = metricsText.split('\n');
+  let requestsTotalSum = 0;
+  let durationCountSum = 0;
+  let durationSumTotal = 0;
+  let errorSum = 0;
+  const routes = new Set<string>();
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const spaceIdx = line.lastIndexOf(' ');
+    if (spaceIdx <= 0) continue;
+    const val = parseFloat(line.slice(spaceIdx + 1));
+    if (!Number.isFinite(val)) continue;
+
+    const routeMatch = line.match(/route="([^"]+)"/);
+    if (routeMatch?.[1]) routes.add(routeMatch[1]);
+
+    const statusMatch = line.match(/status_code="([45]\d\d)"/);
+    if (line.startsWith('http_requests_total')) {
+      requestsTotalSum += val;
+      if (statusMatch) errorSum += val;
+    } else if (line.startsWith('http_request_duration_seconds_count')) {
+      durationCountSum += val;
+      if (statusMatch) errorSum += val;
+    } else if (line.startsWith('http_request_duration_seconds_sum')) {
+      durationSumTotal += val;
+    }
+  }
+
+  const totalRequests = requestsTotalSum > 0 ? requestsTotalSum : durationCountSum;
+  const avgLatencyMs =
+    durationCountSum > 0 ? `${((durationSumTotal / durationCountSum) * 1000).toFixed(2)} ms` : '—';
+
+  return {
+    totalRequests,
+    errorRequests: errorSum,
+    avgLatencyMs,
+    normalizedRoutesCount: routes.size,
+  };
 }
 
 /**
@@ -73,6 +130,7 @@ export function SreObservabilityPanel() {
 
   const extractedTraceId = snapshot?.traceparent?.split('-')[1] ?? '';
   const keyMetrics = snapshot ? extractKeyMetrics(snapshot.metricsRaw) : [];
+  const goldenSignals = snapshot ? extractGoldenSignals(snapshot.metricsRaw) : null;
 
   return (
     <div className="m3-stack">
@@ -174,18 +232,31 @@ export function SreObservabilityPanel() {
               <section className="m3-posture-card" aria-label="Métricas OpenMetrics">
                 <div className="m3-posture-card__header">
                   <h3 className="m3-posture-card__title">Métricas OpenMetrics (US-21)</h3>
-                  <M3Chip label={`${keyMetrics.length} series`} tone="primary" />
+                  <M3Chip
+                    label={`${goldenSignals?.normalizedRoutesCount ?? 0} rutas · ${keyMetrics.length} series`}
+                    tone="primary"
+                  />
                 </div>
                 <dl className="m3-posture-list">
                   <div className="m3-posture-row">
-                    <dt>Endpoint</dt>
+                    <dt>Tráfico HTTP</dt>
                     <dd>
+                      <M3Chip label={`${goldenSignals?.totalRequests ?? 0} req`} tone="success" />
                       <code>GET /metrics</code>
                     </dd>
                   </div>
                   <div className="m3-posture-row">
-                    <dt>Formato</dt>
-                    <dd>Prometheus / OpenMetrics</dd>
+                    <dt>Latencia Promedio</dt>
+                    <dd>{goldenSignals?.avgLatencyMs ?? '—'}</dd>
+                  </div>
+                  <div className="m3-posture-row">
+                    <dt>Errores (4xx / 5xx)</dt>
+                    <dd>
+                      <M3Chip
+                        label={`${goldenSignals?.errorRequests ?? 0}`}
+                        tone={(goldenSignals?.errorRequests ?? 0) > 0 ? 'warning' : 'success'}
+                      />
+                    </dd>
                   </div>
                 </dl>
               </section>

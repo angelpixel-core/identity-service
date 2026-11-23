@@ -436,12 +436,15 @@ http_request_duration_seconds_sum{method="GET",route="/.well-known/openid-config
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-21`)
 
-1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` en `localStorage` (`identity_session`).
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` vigente en [`http://localhost:3000/platform`](http://localhost:3000/platform). Si expiró el JWT de 1 hora (`Invalid or expired token`), regenerá `SESSION_JSON` en `localStorage` siguiendo el paso `1)` de **Demostración Interactiva (`US-16`)** en [`07-fintech-compliance.md`](./07-fintech-compliance.md).
 2. **Paso a Paso (Métricas Prometheus / OpenMetrics en Vivo):**
-   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Observabilidad SRE`**.
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona **`Observabilidad SRE`** en la barra lateral izquierda.
    - Pulsa **`Refrescar Telemetría`** → el cliente invoca `GET /metrics` (`text/plain; version=0.0.4`).
-   - Verifica el chip **`OpenMetrics / Prometheus`** y el bloque **Métricas Clave (`/metrics`)** (`M3JsonViewer`) mostrando series reales como `http_requests_total` y confirmando rutas normalizadas (sin explosión de cardinalidad por IDs dinámicos).
-3. **Verificación Técnica & Trazabilidad E2E:** Comprueba `traceparent` W3C en **DevTools → Network**; `tests/e2e/web/platform_console.spec.tsx` (Scenario 5).
+   - Verifica el chip **`OpenMetrics / Prometheus`**, la tarjeta **Métricas OpenMetrics (`US-21`)** con las Señales de Oro en vivo (**Tráfico HTTP**, **Latencia Promedio**, **Errores 4xx/5xx** y conteo de rutas normalizadas) y despliega **Ver Métricas Clave (`/metrics`)** para inspeccionar `http_request_duration_seconds_count` sin explosión de cardinalidad por IDs dinámicos.
+
+   ![Consola /platform Observabilidad SRE — Métricas OpenMetrics y Señales de Oro (US-21)](./assets/screenshots/us21_sre_metrics.png)
+
+3. **Verificación Técnica & Trazabilidad E2E:** Comprueba `traceparent` W3C en **DevTools → Network** (filtro **`XHR`** → `GET /metrics` → pestaña **`Headers`**); `tests/e2e/web/platform_console.spec.tsx` (Scenario 5).
 
 ---
 
