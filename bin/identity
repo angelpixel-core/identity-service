@@ -1387,6 +1387,11 @@ ${colors.bold}Acciones Operacionales & Observabilidad:${colors.reset}
                      --filter <texto>           Filtra líneas o métricas por subcadena o expresión regular
                      --format <tipo>            Formato de salida: prometheus | json (def: prometheus)
 
+  ${colors.cyan}posture${colors.reset}          Consulta la postura de seguridad e infraestructura Root Read-Only (ADR-0009, US-12..18)
+                   Banderas:
+                     --token <jwt>              Access token de operador system:superadmin
+                     --tenant <id>              Inquilino Root (def: system)
+
   ${colors.cyan}reseed-dev-sessions${colors.reset}  Re-siembra en caliente la sesión de refresco de desarrollo (portal-web)
 
   ${colors.cyan}db-reset${colors.reset}             Reinicia por completo la base de datos PostgreSQL y purga la caché Redis
@@ -1491,6 +1496,24 @@ async function handleOpsDomain(action, flags, baseUrl, rawJson) {
         }
       }
     }
+    return;
+  }
+
+  if (action === 'posture') {
+    const token = flags.token || flags.t;
+    const tenantId = String(flags.tenant || 'system');
+    if (!token) {
+      console.error(`${colors.red}Error:${colors.reset} Se requiere --token <jwt> de un operador system:superadmin.`);
+      process.exit(1);
+    }
+    const res = await requestHttp('GET', '/api/v1/platform/posture', {
+      baseUrl,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'x-tenant-id': tenantId,
+      },
+    });
+    renderResponse(res, rawJson);
     return;
   }
 

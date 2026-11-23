@@ -950,12 +950,37 @@ Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)
 ✓ Caso negativo validado (falló según lo esperado): networkPolicy.ingress.port fuera de rango IANA (> 65535).
 ```
 
+#### Paso 4: Verificación CLI de Postura en Runtime (`./bin/identity ops posture`)
+
+Con un token `system:superadmin` emitido por `./bin/identity users create-root-admin` (`ROOT_TOKEN`), verificamos que el plano de control expone la postura `ENFORCED` de `NetworkPolicy` en tiempo real:
+
+```bash
+./bin/identity ops posture \
+  --token "${ROOT_TOKEN}" \
+  --raw-json | jq '.infrastructurePosture.networkPolicy'
+```
+
+##### Salida Real Verificada (`GET /api/v1/platform/posture`):
+```json
+{
+  "story": "US-18",
+  "defaultDenyAll": true,
+  "allowedIngressPort": 4000,
+  "status": "ENFORCED"
+}
+```
+
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-18`)
 
-1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform) → pestaña **`Postura & Gobernanza`**.
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` vigente en [`http://localhost:3000/platform`](http://localhost:3000/platform). Si venís de ejecutar el **Paso 5: Teardown** CLI o expiró el JWT de 1 hora (`Invalid or expired token`), regenerá `SESSION_JSON` en `localStorage` siguiendo el paso `1)` de **Demostración Interactiva (`US-16`)**.
 2. **Inspección Read-Only (`GET /api/v1/platform/posture`):**
-   - Verifica el chip **`NetPolicy: ENFORCED`** y el nodo `infrastructurePosture.networkPolicy` (`defaultDenyAll: true`, `allowedIngressPort: 4000`, `status: "ENFORCED"`) en **Snapshot de Postura Read-Only**.
+   - Selecciona **`Postura & Gobernanza`** en la barra lateral izquierda de `/platform`.
+   - Verifica en la tarjeta **Seguridad & Red** el chip **`NetPolicy: ENFORCED`** y la regla **`Default Deny · Puerto 4000`**.
+   - Expande el acordeón **Ver Snapshot JSON técnico** para inspeccionar el nodo `infrastructurePosture.networkPolicy` (`defaultDenyAll: true`, `allowedIngressPort: 4000`, `status: "ENFORCED"`).
    - *Nota:* Las políticas de red se mantienen estrictamente `READ_ONLY_POSTURE` en la UI; el renderizado y validación de manifiestos Kubernetes se realiza vía `npm run test:helm`.
+
+   ![Consola /platform Postura & Gobernanza — NetworkPolicy ENFORCED (US-18)](./assets/screenshots/us18_platform_netpolicy.png)
+
 3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2).
 
 ---
