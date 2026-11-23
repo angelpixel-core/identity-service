@@ -391,16 +391,20 @@ curl -s "${BASE_URL}/health/ready" | jq .
    > - El JWT emitido por `create-root-admin` expira a la **1 hora** (`TTL 1h`) o bien el operador temporal fue eliminado en el **Paso 5 (`users delete`)** si reutilizaste el mismo token.
    > - Regenerá el token con el comando `1)` y actualizá `identity_session` en DevTools. Para evitar que otras pruebas comerciales (`acme-corp`) sobrescriban tu sesión Root, revisá la guía de aislamiento en [`06-cloud-infrastructure.md`](./06-cloud-infrastructure.md).
 2. **Inspección de Metadatos (`GET /api/v1/secrets/status`):**
-   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Bóveda Criptográfica`**.
-   - Pulsa **`Refrescar Bóveda`** y verifica los chips `Active Key`, `JWKS Keys` y `Pool Gen`, junto con **Metadatos de Llaves y Pool** (`M3JsonViewer`), confirmando que no se expone ninguna clave privada PEM en claro.
-3. **Caso Negativo (Confirmación Explícita Obligatoria):** Comprueba que el botón **`Ejecutar Rotación de Llave`** permanece deshabilitado hasta marcar el checkbox de confirmación explícita.
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona **`Bóveda Criptográfica`** en la barra lateral izquierda.
+   - Pulsa **`Refrescar Bóveda`** y verifica los chips `Active Key`, `JWKS Keys` y `Pool Gen`, junto con las tarjetas **Llaves de Firma RSA-2048** y **Pool PostgreSQL & TLS** (y opcionalmente el acordeón **Ver Snapshot JSON técnico**), confirmando que no se expone ninguna clave privada PEM en claro.
+3. **Caso Negativo (Confirmación Explícita Obligatoria):** Comprueba en la tarjeta inferior que el botón **`Ejecutar Rotación de Llave`** permanece deshabilitado hasta marcar el checkbox de confirmación explícita.
+
+   ![Consola /platform Bóveda Criptográfica — Inspección y Guardia de Confirmación (Pasos 2 y 3)](./assets/screenshots/ui_platform_vault_audit.png)
+
 4. **Caso Positivo (Rotación en Caliente `POST /api/v1/secrets/rotate-signing-key`):**
    - Ingresa opcionalmente en **Nuevo Key ID (opcional)** `kid_rsa_showcase_2026`.
    - Marca el checkbox de confirmación y pulsa **`Ejecutar Rotación de Llave`**.
-   - Verifica en **Resultado de Rotación** el nuevo `activeKeyId` y en **Metadatos de Llaves y Pool** que `jwksKeysCount` incrementó reteniendo la llave previa durante el periodo de gracia.
-5. **Verificación Técnica & Trazabilidad E2E:** Comprueba `X-Request-ID` / `traceparent` W3C en DevTools; `tests/e2e/web/platform_console.spec.tsx` (Scenario 3).
+   - Verifica en **Resultado de Rotación** el nuevo `activeKeyId` y en **Llaves de Firma RSA-2048** que `JWKS Keys` incrementó reteniendo la llave previa durante el periodo de gracia.
 
-![Consola /platform Bóveda Criptográfica en Material Design 3](./assets/screenshots/ui_platform_vault_audit.png)
+   ![Consola /platform Bóveda Criptográfica — Rotación Exitosa en Caliente (Paso 4)](./assets/screenshots/us16_vault_rotation_success.png)
+
+5. **Verificación Técnica & Trazabilidad E2E:** Comprueba `X-Request-ID` / `traceparent` W3C en DevTools; `tests/e2e/web/platform_console.spec.tsx` (Scenario 3).
 
 ---
 

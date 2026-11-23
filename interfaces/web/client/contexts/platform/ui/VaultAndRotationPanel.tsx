@@ -108,7 +108,7 @@ export function VaultAndRotationPanel({ session }: VaultAndRotationPanelProps) {
           <div>
             <h2>Bóveda Criptográfica &amp; Rotación Sin Downtime</h2>
             <p className="m3-muted">
-              Metadatos activos RSA-2048 (`US-16`) y postura TLS de base de datos (`US-17`) sin secretos en claro.
+              Metadatos activos RSA-2048 (<code>US-16</code>) y postura TLS de base de datos (<code>US-17</code>) sin secretos en claro.
             </p>
           </div>
           <M3Button variant="tonal" onClick={loadStatus} disabled={loading}>
@@ -126,17 +126,95 @@ export function VaultAndRotationPanel({ session }: VaultAndRotationPanelProps) {
               <M3Chip label={`Pool Gen: ${vaultStatus.databasePool.activeGeneration}`} tone="neutral" />
             </div>
 
-            <M3JsonViewer
-              title="Metadatos de Llaves y Pool (GET /api/v1/secrets/status)"
-              data={vaultStatus}
-              testId="vault-status-json"
-            />
+            <div className="m3-posture-grid">
+              <section className="m3-posture-card" aria-label="Llaves de Firma RSA-2048">
+                <div className="m3-posture-card__header">
+                  <h3 className="m3-posture-card__title">Llaves de Firma RSA-2048</h3>
+                  <M3Chip label={vaultStatus.status} tone="success" />
+                </div>
+                <dl className="m3-posture-list">
+                  <div className="m3-posture-row">
+                    <dt>Llave Activa</dt>
+                    <dd>
+                      <code className="m3-mono-truncate" title={vaultStatus.signingKeys.activeKeyId}>
+                        {vaultStatus.signingKeys.activeKeyId}
+                      </code>
+                    </dd>
+                  </div>
+                  <div className="m3-posture-row">
+                    <dt>Llaves en JWKS</dt>
+                    <dd>
+                      <M3Chip label={`${vaultStatus.signingKeys.jwksKeysCount} activas`} tone="success" />
+                      <span>({vaultStatus.signingKeys.retainedKeysCount} retenidas)</span>
+                    </dd>
+                  </div>
+                  <div className="m3-posture-row">
+                    <dt>Endpoint JWKS</dt>
+                    <dd>
+                      <code>{vaultStatus.signingKeys.jwksEndpoint}</code>
+                    </dd>
+                  </div>
+                  <div className="m3-posture-row">
+                    <dt>KIDs Expuestos</dt>
+                    <dd>
+                      <code className="m3-mono-truncate" title={vaultStatus.signingKeys.exposedKids.join(', ')}>
+                        {vaultStatus.signingKeys.exposedKids.join(', ')}
+                      </code>
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section className="m3-posture-card" aria-label="Pool PostgreSQL y TLS">
+                <div className="m3-posture-card__header">
+                  <h3 className="m3-posture-card__title">Pool PostgreSQL &amp; TLS</h3>
+                  <M3Chip label={`Gen ${vaultStatus.databasePool.activeGeneration}`} tone="primary" />
+                </div>
+                <dl className="m3-posture-list">
+                  <div className="m3-posture-row">
+                    <dt>Modo del Pool</dt>
+                    <dd>
+                      <code>{vaultStatus.databasePool.mode}</code>
+                    </dd>
+                  </div>
+                  <div className="m3-posture-row">
+                    <dt>TLS en Tránsito</dt>
+                    <dd>
+                      <M3Chip
+                        label={vaultStatus.databasePool.ssl?.enabled ? 'SSL ON' : 'SSL OFF'}
+                        tone={vaultStatus.databasePool.ssl?.enabled ? 'success' : 'neutral'}
+                      />
+                      <span>{vaultStatus.databasePool.ssl?.minVersion ?? 'TLSv1.2'}</span>
+                    </dd>
+                  </div>
+                  <div className="m3-posture-row">
+                    <dt>Validación CA</dt>
+                    <dd>
+                      {vaultStatus.databasePool.ssl?.rejectUnauthorized
+                        ? 'Strict (rejectUnauthorized)'
+                        : 'Permissive'}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
+
+            <details className="m3-collapsible-json">
+              <summary>Ver Snapshot JSON técnico (GET /api/v1/secrets/status)</summary>
+              <M3JsonViewer
+                title="Metadatos de Llaves y Pool (GET /api/v1/secrets/status)"
+                data={vaultStatus}
+                testId="vault-status-json"
+              />
+            </details>
           </div>
         )}
       </M3Card>
 
       <M3Card variant="tonal">
-        <h3>Rotación Controlada de Llave de Firma (`POST /api/v1/secrets/rotate-signing-key`)</h3>
+        <h3>
+          Rotación Controlada de Llave de Firma (<code>POST /api/v1/secrets/rotate-signing-key</code>)
+        </h3>
         <div className="m3-stack">
           <M3TextField
             id="rotate-key-id"
