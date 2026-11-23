@@ -366,7 +366,28 @@ curl -s "${BASE_URL}/health/ready" | jq .
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-16`)
 
-1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` guardada en `localStorage` (`identity_session`).
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` guardada en `localStorage` (`identity_session`). Si venís de ejecutar el **Paso 5: Teardown** o tu token venció, regenerá/reseteá la sesión Root así:
+
+   ```bash
+   # 1) Emitir un operador y JWT fresco en el Root Tenant ('system')
+   export ROOT_EMAIL="admin.$(date +%s)@angelpixel.io"
+   ./bin/identity users create-root-admin \
+     --email "${ROOT_EMAIL}" \
+     --password 'SuperAdmin2026!' \
+     --raw-json | jq '{ userId, email: env.ROOT_EMAIL, tenantId: "system", roles: ["superadmin", "member"], token: .accessToken }'
+   ```
+
+   ```js
+   // 2) En DevTools Console de http://localhost:3000 (pegar el JSON impreso arriba):
+   localStorage.removeItem('identity_session');
+   localStorage.setItem('identity_session', JSON.stringify(/* pegá acá el JSON */));
+   location.href = '/platform';
+   ```
+
+   > [!TIP]
+   > **Si ves `Error de Bóveda: Invalid or expired token`:**
+   > - El JWT emitido por `create-root-admin` expira a la **1 hora** (`TTL 1h`) o bien el operador temporal fue eliminado en el **Paso 5 (`users delete`)** si reutilizaste el mismo token.
+   > - Regenerá el token con el comando `1)` y actualizá `identity_session` en DevTools. Para evitar que otras pruebas comerciales (`acme-corp`) sobrescriban tu sesión Root, revisá la guía de aislamiento en [`06-cloud-infrastructure.md`](./06-cloud-infrastructure.md).
 2. **Inspección de Metadatos (`GET /api/v1/secrets/status`):**
    - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Bóveda Criptográfica`**.
    - Pulsa **`Refrescar Bóveda`** y verifica los chips `Active Key`, `JWKS Keys` y `Pool Gen`, junto con **Metadatos de Llaves y Pool** (`M3JsonViewer`), confirmando que no se expone ninguna clave privada PEM en claro.
