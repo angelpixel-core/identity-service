@@ -210,7 +210,7 @@ Trace: traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-d91d81ccca879309-01 | X-R
 2. **Paso a Paso (Propagación W3C `traceparent` y Correlación End-to-End):**
    - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona **`Observabilidad SRE`** en la barra lateral izquierda.
    - Pulsa **`Refrescar Telemetría`**.
-   - Verifica la barra **`W3C traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-...`** y en **DevTools → Network** las cabeceras `traceparent` y `X-Request-ID` inyectadas automáticamente por `apiRequest`.
+   - Verifica la barra **`W3C traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-...`** y en **DevTools → Network** (filtra por **`XHR`**, haz click en `GET /health/live` y abre la pestaña **`Headers`** → *Request Headers* / *Response Headers*) las cabeceras `traceparent` y `X-Request-ID` inyectadas automáticamente por `apiRequest`.
    - Pulsa el botón de **copiar `traceId`** (`4bf92f35...`) en el extremo derecho de la barra y pégalo en el filtro **`Trace ID`** de **`Auditoría Forense`** (`US-19`) para comprobar la correlación end-to-end.
 
    ![Consola /platform Observabilidad SRE — W3C traceparent y botón Copy traceId (US-20)](./assets/screenshots/us20_sre_traceparent.png)
