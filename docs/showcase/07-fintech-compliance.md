@@ -664,12 +664,21 @@ curl -s "${BASE_URL}/health/ready" | jq .
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-17`)
 
-1. **Prerrequisitos:** Sesión `system:superadmin` activa en [`http://localhost:3000/platform`](http://localhost:3000/platform).
-2. **Inspección de Postura TLS en Vivo:**
-   - En la pestaña **`Postura & Gobernanza`**, verifica el chip **`DB TLS: TLSv1.2`** y el nodo `securityPosture.databaseTls` (`sslEnabled`, `minVersion`, `rejectUnauthorized: true`, `activeGeneration`) en **Snapshot de Postura Read-Only**.
-   - En **`Bóveda Criptográfica`**, pulsa **`Refrescar Bóveda`** para consultar `databasePool.ssl` desde `GET /api/v1/secrets/status`.
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` vigente en [`http://localhost:3000/platform`](http://localhost:3000/platform). Si venís de ejecutar el **Paso 5: Teardown** CLI o expiró el JWT de 1 hora (`Invalid or expired token`), regenerá `SESSION_JSON` en `localStorage` siguiendo el paso `1)` de **Demostración Interactiva (`US-16`)** arriba.
+2. **Inspección de Postura TLS en Vivo — `Postura & Gobernanza` (`GET /api/v1/platform/posture`):**
+   - Selecciona **`Postura & Gobernanza`** en la barra lateral izquierda de `/platform`.
+   - Verifica el chip **`DB TLS: TLSv1.2`**, la tarjeta **Seguridad & Red** (`Base de Datos: TLSv1.2 · DYNAMIC_POSTGRES_POOL`) y opcionalmente el nodo `securityPosture.databaseTls` (`sslEnabled`, `minVersion`, `rejectUnauthorized: true`, `activeGeneration`) dentro del acordeón **Ver Snapshot JSON técnico**.
+
+   ![Consola /platform Postura & Gobernanza — DB TLS y Seguridad & Red (US-17)](./assets/screenshots/us12_platform_iac_posture.png)
+
+3. **Inspección del Pool PostgreSQL & TLS — `Bóveda Criptográfica` (`GET /api/v1/secrets/status`):**
+   - Selecciona **`Bóveda Criptográfica`** en la barra lateral izquierda y pulsa **`Refrescar Bóveda`**.
+   - Verifica en la tarjeta **Pool PostgreSQL & TLS** el `Modo del Pool` (`DYNAMIC_POSTGRES_POOL`), `TLS en Tránsito` (`TLSv1.2`) y `Validación CA: Strict (rejectUnauthorized)`, y opcionalmente `databasePool.ssl` en **Ver Snapshot JSON técnico**.
    - *Nota:* La defensa activa `BLOCKED_ANTI_DOWNGRADE` (`?sslmode=no-verify`) se prueba por CLI/API (`./bin/identity secrets rotate-db-credentials`), mientras la UI expone la postura TLS en modo solo lectura.
-3. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2 & 3).
+
+   ![Consola /platform Bóveda Criptográfica — Pool PostgreSQL & TLS (US-17)](./assets/screenshots/ui_platform_vault_audit.png)
+
+4. **Trazabilidad E2E:** `tests/e2e/web/platform_console.spec.tsx` (Scenario 2 & 3).
 
 ---
 
