@@ -952,9 +952,12 @@ Probando caso negativo: networkPolicy.ingress.port fuera de rango IANA (> 65535)
 
 #### Paso 4: Verificación CLI de Postura en Runtime (`./bin/identity ops posture`)
 
-Con un token `system:superadmin` emitido por `./bin/identity users create-root-admin` (`ROOT_TOKEN`), verificamos que el plano de control expone la postura `ENFORCED` de `NetworkPolicy` en tiempo real:
+Con un token `system:superadmin` vigente (si usaste `SESSION_JSON` en `US-16` o si tu `ROOT_TOKEN` anterior expiró tras 1 hora, actualízalo primero), verificamos que el plano de control expone la postura `ENFORCED` de `NetworkPolicy` en tiempo real:
 
 ```bash
+# Si ya tenés SESSION_JSON en tu terminal (o tras regenerarlo):
+export ROOT_TOKEN=$(echo "${SESSION_JSON}" | jq -r .token)
+
 ./bin/identity ops posture \
   --token "${ROOT_TOKEN}" \
   --raw-json | jq '.infrastructurePosture.networkPolicy'
