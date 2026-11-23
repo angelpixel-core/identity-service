@@ -206,12 +206,15 @@ Trace: traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-d91d81ccca879309-01 | X-R
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-20`)
 
-1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` guardada en `localStorage` (`identity_session`).
-2. **Paso a Paso (Propagación W3C `traceparent`):**
-   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Observabilidad SRE`**.
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` vigente en [`http://localhost:3000/platform`](http://localhost:3000/platform). Si expiró el JWT de 1 hora (`Invalid or expired token`), regenerá `SESSION_JSON` en `localStorage` siguiendo el paso `1)` de **Demostración Interactiva (`US-16`)** en [`07-fintech-compliance.md`](./07-fintech-compliance.md).
+2. **Paso a Paso (Propagación W3C `traceparent` y Correlación End-to-End):**
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona **`Observabilidad SRE`** en la barra lateral izquierda.
    - Pulsa **`Refrescar Telemetría`**.
-   - Verifica en pantalla la línea **`W3C traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-...`** y en **DevTools → Network** las cabeceras `traceparent` y `X-Request-ID` inyectadas automáticamente por `apiRequest`.
-   - Copia el `traceId` y fíltralo/consúltalo en la pestaña **`Auditoría Forense`** (`US-19`) para comprobar la correlación end-to-end.
+   - Verifica la barra **`W3C traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-...`** y en **DevTools → Network** las cabeceras `traceparent` y `X-Request-ID` inyectadas automáticamente por `apiRequest`.
+   - Pulsa el botón de **copiar `traceId`** (`4bf92f35...`) en el extremo derecho de la barra y pégalo en el filtro **`Trace ID`** de **`Auditoría Forense`** (`US-19`) para comprobar la correlación end-to-end.
+
+   ![Consola /platform Observabilidad SRE — W3C traceparent y botón Copy traceId (US-20)](./assets/screenshots/us20_sre_traceparent.png)
+
 3. **Trazabilidad E2E:** `tests/e2e/web/m3_shell_and_route_guards.spec.tsx` (Scenario 4) y `tests/e2e/web/platform_console.spec.tsx` (Scenario 5).
 
 ---

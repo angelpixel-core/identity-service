@@ -27,8 +27,21 @@ function extractKeyMetrics(metricsText: string): readonly string[] {
  */
 export function SreObservabilityPanel() {
   const [snapshot, setSnapshot] = useState<ProbeSnapshot | null>(null);
+  const [copiedTrace, setCopiedTrace] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+
+  const handleCopyTraceId = async (traceId: string) => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(traceId);
+      }
+      setCopiedTrace(true);
+      setTimeout(() => setCopiedTrace(false), 1500);
+    } catch {
+      // No-op defensivo
+    }
+  };
 
   const refreshTelemetry = async () => {
     setLoading(true);
@@ -58,17 +71,22 @@ export function SreObservabilityPanel() {
     void refreshTelemetry();
   }, []);
 
+  const extractedTraceId = snapshot?.traceparent?.split('-')[1] ?? '';
+  const keyMetrics = snapshot ? extractKeyMetrics(snapshot.metricsRaw) : [];
+
   return (
     <div className="m3-stack">
       <M3Card variant="outlined">
         <div className="m3-toolbar">
           <div>
-            <h2>Observabilidad SRE en Vivo (`US-20`, `US-21`, `US-22`)</h2>
+            <h2>
+              Observabilidad SRE en Vivo (<code>US-20</code>, <code>US-21</code>, <code>US-22</code>)
+            </h2>
             <p className="m3-muted">
-              Sondas Kubernetes (`/health/live`, `/health/ready`), métricas Prometheus (`/metrics`) y correlación W3C.
+              Sondas Kubernetes (<code>/health/live</code>, <code>/health/ready</code>), métricas Prometheus (<code>/metrics</code>) y correlación W3C.
             </p>
           </div>
-          <M3Button variant="tonal" onClick={refreshTelemetry} disabled={loading}>
+          <M3Button variant="filled" onClick={refreshTelemetry} disabled={loading}>
             {loading ? 'Consultando...' : 'Refrescar Telemetría'}
           </M3Button>
         </div>
@@ -90,22 +108,106 @@ export function SreObservabilityPanel() {
             </div>
 
             {snapshot.traceparent && (
-              <p className="m3-muted" data-testid="sre-traceparent">
-                W3C <code>traceparent</code>: <code>{snapshot.traceparent}</code>
-              </p>
+              <section className="m3-governance-strip" aria-label="W3C Trace Context" data-testid="sre-traceparent">
+                <div className="m3-governance-meta">
+                  <span className="m3-governance-meta__item">
+                    <span className="m3-governance-meta__label">
+                      W3C <code>traceparent</code>:
+                    </span>
+                    <code>{snapshot.traceparent}</code>
+                  </span>
+                </div>
+                {extractedTraceId && (
+                  <span className="m3-trace-cell">
+                    <M3Chip label={`traceId: ${extractedTraceId.slice(0, 8)}…`} tone="neutral" />
+                    <button
+                      type="button"
+                      className="m3-copy-btn"
+                      onClick={() => void handleCopyTraceId(extractedTraceId)}
+                      title={copiedTrace ? '¡traceId copiado!' : 'Copiar traceId para Auditoría Forense'}
+                      aria-label="Copiar traceId"
+                      data-testid="sre-copy-trace-btn"
+                    >
+                      {copiedTrace ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M20 6L9 17l-5-5" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                      )}
+                    </button>
+                  </span>
+                )}
+              </section>
             )}
 
-            <M3JsonViewer
-              title="Estado de Sondas Kubernetes (/health/live & /health/ready)"
-              data={{ live: snapshot.live.body, ready: snapshot.ready.body }}
-              testId="sre-probes-json"
-            />
+            <div className="m3-posture-grid">
+              <section className="m3-posture-card" aria-label="Sondas Kubernetes">
+                <div className="m3-posture-card__header">
+                  <h3 className="m3-posture-card__title">Sondas Kubernetes (US-22)</h3>
+                  <M3Chip
+                    label={snapshot.live.status === 200 && snapshot.ready.status === 200 ? 'HEALTHY' : 'DEGRADED'}
+                    tone={snapshot.live.status === 200 && snapshot.ready.status === 200 ? 'success' : 'warning'}
+                  />
+                </div>
+                <dl className="m3-posture-list">
+                  <div className="m3-posture-row">
+                    <dt>Liveness</dt>
+                    <dd>
+                      <code>/health/live</code>
+                      <M3Chip label={`HTTP ${snapshot.live.status}`} tone={snapshot.live.status === 200 ? 'success' : 'error'} />
+                    </dd>
+                  </div>
+                  <div className="m3-posture-row">
+                    <dt>Readiness</dt>
+                    <dd>
+                      <code>/health/ready</code>
+                      <M3Chip label={`HTTP ${snapshot.ready.status}`} tone={snapshot.ready.status === 200 ? 'success' : 'warning'} />
+                    </dd>
+                  </div>
+                </dl>
+              </section>
 
-            <M3JsonViewer
-              title="Métricas Clave (/metrics)"
-              data={extractKeyMetrics(snapshot.metricsRaw)}
-              testId="sre-metrics-viewer"
-            />
+              <section className="m3-posture-card" aria-label="Métricas OpenMetrics">
+                <div className="m3-posture-card__header">
+                  <h3 className="m3-posture-card__title">Métricas OpenMetrics (US-21)</h3>
+                  <M3Chip label={`${keyMetrics.length} series`} tone="primary" />
+                </div>
+                <dl className="m3-posture-list">
+                  <div className="m3-posture-row">
+                    <dt>Endpoint</dt>
+                    <dd>
+                      <code>GET /metrics</code>
+                    </dd>
+                  </div>
+                  <div className="m3-posture-row">
+                    <dt>Formato</dt>
+                    <dd>Prometheus / OpenMetrics</dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
+
+            <details className="m3-collapsible-json">
+              <summary>Ver Estado de Sondas Kubernetes (JSON — /health/live &amp; /health/ready)</summary>
+              <M3JsonViewer
+                title="Estado de Sondas Kubernetes (/health/live & /health/ready)"
+                data={{ live: snapshot.live.body, ready: snapshot.ready.body }}
+                testId="sre-probes-json"
+              />
+            </details>
+
+            <details className="m3-collapsible-json">
+              <summary>Ver Métricas Clave (/metrics — {keyMetrics.length} muestras)</summary>
+              <M3JsonViewer
+                title="Métricas Clave (/metrics)"
+                data={keyMetrics}
+                testId="sre-metrics-viewer"
+              />
+            </details>
           </div>
         )}
       </M3Card>
