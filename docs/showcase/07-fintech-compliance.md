@@ -1336,13 +1336,19 @@ Si un usuario comercial (`alpha-corp`) intenta consultar el stream de auditoría
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-19`)
 
-1. **Prerrequisitos Root (`ADR-0009`):** Backend (`:4000`) y Vite (`:3000`) activos con sesión `system:superadmin` en `localStorage` (`identity_session`).
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` vigente en [`http://localhost:3000/platform`](http://localhost:3000/platform). Si venís de ejecutar el **Paso 5: Teardown** CLI o expiró el JWT de 1 hora (`Invalid or expired token`), regenerá `SESSION_JSON` en `localStorage` siguiendo el paso `1)` de **Demostración Interactiva (`US-16`)**.
 2. **Caso Positivo (Explorador Forense `GET /api/v1/audit/events`):**
-   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Auditoría Forense`**.
-   - Ingresa **Tenant ID** = `acme-corp`, **Severidad** = `WARN` y/o **Tipo de Evento** = `CROSS_TENANT_VIOLATION`.
-   - Pulsa **`Buscar Eventos`** → verifica el chip `Eventos cargados: N`, las tarjetas con severidad/estado (`DENIED` / `GRANTED_ELEVATED`), el `Trace ID` correlacionado y **Payload Forense (JSON)** (`M3JsonViewer`).
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona **`Auditoría Forense`** en la barra lateral izquierda.
+   - Ingresa filtros en la barra de 3 columnas (e.g., **Severidad** = `WARN`, o **Tenant ID** = `acme-corp` / **Tipo de Evento** = `CROSS_TENANT_VIOLATION`) y pulsa **`Buscar Eventos`** (usa **`Limpiar`** para restablecer la vista completa).
+   - Verifica el chip `Eventos cargados: N`, la tabla forense compacta con severidad, estado (`GRANTED_ELEVATED` / `FAILURE` / `DENIED`), `Trace ID` y `Timestamp`, y opcionalmente el acordeón **Ver Payload Forense técnico (JSON)**.
+
+   ![Consola /platform Auditoría Forense — Filtros y Tabla Compacta (US-19)](./assets/screenshots/us19_audit_explorer_filtered.png)
+
 3. **Caso Negativo (Severidad Inválida `400 Bad Request`):**
-   - Ingresa en **Severidad** un valor no permitido (e.g., `DEBUG`) y pulsa **`Buscar Eventos`** → el servidor rechaza con `400` (`invalid_severity`) y la UI muestra `M3AlertBanner` **`Error de Auditoría`**.
+   - Ingresa en **Severidad** un valor no permitido (`DEBUG`) y pulsa **`Buscar Eventos`** → el servidor rechaza con `400` (`Invalid severity 'DEBUG'`) y la UI muestra el banner **`Error de Auditoría`**.
+
+   ![Consola /platform Auditoría Forense — Rechazo 400 de Severidad Inválida (US-19)](./assets/screenshots/us19_audit_invalid_severity.png)
+
 4. **Verificación Técnica & Trazabilidad E2E:** Comprueba `X-Request-ID` / `traceparent` W3C en DevTools; `tests/e2e/web/platform_console.spec.tsx` (Scenario 4).
 
 ---

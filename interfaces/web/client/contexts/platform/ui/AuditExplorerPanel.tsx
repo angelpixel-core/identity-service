@@ -18,6 +18,7 @@ export interface AuditEventRecord {
   readonly tenantId?: string;
   readonly actorId?: string;
   readonly traceId?: string;
+  readonly trace?: { readonly traceId?: string };
 }
 
 export interface AuditEventsPayload {
@@ -41,14 +42,21 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const searchEvents = async () => {
+  const searchEvents = async (overrides?: {
+    tenant?: string;
+    severity?: string;
+    eventType?: string;
+  }) => {
     setLoading(true);
     setError(null);
     try {
+      const t = (overrides?.tenant ?? tenantFilter).trim();
+      const s = (overrides?.severity ?? severityFilter).trim();
+      const et = (overrides?.eventType ?? eventTypeFilter).trim();
       const params = new URLSearchParams();
-      if (tenantFilter.trim()) params.set('tenantId', tenantFilter.trim());
-      if (severityFilter.trim()) params.set('severity', severityFilter.trim().toUpperCase());
-      if (eventTypeFilter.trim()) params.set('eventType', eventTypeFilter.trim().toUpperCase());
+      if (t) params.set('tenantId', t);
+      if (s) params.set('severity', s.toUpperCase());
+      if (et) params.set('eventType', et.toUpperCase());
       params.set('limit', '50');
 
       const query = params.toString();
@@ -72,6 +80,13 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
     }
   };
 
+  const handleClearFilters = () => {
+    setTenantFilter('');
+    setSeverityFilter('');
+    setEventTypeFilter('');
+    void searchEvents({ tenant: '', severity: '', eventType: '' });
+  };
+
   useEffect(() => {
     void searchEvents();
   }, [session.token]);
@@ -79,10 +94,15 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
   return (
     <div className="m3-stack">
       <M3Card variant="outlined">
-        <h2>Explorador de Auditoría Forense (`US-19`)</h2>
-        <p className="m3-muted">
-          Consulta en tiempo real del ring-buffer de seguridad (`GET /api/v1/audit/events`).
-        </p>
+        <div className="m3-toolbar">
+          <div>
+            <h2>Explorador de Auditoría Forense (<code>US-19</code>)</h2>
+            <p className="m3-muted">
+              Consulta en tiempo real del ring-buffer de seguridad (<code>GET /api/v1/audit/events</code>).
+            </p>
+          </div>
+          <M3Chip label={`Eventos cargados: ${events.length}`} tone="primary" />
+        </div>
 
         <div className="m3-grid-form">
           <M3TextField
@@ -108,35 +128,88 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
           />
         </div>
 
-        <div className="m3-toolbar" style={{ marginTop: '0.75rem' }}>
-          <M3Chip label={`Eventos cargados: ${events.length}`} tone="primary" />
-          <M3Button variant="filled" onClick={searchEvents} disabled={loading}>
-            {loading ? 'Buscando...' : 'Buscar Eventos'}
-          </M3Button>
+        <div className="m3-toolbar" style={{ marginTop: '0.85rem' }}>
+          <span className="m3-muted">Mostrando hasta 50 eventos recientes (orden cronológico inverso).</span>
+          <div className="m3-btn-group">
+            <M3Button variant="outlined" onClick={handleClearFilters} disabled={loading}>
+              Limpiar
+            </M3Button>
+            <M3Button variant="filled" onClick={() => void searchEvents()} disabled={loading}>
+              {loading ? 'Buscando...' : 'Buscar Eventos'}
+            </M3Button>
+          </div>
         </div>
 
         {error && <M3AlertBanner severity="error" title="Error de Auditoría" message={error} />}
 
-        <div className="m3-stack" data-testid="audit-events-list" style={{ marginTop: '1rem' }}>
-          {events.map((ev, index) => (
-            <M3Card key={`${ev.eventType}-${index}`} variant="tonal">
-              <div className="m3-chip-row">
-                <M3Chip
-                  label={ev.severity}
-                  tone={ev.severity === 'CRITICAL' || ev.severity === 'ALERT' ? 'error' : ev.severity === 'WARN' ? 'warning' : 'neutral'}
-                />
-                <M3Chip label={ev.eventType} tone="primary" />
-                <M3Chip label={ev.status} tone={ev.status === 'DENIED' ? 'error' : 'success'} />
-                {ev.tenantId && <M3Chip label={`tenant: ${ev.tenantId}`} tone="neutral" />}
-              </div>
-              {ev.traceId && (
-                <p className="m3-muted">
-                  Trace ID: <code>{ev.traceId}</code>
-                </p>
-              )}
-            </M3Card>
-          ))}
-          <M3JsonViewer title="Payload Forense (JSON)" data={events} testId="audit-events-json" />
+        <div className="m3-stack" data-testid="audit-events-list" style={{ marginTop: '0.75rem' }}>
+          <div className="m3-audit-table-wrap">
+            <table className="m3-audit-table">
+              <thead>
+                <tr>
+                  <th>Severidad</th>
+                  <th>Evento</th>
+                  <th>Estado</th>
+                  <th>Tenant</th>
+                  <th>Trace ID</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="m3-muted" style={{ textAlign: 'center', padding: '1.25rem' }}>
+                      No se encontraron eventos para los filtros actuales.
+                    </td>
+                  </tr>
+                ) : (
+                  events.map((ev, index) => {
+                    const traceId = ev.traceId ?? ev.trace?.traceId;
+                    const sevTone =
+                      ev.severity === 'CRITICAL' || ev.severity === 'ALERT'
+                        ? 'error'
+                        : ev.severity === 'WARN'
+                        ? 'warning'
+                        : 'neutral';
+                    const statusTone =
+                      ev.status === 'DENIED' || ev.status === 'FAILURE' ? 'error' : 'success';
+
+                    return (
+                      <tr key={`${ev.eventType}-${ev.timestamp ?? index}-${index}`}>
+                        <td>
+                          <M3Chip label={ev.severity} tone={sevTone} />
+                        </td>
+                        <td>
+                          <code>{ev.eventType}</code>
+                        </td>
+                        <td>
+                          <M3Chip label={ev.status} tone={statusTone} />
+                        </td>
+                        <td>{ev.tenantId ?? '—'}</td>
+                        <td>
+                          {traceId ? (
+                            <code className="m3-mono-truncate" title={traceId}>
+                              {traceId}
+                            </code>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="m3-muted">
+                          {ev.timestamp ? ev.timestamp.replace('T', ' ').slice(0, 19) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <details className="m3-collapsible-json">
+            <summary>Ver Payload Forense técnico (JSON — GET /api/v1/audit/events)</summary>
+            <M3JsonViewer title="Payload Forense (JSON)" data={events} testId="audit-events-json" />
+          </details>
         </div>
       </M3Card>
     </div>

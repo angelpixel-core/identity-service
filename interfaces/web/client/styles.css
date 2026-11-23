@@ -370,6 +370,62 @@ body {
   font-weight: 500;
 }
 
+.m3-grid-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.9rem;
+}
+
+.m3-btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.m3-audit-table-wrap {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--md-sys-shape-corner-medium, 12px);
+  background: var(--surface);
+}
+
+.m3-audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.m3-audit-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--md-sys-color-surface-container-low, #f1f4f9);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.m3-audit-table tbody td {
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.m3-audit-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.m3-audit-table tbody tr:hover {
+  background: rgba(23, 78, 166, 0.03);
+}
+
 .m3-posture-list {
   display: flex;
   flex-direction: column;
