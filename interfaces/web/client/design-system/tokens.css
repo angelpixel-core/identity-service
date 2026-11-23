@@ -4,20 +4,33 @@
  * ============================================================================ */
 
 :root {
-  /* Color Roles — Primary */
+  /* Color Roles — Primary & Secondary */
   --md-sys-color-primary: #1a73e8;
   --md-sys-color-primary-hover: #1557b0;
   --md-sys-color-on-primary: #ffffff;
   --md-sys-color-primary-container: #e8f0fe;
+  --md-sys-color-primary-container-hover: #d2e3fc;
   --md-sys-color-on-primary-container: #174ea6;
+  --md-sys-color-primary-tint-subtle: rgba(23, 78, 166, 0.03);
+  --md-sys-color-primary-tint-hover: rgba(23, 78, 166, 0.06);
+  --md-sys-color-primary-ring: rgba(26, 115, 232, 0.16);
+  --md-sys-color-secondary: #64748b;
+  --md-sys-color-secondary-hover: #475569;
+  --md-sys-color-secondary-container: #e0e7ff;
+  --md-sys-color-on-secondary-container: #3730a3;
 
   /* Color Roles — Surfaces & Containers */
   --md-sys-color-background: #f8fafd;
   --md-sys-color-surface: #ffffff;
+  --md-sys-color-surface-container-lowest: #fafbfd;
   --md-sys-color-surface-container-low: #f1f4f9;
   --md-sys-color-surface-container: #e9eef6;
+  --md-sys-color-surface-container-high: #e9eef6;
   --md-sys-color-on-surface: #1f1f1f;
   --md-sys-color-on-surface-variant: #444746;
+  --md-sys-color-inverse-surface: #1f2937;
+  --md-sys-color-inverse-on-surface: #f9fafb;
+  --md-sys-color-scrim-subtle: rgba(0, 0, 0, 0.06);
 
   /* Color Roles — Outline & Dividers */
   --md-sys-color-outline: #747775;
@@ -26,10 +39,22 @@
   /* Color Roles — Semantic Status */
   --md-sys-color-success: #137333;
   --md-sys-color-success-container: #e6f4ea;
+  --md-sys-color-success-container-hover: #ceead6;
+  --md-sys-color-success-border: rgba(19, 115, 51, 0.35);
+  --md-sys-color-success-ring: rgba(19, 115, 51, 0.2);
+  --md-sys-color-status-live: #1e8e3e;
+  --md-sys-color-status-live-ring: rgba(30, 142, 62, 0.18);
   --md-sys-color-warning: #b06000;
   --md-sys-color-warning-container: #fef7e0;
   --md-sys-color-error: #c5221f;
+  --md-sys-color-error-hover: #a50e0e;
   --md-sys-color-error-container: #fce8e6;
+  --md-sys-color-error-container-hover: #fad2cf;
+  --md-sys-color-on-error-container: #8c1d18;
+  --md-sys-color-error-border: rgba(197, 34, 31, 0.4);
+  --md-sys-color-error-ring: rgba(197, 34, 31, 0.14);
+  --md-sys-color-status-offline: #d93025;
+  --md-sys-color-status-offline-ring: rgba(217, 48, 37, 0.18);
   --md-sys-color-info: #1967d2;
   --md-sys-color-info-container: #e8f0fe;
 
@@ -45,4 +70,7 @@
 
   --md-sys-elevation-1: 0 1px 2px 0 rgb(60 64 67 / 0.15), 0 1px 3px 1px rgb(60 64 67 / 0.08);
   --md-sys-elevation-2: 0 1px 3px 0 rgb(60 64 67 / 0.2), 0 4px 8px 3px rgb(60 64 67 / 0.1);
+  --md-sys-elevation-tooltip: 0 4px 10px rgba(0, 0, 0, 0.16);
+  --md-sys-elevation-popover: 0 10px 28px rgba(0, 0, 0, 0.14);
+  --md-sys-elevation-snackbar: 0 10px 28px rgba(0, 0, 0, 0.18);
 }
