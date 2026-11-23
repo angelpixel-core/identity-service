@@ -682,16 +682,20 @@ curl -s "${BASE_URL}/health" | jq .
 
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-22`)
 
-1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` en `localStorage` (`identity_session`).
+1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` vigente en [`http://localhost:3000/platform`](http://localhost:3000/platform). Si expiró el JWT de 1 hora (`Invalid or expired token`), regenerá `SESSION_JSON` en `localStorage` siguiendo el paso `1)` de **Demostración Interactiva (`US-16`)** en [`07-fintech-compliance.md`](./07-fintech-compliance.md).
 2. **Caso Positivo (Sondas Kubernetes `liveness` & `readiness`):**
-   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona la pestaña **`Observabilidad SRE`**.
+   - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona **`Observabilidad SRE`** en la barra lateral izquierda.
    - Pulsa **`Refrescar Telemetría`** → consulta simultáneamente `GET /health/live` y `GET /health/ready`.
-   - Verifica los chips **`/health/live: HTTP 200`** (verde) y **`/health/ready: HTTP 200`** (verde), junto con el detalle JSON en **Estado de Sondas Kubernetes (`/health/live & /health/ready`)** (`M3JsonViewer`).
-3. **Caso Negativo (Degradación de Readiness `503`):**
-   - Si una dependencia crítica (PostgreSQL o Redis) se detiene y pulsas **`Refrescar Telemetría`**, `/health/ready` cambia de verde a tono de advertencia/error reflejando el código HTTP `503` mientras `/health/live` permanece en `HTTP 200`.
-4. **Verificación Técnica & Trazabilidad E2E:** Comprueba `traceparent` W3C en **DevTools → Network**; `tests/e2e/web/platform_console.spec.tsx` (Scenario 5).
+   - Verifica los chips **`/health/live: HTTP 200`** y **`/health/ready: HTTP 200`**, el desglose en la tarjeta **Sondas Kubernetes (`US-22`)** (**`HEALTHY`**, **`PostgreSQL: OK`**, **`Redis Cache: OK`**) y opcionalmente el acordeón **Ver Estado de Sondas Kubernetes (`JSON — /health/live & /health/ready`)**.
 
-![Consola /platform Observabilidad SRE en Material Design 3](./assets/screenshots/ui_platform_sre.png)
+   ![Consola /platform Observabilidad SRE — Sondas Kubernetes HEALTHY (US-22)](./assets/screenshots/ui_platform_sre.png)
+
+3. **Caso Negativo (Degradación de Readiness `503`):**
+   - Si una dependencia crítica (PostgreSQL o Redis) se detiene y pulsas **`Refrescar Telemetría`**, `/health/ready` cambia a rojo **`HTTP 503`** (`DEGRADED`, mostrando la dependencia afectada en `ERROR`) mientras `/health/live` permanece en **`HTTP 200`**.
+
+   ![Consola /platform Observabilidad SRE — Readiness 503 DEGRADED (US-22)](./assets/screenshots/us22_sre_probes_degraded.png)
+
+4. **Verificación Técnica & Trazabilidad E2E:** Comprueba `traceparent` W3C en **DevTools → Network** (filtro **`XHR`** → `GET /health/ready` → pestaña **`Headers`**); `tests/e2e/web/platform_console.spec.tsx` (Scenario 5).
 
 ---
 

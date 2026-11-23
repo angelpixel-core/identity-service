@@ -131,6 +131,11 @@ export function SreObservabilityPanel() {
   const extractedTraceId = snapshot?.traceparent?.split('-')[1] ?? '';
   const keyMetrics = snapshot ? extractKeyMetrics(snapshot.metricsRaw) : [];
   const goldenSignals = snapshot ? extractGoldenSignals(snapshot.metricsRaw) : null;
+  const readyBody = snapshot?.ready.body as
+    | { readonly checks?: { readonly database?: string; readonly cache?: string } }
+    | undefined;
+  const dbCheck = readyBody?.checks?.database;
+  const cacheCheck = readyBody?.checks?.cache;
 
   return (
     <div className="m3-stack">
@@ -160,7 +165,7 @@ export function SreObservabilityPanel() {
               />
               <M3Chip
                 label={`/health/ready: HTTP ${snapshot.ready.status}`}
-                tone={snapshot.ready.status === 200 ? 'success' : 'warning'}
+                tone={snapshot.ready.status === 200 ? 'success' : 'error'}
               />
               <M3Chip label="OpenMetrics / Prometheus" tone="primary" />
             </div>
@@ -208,7 +213,7 @@ export function SreObservabilityPanel() {
                   <h3 className="m3-posture-card__title">Sondas Kubernetes (US-22)</h3>
                   <M3Chip
                     label={snapshot.live.status === 200 && snapshot.ready.status === 200 ? 'HEALTHY' : 'DEGRADED'}
-                    tone={snapshot.live.status === 200 && snapshot.ready.status === 200 ? 'success' : 'warning'}
+                    tone={snapshot.live.status === 200 && snapshot.ready.status === 200 ? 'success' : 'error'}
                   />
                 </div>
                 <dl className="m3-posture-list">
@@ -223,9 +228,25 @@ export function SreObservabilityPanel() {
                     <dt>Readiness</dt>
                     <dd>
                       <code>/health/ready</code>
-                      <M3Chip label={`HTTP ${snapshot.ready.status}`} tone={snapshot.ready.status === 200 ? 'success' : 'warning'} />
+                      <M3Chip label={`HTTP ${snapshot.ready.status}`} tone={snapshot.ready.status === 200 ? 'success' : 'error'} />
                     </dd>
                   </div>
+                  {dbCheck && (
+                    <div className="m3-posture-row">
+                      <dt>PostgreSQL</dt>
+                      <dd>
+                        <M3Chip label={dbCheck} tone={dbCheck === 'OK' ? 'success' : 'error'} />
+                      </dd>
+                    </div>
+                  )}
+                  {cacheCheck && (
+                    <div className="m3-posture-row">
+                      <dt>Redis Cache</dt>
+                      <dd>
+                        <M3Chip label={cacheCheck} tone={cacheCheck === 'OK' ? 'success' : 'error'} />
+                      </dd>
+                    </div>
+                  )}
                 </dl>
               </section>
 
