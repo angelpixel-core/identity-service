@@ -380,16 +380,18 @@ npm run docker:cloud:down
    # 1) Crear operador superadmin en el Root Tenant ('system')
    export ROOT_EMAIL="admin.$(date +%s)@angelpixel.io"
    export ROOT_PASS='SuperAdmin2026!'
-   REG_RESP=$(./bin/identity users create-root-admin \
+   SESSION_JSON=$(./bin/identity users create-root-admin \
      --email "${ROOT_EMAIL}" \
      --password "${ROOT_PASS}" \
-     --raw-json)
-   echo "${REG_RESP}" | jq '{ userId, email: env.ROOT_EMAIL, tenantId: "system", roles: ["superadmin", "member"], token: .accessToken }'
+     --raw-json | jq -c '{ userId, email: env.ROOT_EMAIL, tenantId: "system", roles: ["superadmin", "member"], token: .accessToken }')
+   echo "${SESSION_JSON}"
    ```
 
    ```js
-   // 2) En DevTools Console de http://localhost:3000 (pegar el objeto JSON impreso arriba):
-   localStorage.setItem('identity_session', JSON.stringify(/* pegá acá el JSON */));
+   // 2) En DevTools Console de http://localhost:3000:
+   const session = /* pegá acá el valor de SESSION_JSON */;
+   localStorage.removeItem('identity_session');
+   localStorage.setItem('identity_session', JSON.stringify(session));
    location.href = '/platform';
    ```
 
