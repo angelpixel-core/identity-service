@@ -204,8 +204,9 @@ body {
 
 .m3-workspace-shell {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: 180px minmax(0, 1fr);
   gap: 1.5rem;
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
   align-items: start;
@@ -500,6 +501,36 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  min-width: 0;
+}
+
+.m3-workspace-main {
+  min-width: 0;
+}
+
+.m3-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #137333;
+  margin-right: 0.45rem;
+  box-shadow: 0 0 0 3px rgba(19, 115, 51, 0.2);
+}
+
+.m3-live-dot--off {
+  background: var(--text-muted);
+  box-shadow: none;
+}
+
+.m3-btn--live-active {
+  background: #e6f4ea;
+  color: #137333;
+  border: 1px solid rgba(19, 115, 51, 0.35);
+}
+
+.m3-btn--live-active:hover:not(:disabled) {
+  background: #ceead6;
 }
 
 .m3-workspace-topbar {

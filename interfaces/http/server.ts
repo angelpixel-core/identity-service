@@ -822,6 +822,7 @@ export function createApp(deps?: AppDependencies): Express {
   // Rutas de Auditoría Estructurada de Seguridad (US-19 & ADR-0009 — Root Superadmin Only)
   const auditController = new AuditController({ auditLogger });
   app.get('/api/v1/audit/events', authMiddleware, requireRootAdmin, auditController.getEvents);
+  app.get('/api/v1/audit/stream', authMiddleware, requireRootAdmin, auditController.streamEvents);
 
   // Rutas de Postura Agregada de Plataforma (US-26 & ADR-0009 — Root Superadmin Only)
   const platformController = new PlatformController({

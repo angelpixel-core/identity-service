@@ -39,24 +39,34 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
   const [severityFilter, setSeverityFilter] = useState<string>('');
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('');
   const [events, setEvents] = useState<readonly AuditEventRecord[]>([]);
+  const [liveStream, setLiveStream] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+
+  const buildFilterParams = (overrides?: {
+    tenant?: string;
+    severity?: string;
+    eventType?: string;
+  }) => {
+    const t = (overrides?.tenant ?? tenantFilter).trim();
+    const s = (overrides?.severity ?? severityFilter).trim();
+    const et = (overrides?.eventType ?? eventTypeFilter).trim();
+    const params = new URLSearchParams();
+    if (t) params.set('tenantId', t);
+    if (s) params.set('severity', s.toUpperCase());
+    if (et) params.set('eventType', et.toUpperCase());
+    return params;
+  };
 
   const searchEvents = async (overrides?: {
     tenant?: string;
     severity?: string;
     eventType?: string;
-  }) => {
+  }): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
-      const t = (overrides?.tenant ?? tenantFilter).trim();
-      const s = (overrides?.severity ?? severityFilter).trim();
-      const et = (overrides?.eventType ?? eventTypeFilter).trim();
-      const params = new URLSearchParams();
-      if (t) params.set('tenantId', t);
-      if (s) params.set('severity', s.toUpperCase());
-      if (et) params.set('eventType', et.toUpperCase());
+      const params = buildFilterParams(overrides);
       params.set('limit', '50');
 
       const query = params.toString();
@@ -70,11 +80,14 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
 
       if (!res.ok) {
         setError(res.data?.message || res.data?.error || `Error ${res.status} consultando auditoría`);
+        return false;
       } else {
         setEvents(Array.isArray(res.data.events) ? res.data.events : []);
+        return true;
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error consultando eventos de auditoría');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -90,6 +103,88 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
   useEffect(() => {
     void searchEvents();
   }, [session.token]);
+
+  useEffect(() => {
+    if (!liveStream) return;
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    const startStream = async () => {
+      const synced = await searchEvents();
+      if (!synced || cancelled) {
+        setLiveStream(false);
+        return;
+      }
+
+      try {
+        const query = buildFilterParams().toString();
+        const url = query ? `/api/v1/audit/stream?${query}` : '/api/v1/audit/stream';
+        const response = await fetch(url, {
+          headers: {
+            Accept: 'text/event-stream',
+            Authorization: `Bearer ${session.token}`,
+            'x-tenant-id': session.tenantId,
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          setError(`Error ${response.status} conectando stream en vivo`);
+          setLiveStream(false);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (!cancelled) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split('\n\n');
+          buffer = frames.pop() ?? '';
+
+          for (const frame of frames) {
+            const dataLines = frame
+              .split('\n')
+              .filter((line) => line.startsWith('data:'))
+              .map((line) => line.slice(5).trim());
+            if (dataLines.length === 0) continue;
+
+            try {
+              const incoming = JSON.parse(dataLines.join('\n')) as AuditEventRecord;
+              setEvents((prev) => {
+                const incomingKey = `${incoming.timestamp ?? ''}|${incoming.eventType}|${incoming.traceId ?? incoming.trace?.traceId ?? ''}`;
+                const exists = prev.some(
+                  (item) =>
+                    `${item.timestamp ?? ''}|${item.eventType}|${item.traceId ?? item.trace?.traceId ?? ''}` ===
+                    incomingKey
+                );
+                if (exists) return prev;
+                return [incoming, ...prev].slice(0, 50);
+              });
+            } catch {
+              // Ignora frames no JSON (heartbeats/comentarios)
+            }
+          }
+        }
+      } catch (err: unknown) {
+        if (!cancelled && !(err instanceof DOMException && err.name === 'AbortError')) {
+          setError(err instanceof Error ? err.message : 'Stream en vivo interrumpido');
+          setLiveStream(false);
+        }
+      }
+    };
+
+    void startStream();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [liveStream, session.token, session.tenantId]);
 
   return (
     <div className="m3-stack">
@@ -131,6 +226,16 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
         <div className="m3-toolbar" style={{ marginTop: '0.85rem' }}>
           <span className="m3-muted">Mostrando hasta 50 eventos recientes (orden cronológico inverso).</span>
           <div className="m3-btn-group">
+            <M3Button
+              variant="outlined"
+              className={liveStream ? 'm3-btn--live-active' : ''}
+              onClick={() => setLiveStream((prev) => !prev)}
+              aria-pressed={liveStream}
+              data-testid="audit-live-toggle"
+            >
+              <span className={`m3-live-dot ${liveStream ? '' : 'm3-live-dot--off'}`.trim()} />
+              {liveStream ? 'En vivo (SSE)' : 'En vivo: Off'}
+            </M3Button>
             <M3Button variant="outlined" onClick={handleClearFilters} disabled={loading}>
               Limpiar
             </M3Button>

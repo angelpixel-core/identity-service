@@ -1337,10 +1337,10 @@ Si un usuario comercial (`alpha-corp`) intenta consultar el stream de auditoría
 #### 🌐 Demostración Interactiva en la UI (Navegador — `US-19`)
 
 1. **Prerrequisitos Root (`ADR-0009`):** Backend (`npm run dev:api` en `:4000`) y Vite (`npm run dev:web` en `:3000`) activos con sesión `system:superadmin` vigente en [`http://localhost:3000/platform`](http://localhost:3000/platform). Si venís de ejecutar el **Paso 5: Teardown** CLI o expiró el JWT de 1 hora (`Invalid or expired token`), regenerá `SESSION_JSON` en `localStorage` siguiendo el paso `1)` de **Demostración Interactiva (`US-16`)**.
-2. **Caso Positivo (Explorador Forense `GET /api/v1/audit/events`):**
+2. **Caso Positivo (Explorador Forense `GET /api/v1/audit/events` & Stream en Vivo `GET /api/v1/audit/stream`):**
    - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona **`Auditoría Forense`** en la barra lateral izquierda.
-   - Ingresa filtros en la barra de 3 columnas (e.g., **Severidad** = `WARN`, o **Tenant ID** = `acme-corp` / **Tipo de Evento** = `CROSS_TENANT_VIOLATION`) y pulsa **`Buscar Eventos`** (usa **`Limpiar`** para restablecer la vista completa).
-   - Verifica el chip `Eventos cargados: N`, la tabla forense compacta con severidad, estado (`GRANTED_ELEVATED` / `FAILURE` / `DENIED`), `Trace ID` y `Timestamp`, y opcionalmente el acordeón **Ver Payload Forense técnico (JSON)**.
+   - Activa el toggle **`● En vivo (SSE)`** para sincronizar eventos recientes y recibir nuevos eventos en tiempo real a medida que ocurren (e.g., rotación de llaves o fallos de login), o ingresa filtros en la barra de 3 columnas (`Tenant ID`, `Severidad`, `Tipo de Evento`) y pulsa **`Buscar Eventos`** (`Limpiar` restablece la vista completa).
+   - Verifica el chip `Eventos cargados: N`, la tabla forense compacta con severidad, estado (`GRANTED_ELEVATED` / `SUCCESS` / `FAILURE` / `DENIED`), `Trace ID` y `Timestamp`, y opcionalmente el acordeón **Ver Payload Forense técnico (JSON)**.
 
    ![Consola /platform Auditoría Forense — Filtros y Tabla Compacta (US-19)](./assets/screenshots/us19_audit_explorer_filtered.png)
 

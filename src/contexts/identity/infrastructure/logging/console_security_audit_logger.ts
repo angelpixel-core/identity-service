@@ -13,6 +13,20 @@ export interface ConsoleSecurityAuditLoggerOptions {
 
 const DEFAULT_MAX_RECENT_EVENTS = 500;
 
+export function matchesAuditFilters(
+  event: CanonicalSecurityAuditEvent,
+  filters?: SecurityAuditQueryFilters
+): boolean {
+  const tenantFilter = filters?.tenantId?.trim();
+  const severityFilter = filters?.severity?.trim().toUpperCase();
+  const eventTypeFilter = filters?.eventType?.trim().toUpperCase();
+
+  if (tenantFilter && event.tenantId !== tenantFilter) return false;
+  if (severityFilter && event.severity.toUpperCase() !== severityFilter) return false;
+  if (eventTypeFilter && event.eventType.toUpperCase() !== eventTypeFilter) return false;
+  return true;
+}
+
 /**
  * Secondary Adapter: ConsoleSecurityAuditLogger
  * Emite eventos de auditoría de seguridad bancaria en formato estructurado NDJSON
@@ -24,6 +38,7 @@ export class ConsoleSecurityAuditLogger implements SecurityAuditLoggerPort {
   private readonly outputStream: NodeJS.WritableStream;
   private readonly maxRecentEvents: number;
   private readonly recentEvents: CanonicalSecurityAuditEvent[] = [];
+  private readonly listeners = new Set<(event: CanonicalSecurityAuditEvent) => void>();
 
   constructor(options?: ConsoleSecurityAuditLoggerOptions) {
     this.outputStream = options?.outputStream ?? process.stdout;
@@ -57,6 +72,14 @@ export class ConsoleSecurityAuditLogger implements SecurityAuditLoggerPort {
         this.recentEvents.shift();
       }
 
+      for (const listener of this.listeners) {
+        try {
+          listener(canonicalEvent);
+        } catch {
+          // Fail-safe: un suscriptor SSE lento o cerrado no debe interrumpir el registro
+        }
+      }
+
       const ndjson = JSON.stringify(canonicalEvent);
       this.outputStream.write(`${ndjson}\n`, (error) => {
         if (error) {
@@ -83,19 +106,19 @@ export class ConsoleSecurityAuditLogger implements SecurityAuditLoggerPort {
     }
   }
 
+  public subscribe(listener: (event: CanonicalSecurityAuditEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   public getRecentEvents(filters?: SecurityAuditQueryFilters): CanonicalSecurityAuditEvent[] {
     const limit = Math.min(200, Math.max(1, filters?.limit ?? 50));
-    const tenantFilter = filters?.tenantId?.trim();
-    const severityFilter = filters?.severity?.trim().toUpperCase();
-    const eventTypeFilter = filters?.eventType?.trim().toUpperCase();
-
     const matched: CanonicalSecurityAuditEvent[] = [];
     for (let i = this.recentEvents.length - 1; i >= 0 && matched.length < limit; i -= 1) {
       const ev = this.recentEvents[i];
-      if (!ev) continue;
-      if (tenantFilter && ev.tenantId !== tenantFilter) continue;
-      if (severityFilter && ev.severity.toUpperCase() !== severityFilter) continue;
-      if (eventTypeFilter && ev.eventType.toUpperCase() !== eventTypeFilter) continue;
+      if (!ev || !matchesAuditFilters(ev, filters)) continue;
       matched.push(ev);
     }
     return matched;

@@ -114,4 +114,5 @@ export interface SecurityAuditQueryFilters {
 export interface SecurityAuditLoggerPort {
   logEvent(event: SecurityAuditEvent): Promise<void>;
   getRecentEvents?(filters?: SecurityAuditQueryFilters): CanonicalSecurityAuditEvent[];
+  subscribe?(listener: (event: CanonicalSecurityAuditEvent) => void): () => void;
 }
