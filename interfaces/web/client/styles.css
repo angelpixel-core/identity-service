@@ -732,6 +732,44 @@ body {
   display: block;
 }
 
+.m3-snackbar-host {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: min(560px, calc(100vw - 2rem));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  border-radius: var(--md-sys-shape-corner-medium, 12px);
+}
+
+.m3-snackbar-host .m3-banner {
+  padding-right: 2.5rem;
+}
+
+.m3-snackbar-close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.6rem;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.m3-snackbar-close:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
 .m3-workspace-topbar {
   display: flex;
   justify-content: space-between;

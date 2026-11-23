@@ -385,12 +385,6 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
           />
         </div>
 
-        {error && (
-          <div style={{ marginTop: '0.85rem' }}>
-            <M3AlertBanner severity="error" title="Error de Auditoría" message={error} />
-          </div>
-        )}
-
         <div className="m3-stack" data-testid="audit-events-list" style={{ marginTop: '0.85rem' }}>
           <div className="m3-audit-table-wrap">
             <table className="m3-audit-table">
@@ -544,6 +538,20 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
           </details>
         </div>
       </M3Card>
+
+      {error && (
+        <div className="m3-snackbar-host" data-testid="audit-error-snackbar">
+          <M3AlertBanner severity="error" title="Error de Auditoría" message={error} />
+          <button
+            type="button"
+            className="m3-snackbar-close"
+            onClick={() => setError(null)}
+            aria-label="Cerrar alerta"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }
