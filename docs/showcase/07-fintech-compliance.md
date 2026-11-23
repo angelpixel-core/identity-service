@@ -1340,8 +1340,8 @@ Si un usuario comercial (`alpha-corp`) intenta consultar el stream de auditoría
 2. **Caso Positivo (Explorador Forense `GET /api/v1/audit/events` & Stream en Vivo `GET /api/v1/audit/stream`):**
    - Abre [`http://localhost:3000/platform`](http://localhost:3000/platform) y selecciona **`Auditoría Forense`** en la barra lateral izquierda.
    - Usa la barra superior de íconos con tooltips: **`REC` (`●`)** para activar/pausar el stream SSE en tiempo real, **`↻`** para sincronizar/buscar eventos y **`✕`** para limpiar filtros.
-   - Escribe en los filtros reactivos contiguos (**`Severidad`**, **`Tipo de Evento`**, **`Tenant ID`**): se aplican automáticamente (reconectando el stream SSE si **`REC`** está activo).
-   - Verifica el chip `Eventos cargados: N`, ordena por **`TIMESTAMP ↓ / ↑`**, ajusta el selector **`Filas` (`5`, `10`, `20`, `30`, `50`)** con paginación al pie de la tabla y opcionalmente despliega **Ver Payload Forense técnico (JSON)**.
+   - Escribe o elige en los filtros reactivos contiguos (**`Severidad`** y **`Tipo de Evento`** con autocompletado, **`Tenant ID`** y **`Trace ID`** con coincidencia parcial insensible a mayúsculas/minúsculas): se aplican automáticamente (reconectando el stream SSE si **`REC`** está activo).
+   - Verifica el chip `Eventos cargados: N`, copia el `Trace ID` resumido desde su botón derecho, ordena por **`TIMESTAMP ↓ / ↑`**, ajusta el selector **`Filas` (`5`, `10`, `20`, `30`, `50`)** con paginación al pie de la tabla y opcionalmente despliega **Ver Payload Forense técnico (JSON)**.
 
    ![Consola /platform Auditoría Forense — Filtros y Tabla Compacta (US-19)](./assets/screenshots/us19_audit_explorer_filtered.png)
 

@@ -51,6 +51,11 @@ export class AuditController {
         ? req.query.eventType.trim().toUpperCase()
         : undefined;
 
+    const traceId =
+      typeof req.query.traceId === 'string' && req.query.traceId.trim().length > 0
+        ? req.query.traceId.trim()
+        : undefined;
+
     const rawLimit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 50;
     const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, rawLimit)) : 50;
 
@@ -58,6 +63,7 @@ export class AuditController {
       tenantId,
       severity: rawSeverity as SecurityAuditSeverity | undefined,
       eventType,
+      traceId,
       limit,
     };
   }
@@ -111,6 +117,7 @@ export class AuditController {
           ...(filters.tenantId ? { tenantId: filters.tenantId } : {}),
           ...(filters.severity ? { severity: filters.severity } : {}),
           ...(filters.eventType ? { eventType: filters.eventType } : {}),
+          ...(filters.traceId ? { traceId: filters.traceId } : {}),
           limit: filters.limit,
         },
         events,

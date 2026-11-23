@@ -104,6 +104,7 @@ export interface SecurityAuditQueryFilters {
   readonly tenantId?: string;
   readonly severity?: SecurityAuditSeverity;
   readonly eventType?: string;
+  readonly traceId?: string;
   readonly limit?: number;
 }
 

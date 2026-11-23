@@ -32,6 +32,23 @@ export interface AuditExplorerPanelProps {
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 30, 50] as const;
 
+const KNOWN_SEVERITIES = ['INFO', 'WARN', 'ERROR', 'ALERT', 'CRITICAL'] as const;
+
+const KNOWN_EVENT_TYPES = [
+  'AUTH_LOGIN_SUCCESS',
+  'AUTH_LOGIN_FAILURE',
+  'TOKEN_ISSUED',
+  'TOKEN_REVOKED',
+  'REFRESH_ROTATED',
+  'CROSS_TENANT_VIOLATION',
+  'CLIENT_ORIGIN_DENIED',
+  'SECRET_ROTATION_SUCCESS',
+  'SECRET_ROTATION_FAILURE',
+  'FEDERATION_CALLBACK_PROCESSED',
+  'FEDERATION_CALLBACK_FAILED',
+  'PLATFORM_OPERATOR_CROSS_TENANT_ACTION',
+] as const;
+
 /**
  * Explorador Forense de Auditoría Estructurada (US-19 & ADR-0009).
  */
@@ -39,16 +56,19 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
   const [severityFilter, setSeverityFilter] = useState<string>('');
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('');
   const [tenantFilter, setTenantFilter] = useState<string>('');
+  const [traceIdFilter, setTraceIdFilter] = useState<string>('');
   const [debouncedFilters, setDebouncedFilters] = useState({
     severity: '',
     eventType: '',
     tenant: '',
+    traceId: '',
   });
   const [events, setEvents] = useState<readonly AuditEventRecord[]>([]);
   const [liveStream, setLiveStream] = useState<boolean>(false);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [pageSize, setPageSize] = useState<number>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [copiedTraceId, setCopiedTraceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const didMountRef = useRef<boolean>(false);
@@ -57,14 +77,17 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
     tenant?: string;
     severity?: string;
     eventType?: string;
+    traceId?: string;
   }) => {
     const t = (overrides?.tenant ?? tenantFilter).trim();
     const s = (overrides?.severity ?? severityFilter).trim();
     const et = (overrides?.eventType ?? eventTypeFilter).trim();
+    const tr = (overrides?.traceId ?? traceIdFilter).trim();
     const params = new URLSearchParams();
     if (t) params.set('tenantId', t);
     if (s) params.set('severity', s.toUpperCase());
     if (et) params.set('eventType', et.toUpperCase());
+    if (tr) params.set('traceId', tr);
     return params;
   };
 
@@ -72,6 +95,7 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
     tenant?: string;
     severity?: string;
     eventType?: string;
+    traceId?: string;
   }): Promise<boolean> => {
     setLoading(true);
     setError(null);
@@ -108,8 +132,23 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
     setSeverityFilter('');
     setEventTypeFilter('');
     setTenantFilter('');
-    setDebouncedFilters({ severity: '', eventType: '', tenant: '' });
-    void searchEvents({ tenant: '', severity: '', eventType: '' });
+    setTraceIdFilter('');
+    setDebouncedFilters({ severity: '', eventType: '', tenant: '', traceId: '' });
+    void searchEvents({ tenant: '', severity: '', eventType: '', traceId: '' });
+  };
+
+  const handleCopyTraceId = async (traceId: string) => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(traceId);
+      }
+      setCopiedTraceId(traceId);
+      setTimeout(() => {
+        setCopiedTraceId((curr) => (curr === traceId ? null : curr));
+      }, 1500);
+    } catch {
+      // No-op defensivo
+    }
   };
 
   // Carga inicial al montar o cambiar token
@@ -124,19 +163,17 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
       return;
     }
     const timer = setTimeout(() => {
-      setDebouncedFilters({
+      const next = {
         severity: severityFilter,
         eventType: eventTypeFilter,
         tenant: tenantFilter,
-      });
-      void searchEvents({
-        severity: severityFilter,
-        eventType: eventTypeFilter,
-        tenant: tenantFilter,
-      });
+        traceId: traceIdFilter,
+      };
+      setDebouncedFilters(next);
+      void searchEvents(next);
     }, 350);
     return () => clearTimeout(timer);
-  }, [severityFilter, eventTypeFilter, tenantFilter]);
+  }, [severityFilter, eventTypeFilter, tenantFilter, traceIdFilter]);
 
   // Stream SSE en tiempo real (reconecta automáticamente si cambian filtros activos)
   useEffect(() => {
@@ -224,6 +261,7 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
     debouncedFilters.severity,
     debouncedFilters.eventType,
     debouncedFilters.tenant,
+    debouncedFilters.traceId,
     session.token,
     session.tenantId,
   ]);
@@ -305,23 +343,45 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
           <M3TextField
             id="audit-severity-filter"
             label="Severidad"
-            placeholder="WARN | CRITICAL"
+            list="audit-severity-options"
+            placeholder="Todas..."
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value)}
           />
+          <datalist id="audit-severity-options">
+            {KNOWN_SEVERITIES.map((sev) => (
+              <option key={sev} value={sev} />
+            ))}
+          </datalist>
+
           <M3TextField
             id="audit-type-filter"
             label="Tipo de Evento"
-            placeholder="CROSS_TENANT_VIOLATION"
+            list="audit-event-type-options"
+            placeholder="Todos..."
             value={eventTypeFilter}
             onChange={(e) => setEventTypeFilter(e.target.value)}
           />
+          <datalist id="audit-event-type-options">
+            {KNOWN_EVENT_TYPES.map((evType) => (
+              <option key={evType} value={evType} />
+            ))}
+          </datalist>
+
           <M3TextField
             id="audit-tenant-filter"
             label="Tenant ID"
-            placeholder="acme-corp"
+            placeholder="ej. alpha"
             value={tenantFilter}
             onChange={(e) => setTenantFilter(e.target.value)}
+          />
+
+          <M3TextField
+            id="audit-trace-filter"
+            label="Trace ID"
+            placeholder="ej. 4bf92f..."
+            value={traceIdFilter}
+            onChange={(e) => setTraceIdFilter(e.target.value)}
           />
         </div>
 
@@ -387,9 +447,29 @@ export function AuditExplorerPanel({ session }: AuditExplorerPanelProps) {
                         <td>{ev.tenantId ?? '—'}</td>
                         <td>
                           {traceId ? (
-                            <code className="m3-mono-truncate" title={traceId}>
-                              {traceId}
-                            </code>
+                            <span className="m3-trace-cell">
+                              <code className="m3-trace-short" title={traceId}>
+                                {traceId}
+                              </code>
+                              <button
+                                type="button"
+                                className="m3-copy-btn"
+                                onClick={() => void handleCopyTraceId(traceId)}
+                                title={copiedTraceId === traceId ? '¡Copiado!' : 'Copiar Trace ID'}
+                                aria-label={`Copiar Trace ID ${traceId}`}
+                              >
+                                {copiedTraceId === traceId ? (
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M20 6L9 17l-5-5" />
+                                  </svg>
+                                ) : (
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                  </svg>
+                                )}
+                              </button>
+                            </span>
                           ) : (
                             '—'
                           )}

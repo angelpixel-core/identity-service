@@ -373,8 +373,8 @@ body {
 
 .m3-grid-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
 }
 
 .m3-btn-group {
@@ -686,6 +686,50 @@ body {
 .m3-page-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.m3-trace-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.m3-trace-short {
+  font-family: var(--md-sys-typescale-font-mono, monospace);
+  font-size: 0.79rem;
+  max-width: 10ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.m3-copy-btn {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.m3-copy-btn:hover {
+  background: var(--md-sys-color-primary-container, #e8f0fe);
+  color: var(--primary);
+}
+
+.m3-copy-btn svg {
+  width: 13px;
+  height: 13px;
+  display: block;
 }
 
 .m3-workspace-topbar {

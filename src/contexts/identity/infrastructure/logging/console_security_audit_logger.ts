@@ -17,13 +17,15 @@ export function matchesAuditFilters(
   event: CanonicalSecurityAuditEvent,
   filters?: SecurityAuditQueryFilters
 ): boolean {
-  const tenantFilter = filters?.tenantId?.trim();
+  const tenantFilter = filters?.tenantId?.trim().toLowerCase();
   const severityFilter = filters?.severity?.trim().toUpperCase();
   const eventTypeFilter = filters?.eventType?.trim().toUpperCase();
+  const traceFilter = filters?.traceId?.trim().toLowerCase();
 
-  if (tenantFilter && event.tenantId !== tenantFilter) return false;
+  if (tenantFilter && !(event.tenantId ?? '').toLowerCase().includes(tenantFilter)) return false;
   if (severityFilter && event.severity.toUpperCase() !== severityFilter) return false;
-  if (eventTypeFilter && event.eventType.toUpperCase() !== eventTypeFilter) return false;
+  if (eventTypeFilter && !event.eventType.toUpperCase().includes(eventTypeFilter)) return false;
+  if (traceFilter && !(event.trace?.traceId ?? '').toLowerCase().includes(traceFilter)) return false;
   return true;
 }
 
