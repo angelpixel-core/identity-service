@@ -24,6 +24,12 @@ export class InMemoryClientApplicationRepository implements ClientApplicationRep
     return this.clients.get(clientId.getValue()) ?? null;
   }
 
+  public async findByTenantId(tenantId: string): Promise<ClientApplication[]> {
+    return Array.from(this.clients.values())
+      .filter((c) => c.getTenantId() === tenantId)
+      .sort((a, b) => a.getClientId().getValue().localeCompare(b.getClientId().getValue()));
+  }
+
   public async findAll(): Promise<ClientApplication[]> {
     return Array.from(this.clients.values()).sort((a, b) =>
       a.getClientId().getValue().localeCompare(b.getClientId().getValue())

@@ -3,6 +3,7 @@ import { DomainError } from '../user/error';
 export type OAuth2ErrorCode =
   | 'invalid_request'
   | 'invalid_client'
+  | 'invalid_client_operation'
   | 'invalid_grant'
   | 'unauthorized_client'
   | 'unsupported_grant_type'

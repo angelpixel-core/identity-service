@@ -8,6 +8,7 @@ import { ClientId } from '../value_objects/client_id/value';
 export interface ClientApplicationRepositoryPort {
   save(client: ClientApplication): Promise<void>;
   findByClientId(clientId: ClientId): Promise<ClientApplication | null>;
+  findByTenantId?(tenantId: string): Promise<ClientApplication[]>;
   findAll?(): Promise<ClientApplication[]>;
 }
 

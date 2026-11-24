@@ -136,4 +136,81 @@ describe('Web UI E2E Spec: US-25 /tenant Console (Clients, M2M & RLS Lab)', () =
       expect(screen.getByTestId('rls-lab-viewer')).toHaveTextContent('beta-corp');
     });
   });
+
+  it('Scenario 5 (US-28): registers a confidential client, rotates secret showing one-time banner and suspends it', async () => {
+    let currentStatus: 'active' | 'suspended' = 'active';
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/v1/oauth2/clients') {
+        return Promise.resolve(
+          mockJsonResponse({
+            count: 1,
+            clients: [
+              {
+                id: 'client-m2m-28',
+                clientId: 'm2m-worker-28',
+                clientName: 'Worker US-28',
+                clientType: 'confidential',
+                clientProfile: 'm2m',
+                status: currentStatus,
+                allowedOrigins: ['https://worker.acme-corp.com'],
+                redirectUris: [],
+                allowedGrantTypes: ['client_credentials'],
+                scopes: ['identity:read'],
+                isActive: currentStatus === 'active',
+              },
+            ],
+          })
+        );
+      }
+      if (url === '/api/v1/clients' && init?.method === 'POST') {
+        return Promise.resolve(
+          mockJsonResponse(
+            {
+              id: 'client-new-28',
+              clientId: 'new-worker-28',
+              clientName: 'New Worker 28',
+              clientType: 'confidential',
+              clientProfile: 'm2m',
+              status: 'active',
+              isActive: true,
+              clientSecret: 'one_time_created_secret_28',
+            },
+            201
+          )
+        );
+      }
+      if (url === '/api/v1/clients/m2m-worker-28/rotate-secret') {
+        return Promise.resolve(
+          mockJsonResponse({
+            clientId: 'm2m-worker-28',
+            clientSecret: 'one_time_rotated_secret_28',
+            secretGraceExpiresAt: '2026-11-24T17:30:00.000Z',
+          })
+        );
+      }
+      if (url === '/api/v1/clients/m2m-worker-28' && init?.method === 'PATCH') {
+        currentStatus = 'suspended';
+        return Promise.resolve(mockJsonResponse({ clientId: 'm2m-worker-28', status: 'suspended' }));
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rotate-secret-m2m-worker-28')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('rotate-secret-m2m-worker-28'));
+    await waitFor(() => {
+      expect(screen.getByTestId('client-secret-once-banner')).toHaveTextContent(
+        'one_time_rotated_secret_28'
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('toggle-client-m2m-worker-28'));
+    await waitFor(() => {
+      expect(screen.getByTestId('toggle-client-m2m-worker-28')).toHaveTextContent('Reactivar');
+    });
+  });
 });

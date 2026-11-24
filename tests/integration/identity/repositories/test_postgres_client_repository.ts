@@ -61,15 +61,20 @@ describe('Infrastructure Persistence: PostgresClientApplicationRepository', () =
       expect(sql).toContain('allowed_origins');
       expect(params).toEqual([
         validClient.getId(),
+        validClient.getTenantId(),
         validClient.getClientId().getValue(),
+        null,
+        null,
         null,
         validClient.getClientName(),
         validClient.getClientType(),
+        validClient.getClientProfile(),
         ['https://portal.angelpixel.io'],
         validClient.getRedirectUris(),
         validClient.getAllowedGrantTypes(),
         validClient.getScopes(),
         validClient.isActive(),
+        validClient.getStatus(),
         validClient.getCreatedAt(),
         validClient.getUpdatedAt(),
       ]);

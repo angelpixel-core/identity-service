@@ -19,6 +19,11 @@ export type SecurityAuditEventType =
   | 'FEDERATION_CALLBACK_PROCESSED'
   | 'FEDERATION_CALLBACK_FAILED'
   | 'PLATFORM_OPERATOR_CROSS_TENANT_ACTION'
+  | 'CLIENT_CREATED'
+  | 'CLIENT_UPDATED'
+  | 'CLIENT_SUSPENDED'
+  | 'CLIENT_REACTIVATED'
+  | 'CLIENT_SECRET_ROTATED'
   // Compatibilidad hacia atrás (legacy snake_case)
   | 'client_authenticated'
   | 'client_authentication_failed'

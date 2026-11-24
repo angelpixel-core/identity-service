@@ -19,6 +19,9 @@ import { DeleteUserCommandHandler } from '../../src/contexts/identity/applicatio
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
 import { ValidateClientOriginQueryHandler } from '../../src/contexts/identity/application/queries/validate_client_origin/handler';
 import { AuthenticateClientM2MCommandHandler } from '../../src/contexts/identity/application/commands/authenticate_client_m2m/handler';
+import { RegisterClientCommandHandler } from '../../src/contexts/identity/application/commands/register_client/handler';
+import { UpdateClientCommandHandler } from '../../src/contexts/identity/application/commands/update_client/handler';
+import { RotateClientSecretCommandHandler } from '../../src/contexts/identity/application/commands/rotate_client_secret/handler';
 import { UserRepositoryPort } from '../../src/contexts/identity/application/ports/user/repository';
 import { HashProviderPort } from '../../src/contexts/identity/application/ports/security/hash_provider';
 import { TokenProviderPort } from '../../src/contexts/identity/application/ports/security/token_provider';
@@ -457,11 +460,26 @@ export function createApp(deps?: AppDependencies): Express {
   const getJwksHandler = new GetJwksQueryHandler(asymmetricKeyProvider);
   const discoveryController = new DiscoveryController(getOpenIdConfigHandler, getJwksHandler);
 
+  const registerClientHandler = new RegisterClientCommandHandler(
+    clientRepository,
+    hashProvider,
+    auditLogger
+  );
+  const updateClientHandler = new UpdateClientCommandHandler(clientRepository, auditLogger);
+  const rotateClientSecretHandler = new RotateClientSecretCommandHandler(
+    clientRepository,
+    hashProvider,
+    auditLogger
+  );
+
   const authController = new AuthController(registerUserHandler, getProfileHandler);
   const userController = new UserController(getProfileHandler, updateUserProfileHandler, deleteUserHandler);
   const oauth2ClientController = new OAuth2ClientController(
     validateClientOriginHandler,
-    clientRepository
+    clientRepository,
+    registerClientHandler,
+    updateClientHandler,
+    rotateClientSecretHandler
   );
 
   const issueAuthCodeHandler = new IssueAuthorizationCodeCommandHandler(
@@ -859,6 +877,30 @@ export function createApp(deps?: AppDependencies): Express {
     tenantContextMiddleware,
     authMiddleware,
     oauth2ClientController.listClients
+  );
+  app.get(
+    '/api/v1/clients',
+    tenantContextMiddleware,
+    authMiddleware,
+    oauth2ClientController.listClients
+  );
+  app.post(
+    '/api/v1/clients',
+    tenantContextMiddleware,
+    authMiddleware,
+    oauth2ClientController.registerClient
+  );
+  app.patch(
+    '/api/v1/clients/:clientId',
+    tenantContextMiddleware,
+    authMiddleware,
+    oauth2ClientController.updateClient
+  );
+  app.post(
+    '/api/v1/clients/:clientId/rotate-secret',
+    tenantContextMiddleware,
+    authMiddleware,
+    oauth2ClientController.rotateClientSecret
   );
   app.post(
     '/api/v1/oauth2/clients/validate',

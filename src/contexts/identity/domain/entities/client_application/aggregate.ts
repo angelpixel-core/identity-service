@@ -7,18 +7,25 @@ import { DomainValidationError } from '../../exceptions/user/error';
 import { OAuth2AuthenticationError } from '../../exceptions/oauth2/error';
 
 export type ClientType = 'confidential' | 'public';
+export type ClientProfile = 'spa' | 'web' | 'native' | 'm2m';
+export type ClientStatus = 'active' | 'suspended';
 
 export interface CreateClientApplicationProps {
   id: string;
+  tenantId?: string;
   clientId: ClientId;
   clientSecretHash?: string | null;
+  previousSecretHash?: string | null;
+  secretGraceExpiresAt?: Date | null;
   clientName: string;
   clientType: ClientType;
+  clientProfile?: ClientProfile;
   allowedOrigins: OriginDomain[];
   redirectUris: string[];
   allowedGrantTypes: (GrantType | string)[];
   scopes: (Scope | string)[];
   isActive?: boolean;
+  status?: ClientStatus;
 }
 
 export interface ReconstituteClientApplicationProps extends CreateClientApplicationProps {
@@ -28,48 +35,63 @@ export interface ReconstituteClientApplicationProps extends CreateClientApplicat
 
 interface InternalClientApplicationProps {
   id: string;
+  tenantId: string;
   clientId: ClientId;
   clientSecretHash: string | null;
+  previousSecretHash: string | null;
+  secretGraceExpiresAt: Date | null;
   clientName: string;
   clientType: ClientType;
+  clientProfile: ClientProfile;
   allowedOrigins: OriginDomain[];
   redirectUris: string[];
   allowedGrantTypes: GrantType[];
   scopes: Scope[];
   isActive: boolean;
+  status: ClientStatus;
   createdAt: Date;
   updatedAt: Date;
 }
 
 /**
  * Aggregate Root: ClientApplication
- * Representa una aplicación cliente registrada (confidencial o pública) con sus permisos, concesiones y orígenes homologados.
+ * Representa una aplicación cliente registrada (confidencial o pública) con sus permisos, concesiones, ciclo de vida y rotación dual.
  */
 export class ClientApplication {
   private readonly id: string;
+  private readonly tenantId: string;
   private readonly clientId: ClientId;
-  private readonly clientSecretHash: string | null;
+  private clientSecretHash: string | null;
+  private previousSecretHash: string | null;
+  private secretGraceExpiresAt: Date | null;
   private clientName: string;
   private readonly clientType: ClientType;
+  private readonly clientProfile: ClientProfile;
   private allowedOrigins: OriginDomain[];
   private redirectUris: string[];
   private allowedGrantTypes: GrantType[];
   private scopes: Scope[];
   private active: boolean;
+  private status: ClientStatus;
   private readonly createdAt: Date;
   private updatedAt: Date;
 
   private constructor(props: InternalClientApplicationProps) {
     this.id = props.id;
+    this.tenantId = props.tenantId;
     this.clientId = props.clientId;
     this.clientSecretHash = props.clientSecretHash;
+    this.previousSecretHash = props.previousSecretHash;
+    this.secretGraceExpiresAt = props.secretGraceExpiresAt;
     this.clientName = props.clientName;
     this.clientType = props.clientType;
+    this.clientProfile = props.clientProfile;
     this.allowedOrigins = [...props.allowedOrigins];
     this.redirectUris = [...props.redirectUris];
     this.allowedGrantTypes = [...props.allowedGrantTypes];
     this.scopes = [...props.scopes];
     this.active = props.isActive;
+    this.status = props.status;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }
@@ -142,22 +164,37 @@ export class ClientApplication {
       );
     }
 
+    const defaultProfile: ClientProfile = props.clientType === 'confidential' ? 'm2m' : 'spa';
+    const clientProfile = props.clientProfile ?? defaultProfile;
+    const isActive =
+      props.status !== undefined ? props.status === 'active' : (props.isActive ?? true);
+    const status: ClientStatus = isActive ? 'active' : 'suspended';
+
     return {
       id: props.id,
+      tenantId: props.tenantId?.trim() || 'acme-corp',
       clientId: props.clientId,
       clientSecretHash: props.clientSecretHash ?? null,
+      previousSecretHash: props.previousSecretHash ?? null,
+      secretGraceExpiresAt: props.secretGraceExpiresAt ?? null,
       clientName: props.clientName,
       clientType: props.clientType,
+      clientProfile,
       allowedOrigins: [...props.allowedOrigins],
       redirectUris: [...(props.redirectUris || [])],
       allowedGrantTypes: grantTypeVOs,
       scopes: scopeVOs,
-      isActive: props.isActive ?? true,
+      isActive,
+      status,
     };
   }
 
   public getId(): string {
     return this.id;
+  }
+
+  public getTenantId(): string {
+    return this.tenantId;
   }
 
   public getClientId(): ClientId {
@@ -168,12 +205,28 @@ export class ClientApplication {
     return this.clientSecretHash;
   }
 
+  public getPreviousSecretHash(): string | null {
+    return this.previousSecretHash;
+  }
+
+  public getSecretGraceExpiresAt(): Date | null {
+    return this.secretGraceExpiresAt;
+  }
+
   public getClientName(): string {
     return this.clientName;
   }
 
   public getClientType(): ClientType {
     return this.clientType;
+  }
+
+  public getClientProfile(): ClientProfile {
+    return this.clientProfile;
+  }
+
+  public getStatus(): ClientStatus {
+    return this.status;
   }
 
   public getAllowedOrigins(): OriginDomain[] {
@@ -255,12 +308,99 @@ export class ClientApplication {
 
   public activate(): void {
     this.active = true;
+    this.status = 'active';
     this.updatedAt = new Date();
   }
 
   public deactivate(): void {
     this.active = false;
+    this.status = 'suspended';
     this.updatedAt = new Date();
+  }
+
+  public suspend(): void {
+    this.deactivate();
+  }
+
+  public reactivate(): void {
+    this.activate();
+  }
+
+  public updateConfiguration(patch: {
+    clientName?: string;
+    allowedOrigins?: OriginDomain[];
+    redirectUris?: string[];
+    allowedGrantTypes?: (GrantType | string)[];
+    scopes?: (Scope | string)[];
+  }): void {
+    if (patch.clientName !== undefined) {
+      if (!patch.clientName.trim()) {
+        throw new DomainValidationError('ClientApplication name cannot be empty');
+      }
+      this.clientName = patch.clientName.trim();
+    }
+
+    if (patch.allowedOrigins !== undefined) {
+      if (patch.allowedOrigins.length === 0) {
+        throw new DomainValidationError('Client applications must specify at least one allowed origin');
+      }
+      this.allowedOrigins = [...patch.allowedOrigins];
+    }
+
+    if (patch.redirectUris !== undefined) {
+      this.redirectUris = [...patch.redirectUris];
+    }
+
+    if (patch.allowedGrantTypes !== undefined) {
+      const grantTypeVOs = patch.allowedGrantTypes.map((g) =>
+        g instanceof GrantType ? g : GrantType.create(g)
+      );
+      if (
+        this.clientType === 'public' &&
+        grantTypeVOs.some((g) => g.getValue() === 'client_credentials')
+      ) {
+        throw new DomainValidationError(
+          'Public client applications cannot be granted client_credentials flow'
+        );
+      }
+      this.allowedGrantTypes = grantTypeVOs;
+    }
+
+    if (patch.scopes !== undefined) {
+      this.scopes = patch.scopes.map((s) => (s instanceof Scope ? s : Scope.create(s)));
+    }
+
+    this.updatedAt = new Date();
+  }
+
+  public rotateSecret(newSecretHash: string, gracePeriodSeconds = 0): void {
+    if (this.clientType === 'public') {
+      throw new OAuth2AuthenticationError(
+        'invalid_client_operation',
+        `Public client application "${this.clientId.getValue()}" cannot rotate client_secret`,
+        400
+      );
+    }
+
+    if (!newSecretHash || newSecretHash.trim().length === 0) {
+      throw new DomainValidationError('New client_secret_hash cannot be empty');
+    }
+
+    if (gracePeriodSeconds < 0 || !Number.isFinite(gracePeriodSeconds)) {
+      throw new DomainValidationError('gracePeriodSeconds must be a non-negative number');
+    }
+
+    const now = new Date();
+    if (gracePeriodSeconds > 0 && this.clientSecretHash) {
+      this.previousSecretHash = this.clientSecretHash;
+      this.secretGraceExpiresAt = new Date(now.getTime() + gracePeriodSeconds * 1000);
+    } else {
+      this.previousSecretHash = null;
+      this.secretGraceExpiresAt = null;
+    }
+
+    this.clientSecretHash = newSecretHash;
+    this.updatedAt = now;
   }
 
   /**
@@ -311,14 +451,31 @@ export class ClientApplication {
       );
     }
 
-    const isMatch = await secretVerifier.compare(secret.getValue(), this.clientSecretHash);
-    if (!isMatch) {
-      throw new OAuth2AuthenticationError(
-        'invalid_client',
-        'Client authentication failed: invalid client credentials',
-        401
-      );
+    const isCurrentMatch = await secretVerifier.compare(secret.getValue(), this.clientSecretHash);
+    if (isCurrentMatch) {
+      return;
     }
+
+    const withinGraceWindow =
+      this.previousSecretHash !== null &&
+      this.secretGraceExpiresAt !== null &&
+      new Date() < this.secretGraceExpiresAt;
+
+    if (withinGraceWindow && this.previousSecretHash) {
+      const isPreviousMatch = await secretVerifier.compare(
+        secret.getValue(),
+        this.previousSecretHash
+      );
+      if (isPreviousMatch) {
+        return;
+      }
+    }
+
+    throw new OAuth2AuthenticationError(
+      'invalid_client',
+      'Client authentication failed: invalid client credentials',
+      401
+    );
   }
 
   /**
