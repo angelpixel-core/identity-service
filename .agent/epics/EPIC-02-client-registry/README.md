@@ -2,7 +2,7 @@
 
 * **ID:** EPIC-02
 * **Bounded Context:** `identity` / `client-registry`
-* **Estado:** Completed (US-03 y US-04 completadas al 100%)
+* **Estado:** In Progress (`US-03` y `US-04` completadas; `US-28` y `US-29` planificadas bajo `ADR-0010`)
 * **Arquitectura:** Vertical Slice Architecture + Hexagonal / DDD (TypeScript / Express / PostgreSQL)
 * **Topología de Referencia:** [`.agent/TREE.txt`](../../TREE.txt)
 
@@ -36,6 +36,14 @@ Más allá del mecanismo de cabeceras CORS de navegador (que no protege contra i
 * **Artefactos Principales:**
   * `src/contexts/identity/application/commands/authenticate_client/command.ts` & `handler.ts`
   * `interfaces/http/rest/v1/oauth2/token_controller.ts` (`POST /oauth2/token` con `grant_type=client_credentials`)
+
+### 2.3. Client Lifecycle Management & Secret Rotation
+* **User Story:** [`US-28: Client Lifecycle Management & Secret Rotation`](stories/US-28-client-lifecycle-and-secret-rotation.md)
+* **Flujo:** CRUD completo de `Client Applications` (`spa`, `web`, `native`, `m2m`), suspensión/reactivación y rotación de `client_secret` con ventana de gracia dual sin downtime.
+
+### 2.4. Multi-Tenant / Multi-Domain Bindings & Explicit Tenant Resolution
+* **User Story:** [`US-29: Multi-Tenant / Multi-Domain Client Bindings & Explicit Tenant Resolution`](stories/US-29-client-tenant-bindings-and-domain-resolution.md)
+* **Flujo:** Vinculación **N:M** `client_tenant_bindings` entre aplicaciones cliente, dominios personalizados y tenants autorizados, prohibiendo resolver `tenant_id` únicamente desde `Origin`/`Referer`.
 
 ---
 

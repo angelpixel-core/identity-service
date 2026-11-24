@@ -2,7 +2,7 @@
 
 * **ID:** EPIC-05
 * **Bounded Context:** `identity` / `federation`
-* **Estado:** Planned
+* **Estado:** In Progress (`US-10` y `US-11` completadas; `US-33` y `US-34` planificadas bajo `ADR-0010`)
 * **Arquitectura:** Identity Broker Pattern / External OIDC Clients / Just-In-Time (JIT) Provisioning
 * **Topología de Referencia:** [`.agent/TREE.txt`](../../TREE.txt)
 
@@ -41,6 +41,14 @@ El Broker centraliza el flujo de delegación OIDC, valida los claims de los toke
   * `src/contexts/identity/domain/entities/federated_identity/aggregate.ts`
   * `src/contexts/identity/application/commands/process_federated_callback/command.ts` & `handler.ts`
   * `src/contexts/identity/infrastructure/persistence/repositories/federated_identity/postgres_repository.ts`
+
+### 2.3. Per-Tenant Federated Provider Registry
+* **User Story:** [`US-33: Per-Tenant Federated Provider Registry (Okta, LinkedIn, Slack)`](stories/US-33-per-tenant-federated-provider-registry.md) *(Planned)*
+* **Flujo:** Configuración dinámica por inquilino de proveedores OIDC/OAuth2 corporativos o sociales (`tenant_federated_providers` bajo PostgreSQL RLS *Fail-Closed*) con `client_secret` cifrado en reposo.
+
+### 2.4. Generic OIDC/OAuth2 Adapter & Multi-Tenant Resolution
+* **User Story:** [`US-34: Generic OIDC/OAuth2 Adapter & Multi-Tenant Runtime Resolution`](stories/US-34-generic-oidc-adapter-and-multi-tenant-resolution.md) *(Planned)*
+* **Flujo:** `GenericOidcAdapter` implementando `ExternalIdentityProviderPort` vía Discovery + JWKS estándar (`JwksTokenVerifier`) y coexistencia con los conectores de Google y Microsoft Entra ID.
 
 ---
 
