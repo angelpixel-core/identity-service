@@ -58,6 +58,8 @@ import {
   UpdateClientTenantBindingCommandHandler,
 } from '../../src/contexts/identity/application/commands/manage_client_tenant_binding/handler';
 import { ResolveClientTenantContextQueryHandler } from '../../src/contexts/identity/application/queries/resolve_client_tenant_context/handler';
+import { GetPublicAuthConfigQueryHandler } from '../../src/contexts/identity/application/queries/get_public_auth_config/handler';
+import { DefaultTenantFederatedProvidersAdapter } from '../../src/contexts/identity/application/ports/federation/tenant_federated_providers_port';
 import { ClientBindingsController } from './rest/v1/oauth2/client_bindings_controller';
 import { TenantPolicyRepositoryPort } from '../../src/contexts/identity/domain/ports/tenant_policy_repository_port';
 import { PostgresTenantPolicyRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/tenant_policy/postgres_tenant_policy_repository';
@@ -667,21 +669,37 @@ export function createApp(deps?: AppDependencies): Express {
     clientRepository,
     auditLogger
   );
+  const federatedProvidersPort = new DefaultTenantFederatedProvidersAdapter(federationProviders);
+  const getPublicAuthConfigHandler = new GetPublicAuthConfigQueryHandler(
+    resolveClientTenantContextHandler,
+    tenantPolicyRepository,
+    federatedProvidersPort,
+    cacheProvider
+  );
   const clientBindingsController = new ClientBindingsController(
     clientTenantBindingRepository,
     new CreateClientTenantBindingCommandHandler(
       clientTenantBindingRepository,
       clientRepository,
-      auditLogger
+      auditLogger,
+      cacheProvider
     ),
-    new UpdateClientTenantBindingCommandHandler(clientTenantBindingRepository, auditLogger),
-    new RevokeClientTenantBindingCommandHandler(clientTenantBindingRepository, auditLogger),
-    resolveClientTenantContextHandler
+    new UpdateClientTenantBindingCommandHandler(
+      clientTenantBindingRepository,
+      auditLogger,
+      cacheProvider
+    ),
+    new RevokeClientTenantBindingCommandHandler(
+      clientTenantBindingRepository,
+      auditLogger,
+      cacheProvider
+    ),
+    getPublicAuthConfigHandler
   );
 
   const tenantPolicyController = new TenantPolicyController(
     new GetTenantPolicyQueryHandler(tenantPolicyRepository),
-    new UpsertTenantPolicyCommandHandler(tenantPolicyRepository, auditLogger)
+    new UpsertTenantPolicyCommandHandler(tenantPolicyRepository, auditLogger, cacheProvider)
   );
 
   const authorizeController = new OAuth2AuthorizeController(

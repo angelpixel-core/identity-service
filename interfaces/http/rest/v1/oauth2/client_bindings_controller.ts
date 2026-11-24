@@ -7,7 +7,7 @@ import {
   UpdateClientTenantBindingCommandHandler,
   toClientTenantBindingDTO,
 } from '../../../../../src/contexts/identity/application/commands/manage_client_tenant_binding/handler';
-import { ResolveClientTenantContextQueryHandler } from '../../../../../src/contexts/identity/application/queries/resolve_client_tenant_context/handler';
+import { GetPublicAuthConfigQueryHandler } from '../../../../../src/contexts/identity/application/queries/get_public_auth_config/handler';
 import { DomainValidationError } from '../../../../../src/contexts/identity/domain/exceptions/user/error';
 import { OAuth2AuthenticationError } from '../../../../../src/contexts/identity/domain/exceptions/oauth2/error';
 
@@ -40,7 +40,7 @@ export class ClientBindingsController {
     private readonly createBindingHandler: CreateClientTenantBindingCommandHandler,
     private readonly updateBindingHandler: UpdateClientTenantBindingCommandHandler,
     private readonly revokeBindingHandler: RevokeClientTenantBindingCommandHandler,
-    private readonly resolveContextHandler: ResolveClientTenantContextQueryHandler
+    private readonly getPublicAuthConfigHandler: GetPublicAuthConfigQueryHandler
   ) {}
 
   private handleError(error: unknown, res: Response, next: NextFunction): void {
@@ -158,7 +158,7 @@ export class ClientBindingsController {
       const redirectUri = (req.query.redirect_uri as string) || undefined;
       const origin = (req.headers.origin as string) || undefined;
 
-      const resolved = await this.resolveContextHandler.execute({
+      const { dto, etag } = await this.getPublicAuthConfigHandler.execute({
         clientId,
         tenantId,
         domain,
@@ -167,7 +167,17 @@ export class ClientBindingsController {
         ip: req.ip,
       });
 
-      res.status(200).json(resolved);
+      const quotedEtag = `"${etag}"`;
+      res.setHeader('ETag', quotedEtag);
+      res.setHeader('Cache-Control', 'private, max-age=60');
+
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch === quotedEtag || ifNoneMatch === etag) {
+        res.status(304).end();
+        return;
+      }
+
+      res.status(200).json(dto);
     } catch (error) {
       this.handleError(error, res, next);
     }
