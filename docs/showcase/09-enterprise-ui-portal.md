@@ -15,6 +15,7 @@ Este capítulo documenta la capa visual de `identity-service`, construida de for
 | **US-23** | **Google Material Design 3 Design System & Bounded-Context Shell** | `tokens.css`, `M3Primitives.tsx`, `BoundedShell.tsx`, `api_client.ts`, Storybook 10 | Material Design 3, WCAG 2.1 AA, ADR-0009 |
 | **US-24** | **Superficie `/auth`: Portal Usuario, OIDC Discovery/JWKS, PKCE S256 & Federación** | `AuthPortalView.tsx`, `OidcDiscoveryPanel.tsx`, `PkceAndSessionsPanel.tsx`, `FederationPanel.tsx` | RFC 7636 (PKCE S256), OIDC Discovery, W3C Trace |
 | **US-25** | **Superficie `/tenant`: Client Registry, M2M Playground & Laboratorio RLS/Cross-Tenant** | `TenantConsoleView.tsx`, `ClientRegistryPanel.tsx`, `M2mPlaygroundPanel.tsx`, `RlsAndCrossTenantLabPanel.tsx` | OAuth2 Client Credentials, CORS, PostgreSQL RLS, Zero-Trust |
+| **US-26** | **Consola `/platform`: Gobernanza Root, Bóveda Criptográfica, Auditoría & SRE** | `PlatformConsoleView.tsx`, `SecurityPosturePanel.tsx`, `VaultAndRotationPanel.tsx`, `AuditExplorerPanel.tsx`, `SreObservabilityPanel.tsx` | ADR-0009, Vault CSI, Audit SSE, OpenTelemetry & Probes |
 
 ---
 
@@ -115,6 +116,41 @@ Intento de salto cross-tenant hacia `beta-corp` desde `acme-corp`, interceptado 
 
 ---
 
+## 🛡️ US-26: Consola `/platform` — Gobernanza Root, Bóveda Criptográfica, Auditoría & SRE
+
+`US-26` unifica en `/platform` ([`PlatformConsoleView.tsx`](../../interfaces/web/client/contexts/platform/ui/PlatformConsoleView.tsx)) el plano de control para operadores `system:superadmin` (`ADR-0009`), organizado en 4 vistas mediante `M3NavigationRail`:
+
+1. **Postura de Seguridad & Gobernanza Root (`US-12`–`US-15`, `US-18`):** Vista estrictamente de solo lectura alimentada por `GET /api/v1/platform/posture` (`platform_controller.ts`), sin controles mutables de defensa ni exposición de secretos.
+2. **Bóveda Criptográfica (`US-16`, `US-17`):** Metadatos de llaves activas/rotadas y rotación controlada (`POST /api/v1/secrets/rotate`) con confirmación explícita.
+3. **Explorador de Auditoría Forense (`US-19`):** Stream SSE en vivo (`/api/v1/audit/events`), filtros reactivos parciales case-insensitive (`severity`, `eventType`, `tenantId`, `traceId`), paginación, ordenamiento por timestamp, copia de `traceId` y snackbar fijo.
+4. **Observabilidad SRE (`US-20`–`US-22`):** Strip copiable de `traceparent` W3C, Golden Signals Prometheus (`/metrics`) y sondas detalladas incluyendo PostgreSQL y Redis (`/health/live`, `/health/ready`, `/health`).
+
+---
+
+### 📸 Evidencia Visual de las 4 Vistas de `/platform` (US-26)
+
+#### 1. Postura de Seguridad & Gobernanza Root (`US-12`–`US-15`, `US-18`)
+Vista de solo lectura exponiendo postura IaC, Ingress TLS 1.3, Helm, NetworkPolicy y Rate Limit.
+
+![Consola /platform — Postura de Seguridad](./assets/screenshots/us18_platform_netpolicy.png)
+
+#### 2. Bóveda Criptográfica & Rotación Confirmada (`US-16`, `US-17`)
+Metadatos de llaves RS256 sin exponer material secreto y rotación confirmada en vivo.
+
+![Consola /platform — Bóveda Criptográfica](./assets/screenshots/us16_vault_rotation_success.png)
+
+#### 3. Explorador de Auditoría Forense (`US-19`)
+Filtrado parcial reactivo, tabla paginada ordenable por timestamp, botón de copia para `traceId` y stream SSE en tiempo real.
+
+![Consola /platform — Auditoría Forense](./assets/screenshots/us19_audit_explorer_filtered.png)
+
+#### 4. Observabilidad SRE: Métricas RED, Golden Signals y Probes (`US-20`–`US-22`)
+Tarjetas en vivo de métricas Prometheus (`/metrics`), `traceparent` W3C copiable y diagnóstico de sondas.
+
+![Consola /platform — Observabilidad SRE](./assets/screenshots/us21_sre_metrics.png)
+
+---
+
 ## 🧪 Verificación Técnica Asociada
 
 ```bash
@@ -127,6 +163,6 @@ npm run build:web
 # 3. Compilación estática del catálogo de componentes (Storybook 10)
 npm run build-storybook
 
-# 4. Suites E2E Web (US-23, US-24 y US-25)
-npm run test:e2e -- tests/e2e/web/m3_shell_and_route_guards.spec.tsx tests/e2e/web/auth_portal_oidc_federation.spec.tsx tests/e2e/web/tenant_console.spec.tsx
+# 4. Suites E2E Web (US-23 a US-26)
+npm run test:e2e -- tests/e2e/web/m3_shell_and_route_guards.spec.tsx tests/e2e/web/auth_portal_oidc_federation.spec.tsx tests/e2e/web/tenant_console.spec.tsx tests/e2e/web/platform_console.spec.tsx
 ```
