@@ -13,6 +13,7 @@ Este capítulo documenta la capa visual de `identity-service`, construida de for
 | Historia de Usuario | Título & Alcance Técnico | Principales Componentes Involucrados | Estándar / Paradigma |
 | :--- | :--- | :--- | :--- |
 | **US-23** | **Google Material Design 3 Design System & Bounded-Context Shell** | `tokens.css`, `M3Primitives.tsx`, `BoundedShell.tsx`, `api_client.ts`, Storybook 10 | Material Design 3, WCAG 2.1 AA, ADR-0009 |
+| **US-24** | **Superficie `/auth`: Portal Usuario, OIDC Discovery/JWKS, PKCE S256 & Federación** | `AuthPortalView.tsx`, `OidcDiscoveryPanel.tsx`, `PkceAndSessionsPanel.tsx`, `FederationPanel.tsx` | RFC 7636 (PKCE S256), OIDC Discovery, W3C Trace |
 
 ---
 
@@ -50,6 +51,40 @@ Compilación estática y catálogo interactivo de `M3Primitives.stories.tsx` sob
 
 ---
 
+## 🔐 US-24: Superficie `/auth` — Portal Usuario, OIDC Discovery/JWKS, PKCE S256 & Federación
+
+`US-24` unifica todo el ciclo de autenticación e identidad en `/auth` mediante el selector M3 **"Flujo de Identidad"** (`role="listbox"` en [`AuthPortalView.tsx`](../../interfaces/web/client/contexts/auth/ui/AuthPortalView.tsx)), ejecutando operaciones reales contra el backend sin datos simulados:
+
+1. **Invariante 1 — PKCE S256 Nativo en Navegador:** `PkceAndSessionsPanel` calcula `code_verifier` y `code_challenge` (`BASE64URL(SHA256(...))`) en vivo mediante `crypto.subtle.digest('SHA-256', ...)` (RFC 7636).
+2. **Invariante 2 — Endpoints Reales & Trazabilidad W3C:** Cada llamada (`/.well-known/openid-configuration`, `/.well-known/jwks.json`, `/oauth2/authorize`, `/api/v1/oauth2/token`, `/oauth2/refresh`, `/oauth2/revoke` y `/api/v1/auth/federation/*`) pasa por `apiRequest` y muestra el header `traceparent` en `M3JsonViewer`.
+3. **Invariante 3 — Selector M3 & Refinamientos UX:** Transición suave entre los 4 flujos (**Cuenta**, **OIDC & JWKS**, **PKCE & Sesiones**, **Federación**), cierre de sesión integrado en `UserProfileCard`, tabla de semáforos de proveedores en `FederationPanel` y laboratorio OIDC manual en `<details>`.
+
+---
+
+### 📸 Evidencia Visual de los 4 Flujos de `/auth` (US-24)
+
+#### 1. Flujo `Cuenta`: Perfil Autenticado Multi-Tenant (`US-01`, `US-02`)
+`UserProfileCard` renderizando la sesión activa en `acme-corp` con cierre de sesión integrado en el footer.
+
+![Flujo Cuenta autenticado en /auth](./assets/screenshots/us24_auth_account_profile.png)
+
+#### 2. Flujo `OIDC & JWKS`: Discovery y Claves RSA en Vivo (`US-07`)
+Consulta real de `GET /.well-known/openid-configuration` y `GET /.well-known/jwks.json` con propagación de `traceparent` W3C.
+
+![Flujo OIDC & JWKS en vivo](./assets/screenshots/us24_auth_oidc_discovery_jwks.png)
+
+#### 3. Flujo `PKCE & Sesiones`: WebCrypto S256, Exchange y Refresh (`US-08`, `US-09`)
+Generación de par PKCE S256 en navegador, intercambio en `/oauth2/authorize` + `/api/v1/oauth2/token` y emisión de `access_token` / `id_token` con traza W3C.
+
+![Flujo PKCE S256 y Sesiones Refresh](./assets/screenshots/us24_auth_pkce_sessions.png)
+
+#### 4. Flujo `Federación`: Semáforo de Proveedores y JIT Provisioning (`US-10`, `US-11`)
+Estado en vivo de **Google OIDC** y **Microsoft Entra ID**, popover informativo y laboratorio OIDC manual colapsable.
+
+![Flujo Federación Social en /auth](./assets/screenshots/us24_auth_federation_providers.png)
+
+---
+
 ## 🧪 Verificación Técnica Asociada
 
 ```bash
@@ -62,6 +97,6 @@ npm run build:web
 # 3. Compilación estática del catálogo de componentes (Storybook 10)
 npm run build-storybook
 
-# 4. Suite E2E Web (Shell M3 y guardias de ruta)
-npm run test:e2e -- tests/e2e/web/m3_shell_and_route_guards.spec.tsx
+# 4. Suites E2E Web (US-23 y US-24)
+npm run test:e2e -- tests/e2e/web/m3_shell_and_route_guards.spec.tsx tests/e2e/web/auth_portal_oidc_federation.spec.tsx
 ```
