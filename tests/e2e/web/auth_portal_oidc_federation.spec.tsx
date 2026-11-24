@@ -227,4 +227,87 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
       expect(screen.getByTestId('auth-password-disabled-banner')).toBeInTheDocument();
     });
   });
+
+  it('Scenario 7 (US-35): registers and lists a Passkey in /auth -> Cuenta when authenticated', async () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_passkey_user_01',
+        userId: '11111111-1111-4111-8111-111111111111',
+        email: 'alice@acme-corp.com',
+        tenantId: 'acme-corp',
+        roles: ['member'],
+      })
+    );
+    window.history.pushState({}, '', '/auth');
+
+    let passkeysList: any[] = [];
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/v1/auth/me') {
+        return Promise.resolve(
+          mockJsonResponse({
+            id: '11111111-1111-4111-8111-111111111111',
+            email: 'alice@acme-corp.com',
+            tenantId: 'acme-corp',
+          })
+        );
+      }
+      if (url === '/api/v1/auth/passkeys' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(mockJsonResponse({ count: passkeysList.length, passkeys: passkeysList }));
+      }
+      if (url === '/api/v1/auth/passkeys/register/options') {
+        return Promise.resolve(
+          mockJsonResponse({
+            challenge: 'dGVzdC1jaGFsbGVuZ2U',
+            rp: { name: 'Identity', id: 'localhost' },
+            user: { id: 'dXNy', name: 'alice@acme-corp.com', displayName: 'alice@acme-corp.com' },
+            pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+          })
+        );
+      }
+      if (url === '/api/v1/auth/passkeys/register/verify') {
+        const created = {
+          id: 'pk-uuid-1',
+          credentialId: 'cred-e2e-passkey-01',
+          deviceType: 'multiDevice',
+          backedUp: true,
+          transports: ['internal'],
+          createdAt: '2026-11-24T18:55:00.000Z',
+        };
+        passkeysList = [created];
+        return Promise.resolve(mockJsonResponse(created, 201));
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    Object.defineProperty(globalThis.navigator, 'credentials', {
+      configurable: true,
+      value: {
+        create: jest.fn().mockResolvedValue({
+          id: 'cred-e2e-passkey-01',
+          rawId: new Uint8Array([1, 2, 3]).buffer,
+          type: 'public-key',
+          response: {
+            clientDataJSON: new Uint8Array([4, 5, 6]).buffer,
+            attestationObject: new Uint8Array([7, 8, 9]).buffer,
+            getTransports: () => ['internal'],
+          },
+          getClientExtensionResults: () => ({}),
+        }),
+      },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('passkeys-panel')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('register-passkey-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('passkeys-success')).toBeInTheDocument();
+      expect(screen.getByTestId('passkeys-list')).toHaveTextContent('cred-e2e-passkey');
+    });
+  });
 });

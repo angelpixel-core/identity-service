@@ -13,6 +13,8 @@ export type OAuth2ErrorCode =
   | 'access_denied'
   | 'auth_method_disabled_for_tenant'
   | 'invalid_credentials'
+  | 'invalid_webauthn_challenge'
+  | 'invalid_webauthn_response'
   | 'invalid_scope';
 
 /**

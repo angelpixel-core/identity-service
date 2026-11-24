@@ -68,6 +68,18 @@ import { InMemoryTenantPolicyRepository } from '../../src/contexts/identity/infr
 import { GetTenantPolicyQueryHandler } from '../../src/contexts/identity/application/queries/get_tenant_policy/handler';
 import { UpsertTenantPolicyCommandHandler } from '../../src/contexts/identity/application/commands/upsert_tenant_policy/handler';
 import { TenantPolicyController } from './rest/v1/identity/tenant_policy_controller';
+import { WebAuthnCredentialRepositoryPort } from '../../src/contexts/identity/domain/ports/webauthn_credential_repository_port';
+import { PostgresWebAuthnCredentialRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/webauthn/postgres_webauthn_credential_repository';
+import { InMemoryWebAuthnCredentialRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/webauthn/in_memory_webauthn_credential_repository';
+import { WebAuthnVerifierPort } from '../../src/contexts/identity/application/ports/security/webauthn_verifier_port';
+import { SimpleWebAuthnVerifierAdapter } from '../../src/contexts/identity/infrastructure/security/simplewebauthn_verifier_adapter';
+import {
+  BeginPasskeyRegistrationCommandHandler,
+  ListPasskeysQueryHandler,
+  RevokePasskeyCommandHandler,
+  VerifyPasskeyRegistrationCommandHandler,
+} from '../../src/contexts/identity/application/commands/register_passkey/handler';
+import { PasskeyController } from './rest/v1/identity/passkey_controller';
 import { TenantTransactionRunnerPort } from '../../src/contexts/identity/application/ports/database/tenant_transaction_runner';
 import { TenantAwareTransactionRunner } from '../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 import { AuthController } from './rest/v1/identity/controllers';
@@ -165,6 +177,7 @@ export interface AppDependencies {
   metricsAdapter?: MetricsPort;
   healthCheckPort?: HealthCheckPort;
   keyVaultHealthCheck?: () => Promise<boolean>;
+  webAuthnVerifier?: WebAuthnVerifierPort;
 }
 
 /**
@@ -308,6 +321,14 @@ export function createApp(deps?: AppDependencies): Express {
     activePoolForBindings && process.env.NODE_ENV !== 'test'
       ? new PostgresTenantPolicyRepository(activePoolForBindings)
       : new InMemoryTenantPolicyRepository();
+
+  const webAuthnCredentialRepository: WebAuthnCredentialRepositoryPort =
+    activePoolForBindings && process.env.NODE_ENV !== 'test'
+      ? new PostgresWebAuthnCredentialRepository(activePoolForBindings)
+      : new InMemoryWebAuthnCredentialRepository();
+
+  const webAuthnVerifier: WebAuthnVerifierPort =
+    deps?.webAuthnVerifier ?? new SimpleWebAuthnVerifierAdapter();
 
   let authCodeRepository = deps?.authCodeRepository;
   if (!authCodeRepository) {
@@ -712,6 +733,25 @@ export function createApp(deps?: AppDependencies): Express {
     new UpsertTenantPolicyCommandHandler(tenantPolicyRepository, auditLogger, cacheProvider)
   );
 
+  const passkeyController = new PasskeyController(
+    new BeginPasskeyRegistrationCommandHandler(
+      webAuthnCredentialRepository,
+      tenantPolicyRepository,
+      webAuthnVerifier,
+      cacheProvider,
+      resolveClientTenantContextHandler
+    ),
+    new VerifyPasskeyRegistrationCommandHandler(
+      webAuthnCredentialRepository,
+      tenantPolicyRepository,
+      webAuthnVerifier,
+      cacheProvider,
+      auditLogger
+    ),
+    new ListPasskeysQueryHandler(webAuthnCredentialRepository),
+    new RevokePasskeyCommandHandler(webAuthnCredentialRepository, auditLogger)
+  );
+
   const authorizeController = new OAuth2AuthorizeController(
     issueAuthCodeHandler,
     resolveClientTenantContextHandler,
@@ -872,6 +912,30 @@ export function createApp(deps?: AppDependencies): Express {
   app.post('/api/v1/auth/register', tenantContextMiddleware, authController.register);
   app.post('/api/v1/auth/login', tenantContextMiddleware, authController.login);
   app.get('/api/v1/auth/me', tenantContextMiddleware, authMiddleware, authController.getProfile);
+  app.post(
+    '/api/v1/auth/passkeys/register/options',
+    tenantContextMiddleware,
+    authMiddleware,
+    passkeyController.beginRegistration
+  );
+  app.post(
+    '/api/v1/auth/passkeys/register/verify',
+    tenantContextMiddleware,
+    authMiddleware,
+    passkeyController.verifyRegistration
+  );
+  app.get(
+    '/api/v1/auth/passkeys',
+    tenantContextMiddleware,
+    authMiddleware,
+    passkeyController.listPasskeys
+  );
+  app.delete(
+    '/api/v1/auth/passkeys/:id',
+    tenantContextMiddleware,
+    authMiddleware,
+    passkeyController.revokePasskey
+  );
 
   // Rutas de Usuarios con Zero-Trust Guard & Anti-Enumeration (US-06)
   app.get(

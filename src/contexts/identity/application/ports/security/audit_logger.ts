@@ -29,6 +29,9 @@ export type SecurityAuditEventType =
   | 'CLIENT_TENANT_BINDING_REVOKED'
   | 'CLIENT_TENANT_BINDING_VIOLATION'
   | 'TENANT_POLICY_UPDATED'
+  | 'PASSKEY_REGISTERED'
+  | 'PASSKEY_REGISTRATION_REJECTED'
+  | 'PASSKEY_REVOKED'
   // Compatibilidad hacia atrás (legacy snake_case)
   | 'client_authenticated'
   | 'client_authentication_failed'

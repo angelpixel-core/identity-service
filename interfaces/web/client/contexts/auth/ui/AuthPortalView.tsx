@@ -3,6 +3,7 @@ import { AuthSession, UserProfile } from '../../identity/domain/types';
 import { RegisterForm } from '../../identity/ui/components/register_form';
 import { LoginForm } from '../../identity/ui/components/login_form';
 import { UserProfileCard } from '../../identity/ui/components/user_profile_card';
+import { PasskeysPanel } from '../../identity/ui/components/PasskeysPanel';
 import { OidcDiscoveryPanel } from './OidcDiscoveryPanel';
 import { PkceAndSessionsPanel } from './PkceAndSessionsPanel';
 import { FederationPanel } from './FederationPanel';
@@ -122,6 +123,7 @@ export function AuthPortalView({
 
   const federationEnabled = authConfig ? authConfig.allowedAuthMethods.federatedOidc : true;
   const passwordEnabled = authConfig ? authConfig.allowedAuthMethods.password : true;
+  const passkeysEnabled = authConfig ? authConfig.allowedAuthMethods.passkeys : true;
   const requirePhone = authConfig ? authConfig.requiredFields.includes('phone') : false;
   const defaultTenantId = authConfig?.tenantId || effectiveQuery?.tenantId || 'acme-corp';
 
@@ -188,7 +190,12 @@ export function AuthPortalView({
         {activeTab === 'account' && (
           <div>
             {session ? (
-              <UserProfileCard fetchProfile={fetchProfile} session={session} onLogout={onLogout} />
+              <div>
+                <UserProfileCard fetchProfile={fetchProfile} session={session} onLogout={onLogout} />
+                {passkeysEnabled && (
+                  <PasskeysPanel session={session} clientId={effectiveQuery?.clientId} />
+                )}
+              </div>
             ) : !passwordEnabled ? (
               <M3AlertBanner
                 severity="warning"
