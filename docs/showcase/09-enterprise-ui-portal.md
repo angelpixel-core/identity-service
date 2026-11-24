@@ -16,6 +16,7 @@ Este capítulo documenta la capa visual de `identity-service`, construida de for
 | **US-24** | **Superficie `/auth`: Portal Usuario, OIDC Discovery/JWKS, PKCE S256 & Federación** | `AuthPortalView.tsx`, `OidcDiscoveryPanel.tsx`, `PkceAndSessionsPanel.tsx`, `FederationPanel.tsx` | RFC 7636 (PKCE S256), OIDC Discovery, W3C Trace |
 | **US-25** | **Superficie `/tenant`: Client Registry, M2M Playground & Laboratorio RLS/Cross-Tenant** | `TenantConsoleView.tsx`, `ClientRegistryPanel.tsx`, `M2mPlaygroundPanel.tsx`, `RlsAndCrossTenantLabPanel.tsx` | OAuth2 Client Credentials, CORS, PostgreSQL RLS, Zero-Trust |
 | **US-26** | **Consola `/platform`: Gobernanza Root, Bóveda Criptográfica, Auditoría & SRE** | `PlatformConsoleView.tsx`, `SecurityPosturePanel.tsx`, `VaultAndRotationPanel.tsx`, `AuditExplorerPanel.tsx`, `SreObservabilityPanel.tsx` | ADR-0009, Vault CSI, Audit SSE, OpenTelemetry & Probes |
+| **US-27** | **Showcase Interactivo & Evidencia Visual (`docs/showcase/01..09`)** | `scripts/capture-showcase.ts`, `docs/showcase/01..09`, `assets/screenshots/*.png` | Playwright Retina (`2x`), Walkthroughs E2E |
 
 ---
 
@@ -148,6 +149,15 @@ Filtrado parcial reactivo, tabla paginada ordenable por timestamp, botón de cop
 Tarjetas en vivo de métricas Prometheus (`/metrics`), `traceparent` W3C copiable y diagnóstico de sondas.
 
 ![Consola /platform — Observabilidad SRE](./assets/screenshots/us21_sre_metrics.png)
+
+---
+
+## 📸 US-27: Showcase Interactivo & Evidencia Visual (`docs/showcase/01..09`)
+
+`US-27` cierra `EPIC-09` integrando walkthroughs visuales y capturas Playwright en alta densidad Retina (`deviceScaleFactor: 2`) contra el backend (`:4000`) y el frontend (`:3000`) reales a lo largo de los **9 capítulos** del Showcase:
+
+- **Automatización Playwright (`scripts/capture-showcase.ts` / `npm run showcase:capture`):** Genera las 9 capturas base `ui_*.png` (`ui_auth_account.png`, `ui_auth_oidc_jwks.png`, `ui_auth_pkce_sessions.png`, `ui_auth_federation.png`, `ui_tenant_clients_m2m.png`, `ui_tenant_rls_lab.png`, `ui_platform_posture.png`, `ui_platform_vault_audit.png`, `ui_platform_sre.png`) sin mocks ni exposición de secretos en claro.
+- **Cobertura Integral `01..09`:** Cada capítulo (`01`–`08`) incluye la sección `### 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador`, y el capítulo `09` consolida la arquitectura M3, Storybook 10 y el walkthrough detallado de `US-23` a `US-27` con verificación de enlaces (`0` enlaces rotos).
 
 ---
 

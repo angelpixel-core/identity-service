@@ -6,7 +6,7 @@ version: "1.0.0"
 openapi_version: "3.1.0"
 status: "production-ready"
 total_epics: 9
-total_user_stories: 26
+total_user_stories: 27
 total_tests_passing: 713
 architecture_stack:
   backend: "Node.js 20 + TypeScript + Express"
@@ -36,7 +36,7 @@ tags:
 [![Tests Passing](https://img.shields.io/badge/Tests-713%20Passing%20(100%25)-success.svg)](#)
 [![Security Standard](https://img.shields.io/badge/Compliance-FinTech%20%26%20Zero--Trust-informational.svg)](#)
 
-Bienvenido al **Interactive Showcase & Walkthrough de Arquitectura** de `identity-service`. Este espacio documenta, demuestra y permite interactuar paso a paso con las **22 Historias de Usuario (User Stories)** distribuidas a lo largo de los **8 Épicos (Epics)** fundacionales del servicio de identidad de grado empresarial.
+Bienvenido al **Interactive Showcase & Walkthrough de Arquitectura** de `identity-service`. Este espacio documenta, demuestra y permite interactuar paso a paso con las **27 Historias de Usuario (User Stories)** distribuidas a lo largo de los **9 Épicos (Epics)** del servicio de identidad de grado empresarial.
 
 ---
 
@@ -141,7 +141,7 @@ flowchart TD
 
 ---
 
-## 🧭 Matriz Interactiva de Navegación del Showcase (22 Historias de Usuario)
+## 🧭 Matriz Interactiva de Navegación del Showcase (27 Historias de Usuario)
 
 Cada documento modular contiene:
 - Explicación de la arquitectura y decisiones de diseño (ADRs).
@@ -159,7 +159,7 @@ Cada documento modular contiene:
 | **Epic 06: Cloud Infrastructure & Automated Delivery** | **US-12:** Infraestructura como Código (Terraform)<br>**US-13:** Ingress Seguro con Let's Encrypt<br>**US-14:** Helm Chart de Grado Empresarial<br>**US-15:** Pipeline Automatizado de CI/CD | Terraform HCL, Kubernetes Ingress, Helm v3, GitHub Actions | [Ver Capítulo 06 ➡️](./06-cloud-infrastructure.md) |
 | **Epic 07: FinTech Compliance & Defense in Depth** | **US-16:** Secretos Azure KeyVault CSI<br>**US-17:** Conexiones TLS Encriptadas (mTLS/SSL)<br>**US-18:** Network Policies Zero-Trust en K8s<br>**US-19:** Registro de Auditoría Inmutable (WORM) | K8s Secrets Store CSI, TLS 1.3, Calico/K8s NetPol, WORM Audit | [Ver Capítulo 07 ➡️](./07-fintech-compliance.md) |
 | **Epic 08: Distributed Observability & Resiliency** | **US-20:** Trazabilidad Distribuida W3C TraceContext<br>**US-21:** Telemetría OpenTelemetry & Métricas RED<br>**US-22:** Sondas de Salud e Inspección de Infraestructura | OpenTelemetry SDK, Prometheus Metrics, RFC K8s Probes | [Ver Capítulo 08 ➡️](./08-distributed-observability.md) |
-| **Epic 09: Enterprise M3 Visual Portal** | **US-23:** Sistema de Diseño M3, Storybook 10 & Bounded Shell<br>**US-24:** Superficie `/auth`: Portal, OIDC/JWKS, PKCE S256 & Federación<br>**US-25:** Superficie `/tenant`: Client Registry, M2M & RLS Lab<br>**US-26:** Consola `/platform`: Gobernanza Root, Bóveda, Auditoría & SRE | React 19, Material Design 3 Tokens, Storybook 10, PKCE, RLS, SRE | [Ver Capítulo 09 ➡️](./09-enterprise-ui-portal.md) |
+| **Epic 09: Enterprise M3 Visual Portal** | **US-23:** Sistema de Diseño M3, Storybook 10 & Bounded Shell<br>**US-24:** Superficie `/auth`: Portal, OIDC/JWKS, PKCE S256 & Federación<br>**US-25:** Superficie `/tenant`: Client Registry, M2M & RLS Lab<br>**US-26:** Consola `/platform`: Gobernanza Root, Bóveda, Auditoría & SRE<br>**US-27:** Showcase Interactivo & Capturas Playwright Retina (`01..09`) | React 19, Material Design 3 Tokens, Storybook 10, Playwright, SRE | [Ver Capítulo 09 ➡️](./09-enterprise-ui-portal.md) |
 
 ---
 
