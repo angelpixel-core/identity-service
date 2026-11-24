@@ -14,6 +14,7 @@ Este capítulo documenta la capa visual de `identity-service`, construida de for
 | :--- | :--- | :--- | :--- |
 | **US-23** | **Google Material Design 3 Design System & Bounded-Context Shell** | `tokens.css`, `M3Primitives.tsx`, `BoundedShell.tsx`, `api_client.ts`, Storybook 10 | Material Design 3, WCAG 2.1 AA, ADR-0009 |
 | **US-24** | **Superficie `/auth`: Portal Usuario, OIDC Discovery/JWKS, PKCE S256 & Federación** | `AuthPortalView.tsx`, `OidcDiscoveryPanel.tsx`, `PkceAndSessionsPanel.tsx`, `FederationPanel.tsx` | RFC 7636 (PKCE S256), OIDC Discovery, W3C Trace |
+| **US-25** | **Superficie `/tenant`: Client Registry, M2M Playground & Laboratorio RLS/Cross-Tenant** | `TenantConsoleView.tsx`, `ClientRegistryPanel.tsx`, `M2mPlaygroundPanel.tsx`, `RlsAndCrossTenantLabPanel.tsx` | OAuth2 Client Credentials, CORS, PostgreSQL RLS, Zero-Trust |
 
 ---
 
@@ -85,6 +86,35 @@ Estado en vivo de **Google OIDC** y **Microsoft Entra ID**, popover informativo 
 
 ---
 
+## 🏢 US-25: Superficie `/tenant` — Client Registry, M2M Playground & Laboratorio RLS/Cross-Tenant
+
+`US-25` dota a los administradores de inquilinos autenticados de una consola M3 en `/tenant` ([`TenantConsoleView.tsx`](../../interfaces/web/client/contexts/tenant/ui/TenantConsoleView.tsx)) organizada en 3 pestañas accesibles (**Clientes & CORS**, **M2M Playground** y **Laboratorio RLS / Cross-Tenant**):
+
+1. **Invariante 1 — Proyección Segura Sin Secretos (`US-03`):** `GET /api/v1/oauth2/clients` proyecta los clientes OAuth2 registrados del inquilino sin exponer `clientSecretHash` ni credenciales confidenciales.
+2. **Invariante 2 — Validación CORS y Emisión M2M Reales (`US-03`, `US-04`):** `ClientRegistryPanel` valida orígenes en vivo (`POST /api/v1/oauth2/clients/validate`) y `M2mPlaygroundPanel` solicita tokens `Bearer` reales (`POST /api/v1/oauth2/token` con `client_credentials`).
+3. **Invariante 3 — Aislamiento RLS y Bloqueo Zero-Trust (`US-05`, `US-06`):** `RlsAndCrossTenantLabPanel` demuestra en vivo cómo un intento de consulta con `X-Tenant-ID` ajeno recibe `HTTP 403 Forbidden` y emite el evento de auditoría `CROSS_TENANT_VIOLATION`.
+
+---
+
+### 📸 Evidencia Visual de los 3 Escenarios de `/tenant` (US-25)
+
+#### 1. Pestaña `Clientes & CORS`: Listado Seguro y Validación en Vivo (`US-03`)
+Clientes OAuth2 cargados desde PostgreSQL sin exposición de `clientSecretHash` y validación CORS exitosa (`authorized: true`) con `traceparent` W3C.
+
+![Consola /tenant — Clientes y Validación CORS](./assets/screenshots/us25_tenant_clients_cors.png)
+
+#### 2. Pestaña `M2M Playground`: Emisión de Token `client_credentials` (`US-04`)
+Intercambio real contra `POST /api/v1/oauth2/token` para `m2m-service-app`, mostrando el `access_token` emitido y su trazabilidad W3C.
+
+![Consola /tenant — M2M Playground](./assets/screenshots/us25_tenant_m2m_playground.png)
+
+#### 3. Pestaña `Laboratorio RLS / Cross-Tenant`: Bloqueo `403 Forbidden` (`US-05`, `US-06`)
+Intento de salto cross-tenant hacia `beta-corp` desde `acme-corp`, interceptado con `HTTP 403 Forbidden` y banner M3 Zero-Trust.
+
+![Consola /tenant — Bloqueo Cross-Tenant 403](./assets/screenshots/us25_tenant_rls_cross_tenant_403.png)
+
+---
+
 ## 🧪 Verificación Técnica Asociada
 
 ```bash
@@ -97,6 +127,6 @@ npm run build:web
 # 3. Compilación estática del catálogo de componentes (Storybook 10)
 npm run build-storybook
 
-# 4. Suites E2E Web (US-23 y US-24)
-npm run test:e2e -- tests/e2e/web/m3_shell_and_route_guards.spec.tsx tests/e2e/web/auth_portal_oidc_federation.spec.tsx
+# 4. Suites E2E Web (US-23, US-24 y US-25)
+npm run test:e2e -- tests/e2e/web/m3_shell_and_route_guards.spec.tsx tests/e2e/web/auth_portal_oidc_federation.spec.tsx tests/e2e/web/tenant_console.spec.tsx
 ```
