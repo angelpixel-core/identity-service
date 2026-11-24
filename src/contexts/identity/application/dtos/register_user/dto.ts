@@ -7,6 +7,7 @@ export interface RegisterUserResponseDTO {
   readonly email: string;
   readonly tenantId: string;
   readonly roles?: string[];
+  readonly phone?: string | null;
   readonly accessToken: string;
 }
 

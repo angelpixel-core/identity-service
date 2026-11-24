@@ -172,4 +172,59 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
       expect(screen.getByText(/fed@acme-corp\.com/)).toBeInTheDocument();
     });
   });
+
+  it('Scenario 5 (US-32): renders required phone field and KYC notice from /api/v1/auth/config', async () => {
+    window.history.pushState({}, '', '/auth?client_id=ecommerce-saas&tenant_id=tusherramientas-a');
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/auth/config')) {
+        return Promise.resolve(
+          mockJsonResponse({
+            tenantId: 'tusherramientas-a',
+            clientId: 'ecommerce-saas',
+            requiredFields: ['email', 'password', 'phone'],
+            allowedAuthMethods: { password: true, passkeys: false, federatedOidc: true },
+            federatedProviders: [{ id: 'google', displayName: 'Google', protocol: 'oidc' }],
+            kycRequired: true,
+            kycMinLevel: 'biometric_liveness',
+          })
+        );
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('register-phone-input')).toBeInTheDocument();
+      expect(screen.getByTestId('register-kyc-notice')).toHaveTextContent('biometric_liveness');
+    });
+  });
+
+  it('Scenario 6 (US-32): disables password onboarding when allowedAuthMethods.password is false', async () => {
+    window.history.pushState({}, '', '/auth?client_id=ecommerce-saas&tenant_id=sso-only-corp');
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/auth/config')) {
+        return Promise.resolve(
+          mockJsonResponse({
+            tenantId: 'sso-only-corp',
+            clientId: 'ecommerce-saas',
+            requiredFields: ['email', 'password'],
+            allowedAuthMethods: { password: false, passkeys: false, federatedOidc: true },
+            federatedProviders: [{ id: 'google', displayName: 'Google', protocol: 'oidc' }],
+            kycRequired: false,
+            kycMinLevel: 'basic',
+          })
+        );
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-password-disabled-banner')).toBeInTheDocument();
+    });
+  });
 });

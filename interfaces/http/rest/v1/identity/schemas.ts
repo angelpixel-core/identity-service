@@ -9,6 +9,15 @@ export const RegisterUserSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters long'),
   tenantId: z.string().optional(),
   roles: z.array(z.string()).optional(),
+  phone: z.string().optional().nullable(),
 });
 
 export type RegisterUserPayload = z.infer<typeof RegisterUserSchema>;
+
+export const LoginUserSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  password: z.string().min(1, 'Password is required'),
+  tenantId: z.string().optional(),
+});
+
+export type LoginUserPayload = z.infer<typeof LoginUserSchema>;

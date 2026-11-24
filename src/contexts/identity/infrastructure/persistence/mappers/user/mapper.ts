@@ -1,5 +1,6 @@
 import { User } from '../../../../domain/entities/user/aggregate';
 import { Email } from '../../../../domain/value_objects/email/value';
+import { PhoneNumber } from '../../../../domain/value_objects/phone_number/value';
 import { TenantId } from '../../../../domain/value_objects/tenant_id/value';
 import { UserDatabaseModel } from '../../models/user/model';
 
@@ -16,6 +17,7 @@ export class UserMapper {
       tenantId: TenantId.create(raw.tenant_id),
       passwordHash: raw.password_hash,
       roles,
+      phone: raw.phone ? PhoneNumber.create(raw.phone) : null,
       createdAt: raw.created_at instanceof Date ? raw.created_at : new Date(raw.created_at),
       updatedAt: raw.updated_at instanceof Date ? raw.updated_at : new Date(raw.updated_at),
     });
@@ -28,6 +30,7 @@ export class UserMapper {
       password_hash: user.getPasswordHash(),
       tenant_id: user.getTenantId().getValue(),
       roles: user.getRoles(),
+      phone: user.getPhone()?.getValue() ?? null,
       created_at: user.getCreatedAt(),
       updated_at: user.getUpdatedAt(),
     };

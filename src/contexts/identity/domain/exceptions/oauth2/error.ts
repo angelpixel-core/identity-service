@@ -11,6 +11,8 @@ export type OAuth2ErrorCode =
   | 'unsupported_grant_type'
   | 'unsupported_response_type'
   | 'access_denied'
+  | 'auth_method_disabled_for_tenant'
+  | 'invalid_credentials'
   | 'invalid_scope';
 
 /**

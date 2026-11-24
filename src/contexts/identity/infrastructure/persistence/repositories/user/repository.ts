@@ -32,12 +32,13 @@ export class PostgresUserRepository implements UserRepositoryPort {
   public async save(user: User): Promise<void> {
     const raw = UserMapper.toPersistence(user);
     const sql = `
-      INSERT INTO users (id, email, password_hash, tenant_id, roles, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO users (id, email, password_hash, tenant_id, roles, phone, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (id) DO UPDATE SET
         email = EXCLUDED.email,
         password_hash = EXCLUDED.password_hash,
         roles = EXCLUDED.roles,
+        phone = EXCLUDED.phone,
         updated_at = EXCLUDED.updated_at;
     `;
     const params = [
@@ -46,6 +47,7 @@ export class PostgresUserRepository implements UserRepositoryPort {
       raw.password_hash,
       raw.tenant_id,
       raw.roles,
+      raw.phone ?? null,
       raw.created_at,
       raw.updated_at,
     ];
@@ -58,7 +60,7 @@ export class PostgresUserRepository implements UserRepositoryPort {
    */
   public async findByEmail(email: Email, tenantId: TenantId): Promise<User | null> {
     const sql = `
-      SELECT id, email, password_hash, tenant_id, roles, created_at, updated_at
+      SELECT id, email, password_hash, tenant_id, roles, phone, created_at, updated_at
       FROM users
       WHERE email = $1 AND tenant_id = $2
       LIMIT 1;
@@ -79,7 +81,7 @@ export class PostgresUserRepository implements UserRepositoryPort {
    */
   public async findById(id: string, tenantId: TenantId): Promise<User | null> {
     const sql = `
-      SELECT id, email, password_hash, tenant_id, roles, created_at, updated_at
+      SELECT id, email, password_hash, tenant_id, roles, phone, created_at, updated_at
       FROM users
       WHERE id = $1 AND tenant_id = $2
       LIMIT 1;

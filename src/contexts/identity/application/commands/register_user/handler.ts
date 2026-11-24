@@ -6,7 +6,11 @@ import { HashProviderPort } from '../../ports/security/hash_provider';
 import { TokenProviderPort } from '../../ports/security/token_provider';
 import { User } from '../../../domain/entities/user/aggregate';
 import { Email } from '../../../domain/value_objects/email/value';
+import { PhoneNumber } from '../../../domain/value_objects/phone_number/value';
 import { TenantId } from '../../../domain/value_objects/tenant_id/value';
+import { TenantPolicy } from '../../../domain/entities/tenant_policy/entity';
+import { TenantPolicyRepositoryPort } from '../../../domain/ports/tenant_policy_repository_port';
+import { OAuth2AuthenticationError } from '../../../domain/exceptions/oauth2/error';
 import {
   DomainValidationError,
   ConflictError,
@@ -22,7 +26,8 @@ export class RegisterUserCommandHandler {
   constructor(
     private readonly userRepository: UserRepositoryPort,
     private readonly hashProvider: HashProviderPort,
-    private readonly tokenProvider: TokenProviderPort
+    private readonly tokenProvider: TokenProviderPort,
+    private readonly policyRepository?: TenantPolicyRepositoryPort
   ) {}
 
   public async execute(command: RegisterUserCommand): Promise<RegisterUserResponseDTO> {
@@ -30,6 +35,29 @@ export class RegisterUserCommandHandler {
 
     const email = Email.create(command.email);
     const tenantId = TenantId.create(command.tenantId);
+
+    if (this.policyRepository) {
+      const persisted = await this.policyRepository.findByTenantId(tenantId);
+      const policy = persisted ?? TenantPolicy.defaultFor(tenantId);
+
+      if (!policy.getAllowedAuthMethods().password) {
+        throw new OAuth2AuthenticationError(
+          'auth_method_disabled_for_tenant',
+          `Password registration is disabled for tenant "${tenantId.getValue()}"`,
+          403
+        );
+      }
+
+      const rawPhone = typeof command.phone === 'string' ? command.phone.trim() : '';
+      if (policy.getRequiredAttributes().phone && rawPhone.length === 0) {
+        throw new DomainValidationError(
+          `Phone number in E.164 format is required for tenant "${tenantId.getValue()}"`
+        );
+      }
+    }
+
+    const rawPhone = typeof command.phone === 'string' ? command.phone.trim() : '';
+    const phone = rawPhone.length > 0 ? PhoneNumber.create(rawPhone) : null;
 
     const existingUser = await this.userRepository.findByEmail(email, tenantId);
     if (existingUser) {
@@ -54,6 +82,7 @@ export class RegisterUserCommandHandler {
       tenantId,
       passwordHash,
       roles: requestedRoles,
+      phone,
     });
 
     await this.userRepository.save(newUser);
@@ -66,11 +95,13 @@ export class RegisterUserCommandHandler {
       actorType: newUser.isSuperadmin() ? 'platform_operator' : 'user',
     });
 
+    const phoneValue = newUser.getPhone()?.getValue();
     return {
       userId: newUser.getId(),
       email: newUser.getEmail().getValue(),
       tenantId: newUser.getTenantId().getValue(),
       roles: newUser.getRoles(),
+      ...(phoneValue ? { phone: phoneValue } : {}),
       accessToken,
     };
   }

@@ -1,4 +1,4 @@
-import { AuthSession, RegisterCredentials } from '../domain/types';
+import { AuthSession, LoginCredentials, RegisterCredentials } from '../domain/types';
 
 /**
  * Puerto secundario en frontend: AuthApiClient
@@ -6,6 +6,7 @@ import { AuthSession, RegisterCredentials } from '../domain/types';
  */
 export interface AuthApiClient {
   register(credentials: RegisterCredentials): Promise<AuthSession>;
+  login?(credentials: LoginCredentials): Promise<AuthSession>;
 }
 
 /**
@@ -24,13 +25,36 @@ export class DefaultAuthApiClient implements AuthApiClient {
       body: JSON.stringify({
         email: credentials.email,
         password: credentials.password,
+        ...(credentials.phone ? { phone: credentials.phone } : {}),
       }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || 'Failed to register account');
+      throw new Error(data.message || data.error || 'Failed to register account');
+    }
+
+    return data;
+  }
+
+  public async login(credentials: LoginCredentials): Promise<AuthSession> {
+    const response = await fetch(`${this.baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tenant-id': credentials.tenantId,
+      },
+      body: JSON.stringify({
+        email: credentials.email,
+        password: credentials.password,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || 'Failed to sign in');
     }
 
     return data;

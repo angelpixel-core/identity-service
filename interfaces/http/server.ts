@@ -14,6 +14,7 @@ import {
 } from '../../src/contexts/identity/infrastructure/persistence/database/dynamic_postgres_pool_manager';
 import { SecretWatcherService } from '../../src/contexts/identity/infrastructure/security/secret_watcher_service';
 import { RegisterUserCommandHandler } from '../../src/contexts/identity/application/commands/register_user/handler';
+import { LoginUserCommandHandler } from '../../src/contexts/identity/application/commands/login_user/handler';
 import { UpdateUserProfileCommandHandler } from '../../src/contexts/identity/application/commands/update_user_profile/handler';
 import { DeleteUserCommandHandler } from '../../src/contexts/identity/application/commands/delete_user/handler';
 import { GetUserProfileQueryHandler } from '../../src/contexts/identity/application/queries/get_user_profile/handler';
@@ -457,7 +458,16 @@ export function createApp(deps?: AppDependencies): Express {
   const registerUserHandler = new RegisterUserCommandHandler(
     userRepository,
     hashProvider,
-    tokenProvider
+    tokenProvider,
+    tenantPolicyRepository
+  );
+
+  const loginUserHandler = new LoginUserCommandHandler(
+    userRepository,
+    hashProvider,
+    tokenProvider,
+    tenantPolicyRepository,
+    auditLogger
   );
 
   const getProfileHandler = new GetUserProfileQueryHandler(
@@ -501,7 +511,7 @@ export function createApp(deps?: AppDependencies): Express {
     auditLogger
   );
 
-  const authController = new AuthController(registerUserHandler, getProfileHandler);
+  const authController = new AuthController(registerUserHandler, getProfileHandler, loginUserHandler);
   const userController = new UserController(getProfileHandler, updateUserProfileHandler, deleteUserHandler);
   const oauth2ClientController = new OAuth2ClientController(
     validateClientOriginHandler,
@@ -860,6 +870,7 @@ export function createApp(deps?: AppDependencies): Express {
 
   // Rutas de Identidad y Autenticación v1
   app.post('/api/v1/auth/register', tenantContextMiddleware, authController.register);
+  app.post('/api/v1/auth/login', tenantContextMiddleware, authController.login);
   app.get('/api/v1/auth/me', tenantContextMiddleware, authMiddleware, authController.getProfile);
 
   // Rutas de Usuarios con Zero-Trust Guard & Anti-Enumeration (US-06)

@@ -42,14 +42,15 @@ describe('Infrastructure Repository: PostgresUserRepository', () => {
       expect(sql).toContain('roles');
       expect(sql).toContain('INSERT INTO users');
       expect(sql).toContain('ON CONFLICT (id) DO UPDATE SET');
-      expect(params).toHaveLength(7);
+      expect(params).toHaveLength(8);
       expect(params[0]).toBe('usr-101');
       expect(params[1]).toBe('operator@system.local');
       expect(params[2]).toBe('$2b$10$hashed_pw');
       expect(params[3]).toBe('system');
       expect(params[4]).toEqual(['superadmin', 'auditor']); // roles array parameter ($5)
-      expect(params[5]).toBeInstanceOf(Date);
+      expect(params[5]).toBeNull();
       expect(params[6]).toBeInstanceOf(Date);
+      expect(params[7]).toBeInstanceOf(Date);
     });
   });
 
@@ -73,7 +74,7 @@ describe('Infrastructure Repository: PostgresUserRepository', () => {
       const result = await repository.findByEmail(email, tenantId);
 
       expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT id, email, password_hash, tenant_id, roles, created_at, updated_at'),
+        expect.stringContaining('SELECT id, email, password_hash, tenant_id, roles, phone, created_at, updated_at'),
         ['admin@angelpixel.io', 'system']
       );
 
@@ -113,7 +114,7 @@ describe('Infrastructure Repository: PostgresUserRepository', () => {
       const result = await repository.findById('usr-303', tenantId);
 
       expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT id, email, password_hash, tenant_id, roles, created_at, updated_at'),
+        expect.stringContaining('SELECT id, email, password_hash, tenant_id, roles, phone, created_at, updated_at'),
         ['usr-303', 'acme-corp']
       );
 

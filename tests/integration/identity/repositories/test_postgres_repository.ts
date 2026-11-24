@@ -54,6 +54,7 @@ describe('Infrastructure Persistence: PostgresUserRepository', () => {
         validUser.getPasswordHash(),
         validUser.getTenantId().getValue(),
         validUser.getRoles(),
+        null,
         validUser.getCreatedAt(),
         validUser.getUpdatedAt(),
       ]);

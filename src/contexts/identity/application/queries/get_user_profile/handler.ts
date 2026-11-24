@@ -42,10 +42,12 @@ export class GetUserProfileQueryHandler {
     }
 
     // 3. Mapeo a DTO sanitizado (sin credenciales ni datos sensibles)
+    const phoneValue = user.getPhone()?.getValue();
     const profileDto: UserProfileDTO = {
       id: user.getId(),
       email: user.getEmail().getValue(),
       tenantId: user.getTenantId().getValue(),
+      ...(phoneValue ? { phone: phoneValue } : {}),
       createdAt: user.getCreatedAt(),
       updatedAt: user.getUpdatedAt(),
     };

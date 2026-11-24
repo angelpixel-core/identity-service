@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Email } from '../../value_objects/email/value';
+import { PhoneNumber } from '../../value_objects/phone_number/value';
 import { TenantId } from '../../value_objects/tenant_id/value';
 import { DomainValidationError } from '../../exceptions/user/error';
 
@@ -9,6 +10,7 @@ export interface UserCreateProps {
   tenantId: TenantId;
   passwordHash: string;
   roles?: string[];
+  phone?: PhoneNumber | null;
 }
 
 export interface FederatedUserCreateProps {
@@ -16,6 +18,7 @@ export interface FederatedUserCreateProps {
   email: Email;
   tenantId: TenantId;
   roles?: string[];
+  phone?: PhoneNumber | null;
 }
 
 export interface UserReconstituteProps {
@@ -24,6 +27,7 @@ export interface UserReconstituteProps {
   tenantId: TenantId;
   passwordHash: string;
   roles?: string[];
+  phone?: PhoneNumber | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,6 +43,7 @@ export class User {
   private readonly tenantId: TenantId;
   private passwordHash: string;
   private readonly roles: readonly string[];
+  private phone: PhoneNumber | null;
   private readonly createdAt: Date;
   private updatedAt: Date;
 
@@ -56,6 +61,7 @@ export class User {
         .map((r) => r.trim().toLowerCase())
         .filter((r) => r.length > 0)
     );
+    this.phone = props.phone ?? null;
     this.createdAt = new Date(props.createdAt.getTime());
     this.updatedAt = new Date(props.updatedAt.getTime());
   }
@@ -68,6 +74,7 @@ export class User {
       tenantId: props.tenantId,
       passwordHash: props.passwordHash,
       roles: props.roles,
+      phone: props.phone ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -82,6 +89,7 @@ export class User {
       tenantId: props.tenantId,
       passwordHash: unmatchablePasswordHash,
       roles: props.roles,
+      phone: props.phone ?? null,
     });
   }
 
@@ -119,6 +127,10 @@ export class User {
 
   public getRoles(): string[] {
     return [...this.roles];
+  }
+
+  public getPhone(): PhoneNumber | null {
+    return this.phone;
   }
 
   public hasRole(role: string): boolean {
