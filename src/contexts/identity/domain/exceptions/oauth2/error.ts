@@ -5,6 +5,8 @@ export type OAuth2ErrorCode =
   | 'invalid_client'
   | 'invalid_client_operation'
   | 'invalid_grant'
+  | 'invalid_redirect_uri'
+  | 'forbidden_tenant_client_binding'
   | 'unauthorized_client'
   | 'unsupported_grant_type'
   | 'unsupported_response_type'

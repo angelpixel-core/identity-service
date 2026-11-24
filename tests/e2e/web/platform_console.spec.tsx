@@ -268,4 +268,55 @@ describe('Web UI E2E Spec: US-26 /platform Console (Governance, Vault, Audit & S
       expect(screen.getByTestId('sre-traceparent')).toHaveTextContent('00-4bf92f3577b34da6a3ce929d0e0e4736');
     });
   });
+
+  it('Scenario 6 (US-29): manages N:M Client-Tenant bindings in /platform Bindings N:M view', async () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_root_superadmin_01',
+        userId: 'usr_root_01',
+        email: 'admin@angelpixel.io',
+        tenantId: 'system',
+        roles: ['superadmin'],
+      })
+    );
+    window.history.pushState({}, '', '/platform');
+
+    let bindingsList: any[] = [];
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/v1/platform/posture') {
+        return Promise.resolve(mockJsonResponse(SAMPLE_POSTURE));
+      }
+      if (url.endsWith('/bindings') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(mockJsonResponse({ count: bindingsList.length, bindings: bindingsList }));
+      }
+      if (url.endsWith('/bindings') && init?.method === 'POST') {
+        const created = {
+          id: 'bind-29-1',
+          clientId: 'portal-web',
+          tenantId: 'acme-corp',
+          customDomain: 'tienda-a.tusherramientas.com',
+          allowedRedirectUris: ['https://tienda-a.tusherramientas.com/callback'],
+          allowedCorsOrigins: ['https://tienda-a.tusherramientas.com'],
+          isActive: true,
+        };
+        bindingsList = [created];
+        return Promise.resolve(mockJsonResponse(created, 201));
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /Bindings N:M/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('platform-bindings-panel')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('create-binding-submit'));
+    await waitFor(() => {
+      expect(screen.getByTestId('platform-bindings-list')).toHaveTextContent(
+        'tienda-a.tusherramientas.com'
+      );
+    });
+  });
 });

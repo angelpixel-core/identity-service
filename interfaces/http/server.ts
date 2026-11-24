@@ -49,6 +49,16 @@ import { clientAuthorizationMiddleware } from './middlewares/client_authorizatio
 import { ClientApplicationRepositoryPort } from '../../src/contexts/identity/domain/ports/client_application_repository_port';
 import { PostgresClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/postgres_client_repository';
 import { InMemoryClientApplicationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_application/in_memory_client_repository';
+import { ClientTenantBindingRepositoryPort } from '../../src/contexts/identity/domain/ports/client_tenant_binding_repository_port';
+import { PostgresClientTenantBindingRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_tenant_binding/postgres_client_tenant_binding_repository';
+import { InMemoryClientTenantBindingRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/client_tenant_binding/in_memory_client_tenant_binding_repository';
+import {
+  CreateClientTenantBindingCommandHandler,
+  RevokeClientTenantBindingCommandHandler,
+  UpdateClientTenantBindingCommandHandler,
+} from '../../src/contexts/identity/application/commands/manage_client_tenant_binding/handler';
+import { ResolveClientTenantContextQueryHandler } from '../../src/contexts/identity/application/queries/resolve_client_tenant_context/handler';
+import { ClientBindingsController } from './rest/v1/oauth2/client_bindings_controller';
 import { TenantTransactionRunnerPort } from '../../src/contexts/identity/application/ports/database/tenant_transaction_runner';
 import { TenantAwareTransactionRunner } from '../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 import { AuthController } from './rest/v1/identity/controllers';
@@ -278,6 +288,12 @@ export function createApp(deps?: AppDependencies): Express {
       clientRepository = new InMemoryClientApplicationRepository(true);
     }
   }
+
+  const activePoolForBindings = getPool();
+  const clientTenantBindingRepository: ClientTenantBindingRepositoryPort =
+    activePoolForBindings && process.env.NODE_ENV !== 'test'
+      ? new PostgresClientTenantBindingRepository(activePoolForBindings)
+      : new InMemoryClientTenantBindingRepository();
 
   let authCodeRepository = deps?.authCodeRepository;
   if (!authCodeRepository) {
@@ -635,7 +651,28 @@ export function createApp(deps?: AppDependencies): Express {
   app.locals.microsoftAdapter = microsoftAdapter;
   app.locals.linkOrProvisionFederatedUserHandler = linkOrProvisionFederatedUserHandler;
 
-  const authorizeController = new OAuth2AuthorizeController(issueAuthCodeHandler);
+  const resolveClientTenantContextHandler = new ResolveClientTenantContextQueryHandler(
+    clientTenantBindingRepository,
+    clientRepository,
+    auditLogger
+  );
+  const clientBindingsController = new ClientBindingsController(
+    clientTenantBindingRepository,
+    new CreateClientTenantBindingCommandHandler(
+      clientTenantBindingRepository,
+      clientRepository,
+      auditLogger
+    ),
+    new UpdateClientTenantBindingCommandHandler(clientTenantBindingRepository, auditLogger),
+    new RevokeClientTenantBindingCommandHandler(clientTenantBindingRepository, auditLogger),
+    resolveClientTenantContextHandler
+  );
+
+  const authorizeController = new OAuth2AuthorizeController(
+    issueAuthCodeHandler,
+    resolveClientTenantContextHandler,
+    clientTenantBindingRepository
+  );
   const sessionController = new OAuth2SessionController(rotateRefreshTokenHandler, revokeSessionHandler);
   const oauth2TokenController = new OAuth2TokenController(
     authenticateClientM2MHandler,
@@ -901,6 +938,31 @@ export function createApp(deps?: AppDependencies): Express {
     tenantContextMiddleware,
     authMiddleware,
     oauth2ClientController.rotateClientSecret
+  );
+  app.get('/api/v1/auth/config', clientBindingsController.getAuthConfig);
+  app.get(
+    '/api/v1/clients/:clientId/bindings',
+    tenantContextMiddleware,
+    authMiddleware,
+    clientBindingsController.listBindings
+  );
+  app.post(
+    '/api/v1/clients/:clientId/bindings',
+    tenantContextMiddleware,
+    authMiddleware,
+    clientBindingsController.createBinding
+  );
+  app.patch(
+    '/api/v1/clients/:clientId/bindings/:bindingId',
+    tenantContextMiddleware,
+    authMiddleware,
+    clientBindingsController.updateBinding
+  );
+  app.delete(
+    '/api/v1/clients/:clientId/bindings/:bindingId',
+    tenantContextMiddleware,
+    authMiddleware,
+    clientBindingsController.revokeBinding
   );
   app.post(
     '/api/v1/oauth2/clients/validate',

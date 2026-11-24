@@ -42,7 +42,7 @@ export function isRootSuperadminSession(session: AuthSession): boolean {
   return roles.includes('superadmin');
 }
 
-export type PlatformNavTab = 'posture' | 'vault' | 'audit' | 'sre';
+export type PlatformNavTab = 'posture' | 'vault' | 'bindings' | 'audit' | 'sre';
 
 export interface BoundedShellProps {
   session: AuthSession | null;
@@ -78,6 +78,12 @@ const RAIL_ICONS = {
   sre: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />
+    </svg>
+  ),
+  bindings: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   ),
 };
@@ -177,6 +183,14 @@ export function BoundedShell({
         href: '/platform#vault',
         icon: RAIL_ICONS.vault,
         active: activePlatformTab === 'vault',
+      },
+      {
+        id: 'bindings',
+        label: 'Bindings N:M',
+        shortCode: 'BN',
+        href: '/platform#bindings',
+        icon: RAIL_ICONS.bindings,
+        active: activePlatformTab === 'bindings',
       },
       {
         id: 'audit',

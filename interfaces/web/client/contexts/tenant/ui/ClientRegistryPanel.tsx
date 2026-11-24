@@ -54,6 +54,10 @@ export function ClientRegistryPanel({ session }: ClientRegistryPanelProps) {
   const [newScopes, setNewScopes] = useState('identity:read');
   const [creating, setCreating] = useState(false);
 
+  const [bindingsByClient, setBindingsByClient] = useState<
+    Record<string, readonly { id: string; tenantId: string; customDomain: string | null; isActive: boolean }[]>
+  >({});
+
   const [validateClientId, setValidateClientId] = useState('portal-web');
   const [validateOrigin, setValidateOrigin] = useState('https://portal.angelpixel.io');
   const [validationResult, setValidationResult] = useState<unknown>(null);
@@ -211,6 +215,21 @@ export function ClientRegistryPanel({ session }: ClientRegistryPanelProps) {
     }
     await navigator.clipboard.writeText(secretNotice.clientSecret);
     setCopiedSecret(true);
+  };
+
+  const handleInspectBindings = async (clientId: string) => {
+    const res = await apiRequest<{
+      bindings?: readonly { id: string; tenantId: string; customDomain: string | null; isActive: boolean }[];
+    }>(`/api/v1/clients/${encodeURIComponent(clientId)}/bindings`, {
+      token: session.token,
+      tenantId: session.tenantId,
+    });
+    if (res.ok) {
+      setBindingsByClient((prev) => ({
+        ...prev,
+        [clientId]: Array.isArray(res.data?.bindings) ? res.data.bindings : [],
+      }));
+    }
   };
 
   const handleValidateOrigin = async () => {
@@ -390,11 +409,32 @@ export function ClientRegistryPanel({ session }: ClientRegistryPanelProps) {
                       Rotar Secreto
                     </M3Button>
                   )}
+                  <M3Button
+                    variant="outlined"
+                    onClick={() => handleInspectBindings(client.clientId)}
+                    data-testid={`view-bindings-${client.clientId}`}
+                  >
+                    Dominios
+                  </M3Button>
                 </div>
               </div>
               <p className="m3-workspace-subtitle" style={{ marginTop: '0.35rem' }}>
                 Origins: {client.allowedOrigins.join(', ') || '—'} · Scopes: {client.scopes.join(' ')}
               </p>
+              {bindingsByClient[client.clientId] && (
+                <div
+                  className="m3-workspace-subtitle"
+                  style={{ marginTop: '0.35rem' }}
+                  data-testid={`tenant-bindings-${client.clientId}`}
+                >
+                  Bindings ({session.tenantId}):{' '}
+                  {(bindingsByClient[client.clientId]?.length ?? 0) === 0
+                    ? 'Ninguno'
+                    : (bindingsByClient[client.clientId] ?? [])
+                        .map((b) => `${b.customDomain ?? b.tenantId} (${b.isActive ? 'activo' : 'inactivo'})`)
+                        .join(', ')}
+                </div>
+              )}
             </div>
           );
         })}

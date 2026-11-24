@@ -24,6 +24,10 @@ export type SecurityAuditEventType =
   | 'CLIENT_SUSPENDED'
   | 'CLIENT_REACTIVATED'
   | 'CLIENT_SECRET_ROTATED'
+  | 'CLIENT_TENANT_BINDING_CREATED'
+  | 'CLIENT_TENANT_BINDING_UPDATED'
+  | 'CLIENT_TENANT_BINDING_REVOKED'
+  | 'CLIENT_TENANT_BINDING_VIOLATION'
   // Compatibilidad hacia atrás (legacy snake_case)
   | 'client_authenticated'
   | 'client_authentication_failed'

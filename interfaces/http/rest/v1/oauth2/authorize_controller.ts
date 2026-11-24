@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { IssueAuthorizationCodeCommandHandler } from '../../../../../src/contexts/identity/application/commands/issue_authorization_code/handler';
+import { ResolveClientTenantContextQueryHandler } from '../../../../../src/contexts/identity/application/queries/resolve_client_tenant_context/handler';
+import { ClientTenantBindingRepositoryPort } from '../../../../../src/contexts/identity/domain/ports/client_tenant_binding_repository_port';
+import { ClientId } from '../../../../../src/contexts/identity/domain/value_objects/client_id/value';
 import { OAuth2AuthenticationError } from '../../../../../src/contexts/identity/domain/exceptions/oauth2/error';
 
 /**
@@ -7,7 +10,11 @@ import { OAuth2AuthenticationError } from '../../../../../src/contexts/identity/
  * Maneja solicitudes interactivas de autorización (GET y POST /oauth2/authorize).
  */
 export class OAuth2AuthorizeController {
-  constructor(private readonly issueAuthCodeHandler: IssueAuthorizationCodeCommandHandler) {}
+  constructor(
+    private readonly issueAuthCodeHandler: IssueAuthorizationCodeCommandHandler,
+    private readonly resolveContextHandler?: ResolveClientTenantContextQueryHandler,
+    private readonly bindingRepository?: ClientTenantBindingRepositoryPort
+  ) {}
 
   public authorize = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -54,6 +61,27 @@ export class OAuth2AuthorizeController {
         throw new OAuth2AuthenticationError('invalid_request', 'Missing redirect_uri parameter', 400);
       }
 
+      const explicitTenantParam =
+        (req.query.tenant_id as string) || (req.body && req.body.tenant_id) || undefined;
+      const explicitDomainParam =
+        (req.query.domain as string) || (req.body && req.body.domain) || undefined;
+
+      let resolvedTenantId = tenantId;
+      if (this.resolveContextHandler && this.bindingRepository) {
+        const existingBindings = await this.bindingRepository.findByClientId(ClientId.create(clientId));
+        if (explicitTenantParam || explicitDomainParam || existingBindings.length > 0) {
+          const resolved = await this.resolveContextHandler.execute({
+            clientId,
+            tenantId: explicitTenantParam,
+            domain: explicitDomainParam,
+            redirectUri,
+            origin: (req.headers.origin as string) || undefined,
+            ip: req.ip,
+          });
+          resolvedTenantId = resolved.tenantId;
+        }
+      }
+
       const result = await this.issueAuthCodeHandler.execute({
         clientId,
         redirectUri,
@@ -63,7 +91,7 @@ export class OAuth2AuthorizeController {
         codeChallenge,
         codeChallengeMethod,
         userId,
-        tenantId,
+        tenantId: resolvedTenantId,
         nonce,
       });
 
