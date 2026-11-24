@@ -213,4 +213,83 @@ describe('Web UI E2E Spec: US-25 /tenant Console (Clients, M2M & RLS Lab)', () =
       expect(screen.getByTestId('toggle-client-m2m-worker-28')).toHaveTextContent('Reactivar');
     });
   });
+
+  it('Scenario 6 (US-30): enforces read-only mode for member and allows save for tenant_admin in /tenant', async () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_member_01',
+        userId: 'usr_member_01',
+        email: 'member@acme-corp.com',
+        tenantId: 'acme-corp',
+        roles: ['member'],
+      })
+    );
+    window.history.pushState({}, '', '/tenant');
+
+    let policy = {
+      tenantId: 'acme-corp',
+      requiredAttributes: { phone: false },
+      kycPolicy: { required: false, minLevel: 'basic' },
+      allowedAuthMethods: { password: true, passkeys: true, federatedOidc: true },
+      updatedAt: '2026-11-24T12:00:00.000Z',
+      updatedBy: 'system',
+      isDefault: true,
+    };
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/v1/tenants/acme-corp/policy' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(mockJsonResponse(policy));
+      }
+      if (url === '/api/v1/tenants/acme-corp/policy' && init?.method === 'PUT') {
+        const parsed = JSON.parse(String(init.body ?? '{}'));
+        policy = { ...policy, ...parsed, isDefault: false, updatedBy: 'admin@acme-corp.com' };
+        return Promise.resolve(mockJsonResponse(policy));
+      }
+      if (url === '/api/v1/clients') {
+        return Promise.resolve(mockJsonResponse({ clients: [] }));
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    const { unmount } = render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /Política de Identidad/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tenant-policy-readonly-chip')).toHaveTextContent(
+        'Solo lectura (rol member)'
+      );
+      expect(screen.getByTestId('tenant-policy-phone-checkbox')).toBeDisabled();
+      expect(screen.queryByTestId('tenant-policy-save-btn')).not.toBeInTheDocument();
+    });
+
+    unmount();
+
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_tenant_admin_01',
+        userId: 'usr_admin_01',
+        email: 'admin@acme-corp.com',
+        tenantId: 'acme-corp',
+        roles: ['tenant_admin'],
+      })
+    );
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /Política de Identidad/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tenant-policy-phone-checkbox')).toBeEnabled();
+      expect(screen.getByTestId('tenant-policy-save-btn')).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByTestId('tenant-policy-phone-checkbox'));
+    fireEvent.click(screen.getByTestId('tenant-policy-save-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tenant-policy-success')).toBeInTheDocument();
+      expect(screen.getByTestId('tenant-policy-origin-chip')).toHaveTextContent('Personalizada');
+    });
+  });
 });

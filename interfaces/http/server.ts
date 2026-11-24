@@ -59,6 +59,12 @@ import {
 } from '../../src/contexts/identity/application/commands/manage_client_tenant_binding/handler';
 import { ResolveClientTenantContextQueryHandler } from '../../src/contexts/identity/application/queries/resolve_client_tenant_context/handler';
 import { ClientBindingsController } from './rest/v1/oauth2/client_bindings_controller';
+import { TenantPolicyRepositoryPort } from '../../src/contexts/identity/domain/ports/tenant_policy_repository_port';
+import { PostgresTenantPolicyRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/tenant_policy/postgres_tenant_policy_repository';
+import { InMemoryTenantPolicyRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/tenant_policy/in_memory_tenant_policy_repository';
+import { GetTenantPolicyQueryHandler } from '../../src/contexts/identity/application/queries/get_tenant_policy/handler';
+import { UpsertTenantPolicyCommandHandler } from '../../src/contexts/identity/application/commands/upsert_tenant_policy/handler';
+import { TenantPolicyController } from './rest/v1/identity/tenant_policy_controller';
 import { TenantTransactionRunnerPort } from '../../src/contexts/identity/application/ports/database/tenant_transaction_runner';
 import { TenantAwareTransactionRunner } from '../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 import { AuthController } from './rest/v1/identity/controllers';
@@ -294,6 +300,11 @@ export function createApp(deps?: AppDependencies): Express {
     activePoolForBindings && process.env.NODE_ENV !== 'test'
       ? new PostgresClientTenantBindingRepository(activePoolForBindings)
       : new InMemoryClientTenantBindingRepository();
+
+  const tenantPolicyRepository: TenantPolicyRepositoryPort =
+    activePoolForBindings && process.env.NODE_ENV !== 'test'
+      ? new PostgresTenantPolicyRepository(activePoolForBindings)
+      : new InMemoryTenantPolicyRepository();
 
   let authCodeRepository = deps?.authCodeRepository;
   if (!authCodeRepository) {
@@ -668,6 +679,11 @@ export function createApp(deps?: AppDependencies): Express {
     resolveClientTenantContextHandler
   );
 
+  const tenantPolicyController = new TenantPolicyController(
+    new GetTenantPolicyQueryHandler(tenantPolicyRepository),
+    new UpsertTenantPolicyCommandHandler(tenantPolicyRepository, auditLogger)
+  );
+
   const authorizeController = new OAuth2AuthorizeController(
     issueAuthCodeHandler,
     resolveClientTenantContextHandler,
@@ -963,6 +979,18 @@ export function createApp(deps?: AppDependencies): Express {
     tenantContextMiddleware,
     authMiddleware,
     clientBindingsController.revokeBinding
+  );
+  app.get(
+    '/api/v1/tenants/:tenantId/policy',
+    tenantContextMiddleware,
+    authMiddleware,
+    tenantPolicyController.getPolicy
+  );
+  app.put(
+    '/api/v1/tenants/:tenantId/policy',
+    tenantContextMiddleware,
+    authMiddleware,
+    tenantPolicyController.upsertPolicy
   );
   app.post(
     '/api/v1/oauth2/clients/validate',

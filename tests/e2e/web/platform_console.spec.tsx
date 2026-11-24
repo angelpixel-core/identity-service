@@ -319,4 +319,63 @@ describe('Web UI E2E Spec: US-26 /platform Console (Governance, Vault, Audit & S
       );
     });
   });
+
+  it('Scenario 7 (US-30): manages TenantPolicy in /platform Tenant Policies view', async () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_root_superadmin_01',
+        userId: 'usr_root_01',
+        email: 'admin@angelpixel.io',
+        tenantId: 'system',
+        roles: ['superadmin'],
+      })
+    );
+    window.history.pushState({}, '', '/platform');
+
+    let currentPolicy = {
+      tenantId: 'system',
+      requiredAttributes: { phone: false },
+      kycPolicy: { required: false, minLevel: 'basic' },
+      allowedAuthMethods: { password: true, passkeys: true, federatedOidc: true },
+      updatedAt: '2026-11-24T12:00:00.000Z',
+      updatedBy: 'system',
+      isDefault: true,
+    };
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/v1/platform/posture') {
+        return Promise.resolve(mockJsonResponse(SAMPLE_POSTURE));
+      }
+      if (url.endsWith('/policy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(mockJsonResponse(currentPolicy));
+      }
+      if (url.endsWith('/policy') && init?.method === 'PUT') {
+        const parsed = JSON.parse(String(init.body ?? '{}'));
+        currentPolicy = {
+          ...currentPolicy,
+          ...parsed,
+          isDefault: false,
+          updatedBy: 'admin@angelpixel.io',
+        };
+        return Promise.resolve(mockJsonResponse(currentPolicy));
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /Tenant Policies/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('platform-policies-panel')).toBeInTheDocument();
+      expect(screen.getByTestId('platform-policy-origin-chip')).toHaveTextContent('Default');
+    });
+
+    fireEvent.click(screen.getByTestId('platform-policy-phone-checkbox'));
+    fireEvent.click(screen.getByTestId('platform-policy-save-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('platform-policy-success')).toBeInTheDocument();
+      expect(screen.getByTestId('platform-policy-origin-chip')).toHaveTextContent('Personalizada');
+    });
+  });
 });

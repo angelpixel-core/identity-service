@@ -42,7 +42,7 @@ export function isRootSuperadminSession(session: AuthSession): boolean {
   return roles.includes('superadmin');
 }
 
-export type PlatformNavTab = 'posture' | 'vault' | 'bindings' | 'audit' | 'sre';
+export type PlatformNavTab = 'posture' | 'vault' | 'bindings' | 'policies' | 'audit' | 'sre';
 
 export interface BoundedShellProps {
   session: AuthSession | null;
@@ -84,6 +84,12 @@ const RAIL_ICONS = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  ),
+  policies: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <path d="M9 12l2 2 4-4" />
     </svg>
   ),
 };
@@ -191,6 +197,14 @@ export function BoundedShell({
         href: '/platform#bindings',
         icon: RAIL_ICONS.bindings,
         active: activePlatformTab === 'bindings',
+      },
+      {
+        id: 'policies',
+        label: 'Tenant Policies',
+        shortCode: 'PL',
+        href: '/platform#policies',
+        icon: RAIL_ICONS.policies,
+        active: activePlatformTab === 'policies',
       },
       {
         id: 'audit',
