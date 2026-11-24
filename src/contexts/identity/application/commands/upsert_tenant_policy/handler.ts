@@ -11,6 +11,8 @@ import { OAuth2AuthenticationError } from '../../../domain/exceptions/oauth2/err
 import { SecurityAuditLoggerPort } from '../../ports/security/audit_logger';
 import { InMemorySecurityAuditLogger } from '../../../infrastructure/logging/memory_security_audit_logger';
 import { TenantPolicyDTO, toTenantPolicyDTO } from '../../queries/get_tenant_policy/handler';
+import { CacheProviderPort } from '../../ports/cache/cache_provider';
+import { invalidateAuthConfigCacheForTenant } from '../../queries/get_public_auth_config/handler';
 
 export interface UpsertTenantPolicyCommand {
   readonly targetTenantId: string;
@@ -30,7 +32,8 @@ export interface UpsertTenantPolicyCommand {
 export class UpsertTenantPolicyCommandHandler {
   constructor(
     private readonly policyRepository: TenantPolicyRepositoryPort,
-    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger()
+    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger(),
+    private readonly cacheProvider?: CacheProviderPort
   ) {}
 
   public async execute(cmd: UpsertTenantPolicyCommand): Promise<TenantPolicyDTO> {
@@ -73,6 +76,7 @@ export class UpsertTenantPolicyCommandHandler {
     }
 
     await this.policyRepository.save(policy);
+    await invalidateAuthConfigCacheForTenant(this.cacheProvider, targetTenant.getValue());
     const afterSnapshot = toTenantPolicyDTO(policy, false);
 
     await this.auditLogger.logEvent({

@@ -11,6 +11,8 @@ import { DomainValidationError } from '../../../domain/exceptions/user/error';
 import { OAuth2AuthenticationError } from '../../../domain/exceptions/oauth2/error';
 import { SecurityAuditLoggerPort } from '../../ports/security/audit_logger';
 import { InMemorySecurityAuditLogger } from '../../../infrastructure/logging/memory_security_audit_logger';
+import { CacheProviderPort } from '../../ports/cache/cache_provider';
+import { invalidateAuthConfigCacheForTenant } from '../../queries/get_public_auth_config/handler';
 
 export interface ClientTenantBindingDTO {
   readonly id: string;
@@ -73,7 +75,8 @@ export class CreateClientTenantBindingCommandHandler {
   constructor(
     private readonly bindingRepository: ClientTenantBindingRepositoryPort,
     private readonly clientRepository: ClientApplicationRepositoryPort,
-    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger()
+    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger(),
+    private readonly cacheProvider?: CacheProviderPort
   ) {}
 
   public async execute(cmd: CreateClientTenantBindingCommand): Promise<ClientTenantBindingDTO> {
@@ -129,6 +132,7 @@ export class CreateClientTenantBindingCommandHandler {
     });
 
     await this.bindingRepository.save(binding);
+    await invalidateAuthConfigCacheForTenant(this.cacheProvider, binding.getTenantId().getValue());
 
     await this.auditLogger.logEvent({
       eventType: 'CLIENT_TENANT_BINDING_CREATED',
@@ -153,7 +157,8 @@ export class CreateClientTenantBindingCommandHandler {
 export class UpdateClientTenantBindingCommandHandler {
   constructor(
     private readonly bindingRepository: ClientTenantBindingRepositoryPort,
-    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger()
+    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger(),
+    private readonly cacheProvider?: CacheProviderPort
   ) {}
 
   public async execute(cmd: UpdateClientTenantBindingCommand): Promise<ClientTenantBindingDTO> {
@@ -194,6 +199,7 @@ export class UpdateClientTenantBindingCommandHandler {
     });
 
     await this.bindingRepository.save(binding);
+    await invalidateAuthConfigCacheForTenant(this.cacheProvider, binding.getTenantId().getValue());
 
     await this.auditLogger.logEvent({
       eventType: 'CLIENT_TENANT_BINDING_UPDATED',
@@ -219,7 +225,8 @@ export class UpdateClientTenantBindingCommandHandler {
 export class RevokeClientTenantBindingCommandHandler {
   constructor(
     private readonly bindingRepository: ClientTenantBindingRepositoryPort,
-    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger()
+    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger(),
+    private readonly cacheProvider?: CacheProviderPort
   ) {}
 
   public async execute(cmd: RevokeClientTenantBindingCommand): Promise<void> {
@@ -239,6 +246,7 @@ export class RevokeClientTenantBindingCommandHandler {
     }
 
     await this.bindingRepository.deleteById(binding.getId());
+    await invalidateAuthConfigCacheForTenant(this.cacheProvider, binding.getTenantId().getValue());
 
     await this.auditLogger.logEvent({
       eventType: 'CLIENT_TENANT_BINDING_REVOKED',
