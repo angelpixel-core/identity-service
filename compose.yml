@@ -85,9 +85,6 @@ services:
       target: development
     container_name: identity-design-system
     restart: unless-stopped
-    profiles:
-      - ui
-      - dev
     command: ["npm", "run", "storybook", "--", "--host", "0.0.0.0"]
     ports:
       - "${STORYBOOK_PORT:-6006}:6006"
