@@ -310,4 +310,87 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
       expect(screen.getByTestId('passkeys-list')).toHaveTextContent('cred-e2e-passkey');
     });
   });
+
+  it('Scenario 8 (US-36): authenticates passwordless via Passkey in /auth', async () => {
+    window.history.pushState({}, '', '/auth?client_id=ecommerce-saas&tenant_id=acme-corp');
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/auth/config')) {
+        return Promise.resolve(
+          mockJsonResponse({
+            tenantId: 'acme-corp',
+            clientId: 'ecommerce-saas',
+            requiredFields: ['email', 'password'],
+            allowedAuthMethods: { password: false, passkeys: true, federatedOidc: false },
+            federatedProviders: [],
+            kycRequired: false,
+            kycMinLevel: 'basic',
+          })
+        );
+      }
+      if (url === '/api/v1/auth/passkeys/login/options') {
+        return Promise.resolve(
+          mockJsonResponse({
+            challenge: 'dGVzdC1hdXRoLWNoYWxsZW5nZQ',
+            rpId: 'localhost',
+            allowCredentials: [],
+          })
+        );
+      }
+      if (url === '/api/v1/auth/passkeys/login/verify') {
+        return Promise.resolve(
+          mockJsonResponse({
+            token: 'jwt_passkey_auth_36',
+            userId: '11111111-1111-4111-8111-111111111111',
+            email: 'passkey-e2e@acme-corp.com',
+            tenantId: 'acme-corp',
+            roles: ['member'],
+            amr: ['hwk', 'user'],
+          })
+        );
+      }
+      if (url === '/api/v1/auth/me') {
+        return Promise.resolve(
+          mockJsonResponse({
+            id: '11111111-1111-4111-8111-111111111111',
+            email: 'passkey-e2e@acme-corp.com',
+            tenantId: 'acme-corp',
+          })
+        );
+      }
+      if (url === '/api/v1/auth/passkeys') {
+        return Promise.resolve(mockJsonResponse({ count: 0, passkeys: [] }));
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    Object.defineProperty(globalThis.navigator, 'credentials', {
+      configurable: true,
+      value: {
+        get: jest.fn().mockResolvedValue({
+          id: 'cred-e2e-login-01',
+          rawId: new Uint8Array([1, 2, 3]).buffer,
+          type: 'public-key',
+          response: {
+            authenticatorData: new Uint8Array([4, 5, 6]).buffer,
+            clientDataJSON: new Uint8Array([7, 8, 9]).buffer,
+            signature: new Uint8Array([10, 11, 12]).buffer,
+          },
+          getClientExtensionResults: () => ({}),
+        }),
+      },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('passkey-login-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('passkey-login-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/passkey-e2e@acme-corp\.com/)).toBeInTheDocument();
+    });
+  });
 });

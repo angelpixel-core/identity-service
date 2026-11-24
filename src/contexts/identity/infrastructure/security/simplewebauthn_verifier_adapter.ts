@@ -1,11 +1,18 @@
 import {
+  generateAuthenticationOptions,
   generateRegistrationOptions,
+  verifyAuthenticationResponse,
   verifyRegistrationResponse,
+  type AuthenticationResponseJSON,
+  type AuthenticatorTransport,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import {
+  WebAuthnAuthenticationOptionsInput,
+  WebAuthnAuthenticationVerifyInput,
   WebAuthnRegistrationOptionsInput,
   WebAuthnRegistrationVerifyInput,
+  WebAuthnVerifiedAuthentication,
   WebAuthnVerifiedRegistration,
   WebAuthnVerifierPort,
 } from '../../application/ports/security/webauthn_verifier_port';
@@ -59,6 +66,47 @@ export class SimpleWebAuthnVerifierAdapter implements WebAuthnVerifierPort {
       transports: credential.transports ? [...credential.transports] : [],
       deviceType: credentialDeviceType,
       backedUp: credentialBackedUp,
+    };
+  }
+
+  public async generateAuthenticationOptions(
+    input: WebAuthnAuthenticationOptionsInput
+  ): Promise<Record<string, unknown> & { challenge: string }> {
+    const options = await generateAuthenticationOptions({
+      rpID: input.rpID,
+      allowCredentials: input.allowCredentialIds.map((id) => ({ id })),
+      userVerification: 'preferred',
+    });
+
+    return options as unknown as Record<string, unknown> & { challenge: string };
+  }
+
+  public async verifyAuthenticationResponse(
+    input: WebAuthnAuthenticationVerifyInput
+  ): Promise<WebAuthnVerifiedAuthentication> {
+    const verification = await verifyAuthenticationResponse({
+      response: input.response as AuthenticationResponseJSON,
+      expectedChallenge: input.expectedChallenge,
+      expectedOrigin: input.expectedOrigin,
+      expectedRPID: input.expectedRPID,
+      requireUserVerification: false,
+      credential: {
+        id: input.credential.id,
+        publicKey: new Uint8Array(input.credential.publicKeyCose),
+        counter: input.credential.counter,
+        transports: input.credential.transports
+          ? ([...input.credential.transports] as AuthenticatorTransport[])
+          : undefined,
+      },
+    });
+
+    if (!verification.verified) {
+      return { verified: false, newCounter: input.credential.counter };
+    }
+
+    return {
+      verified: true,
+      newCounter: verification.authenticationInfo.newCounter,
     };
   }
 }

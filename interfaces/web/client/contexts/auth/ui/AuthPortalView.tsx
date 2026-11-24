@@ -197,12 +197,24 @@ export function AuthPortalView({
                 )}
               </div>
             ) : !passwordEnabled ? (
-              <M3AlertBanner
-                severity="warning"
-                title="Método deshabilitado"
-                message="La autenticación por contraseña está deshabilitada para este tenant."
-                testId="auth-password-disabled-banner"
-              />
+              <div className="m3-stack">
+                <M3AlertBanner
+                  severity="warning"
+                  title="Método deshabilitado"
+                  message="La autenticación por contraseña está deshabilitada para este tenant."
+                  testId="auth-password-disabled-banner"
+                />
+                {passkeysEnabled && (
+                  <LoginForm
+                    key={`login-pk-${defaultTenantId}`}
+                    defaultTenantId={defaultTenantId}
+                    disabled
+                    passkeysEnabled
+                    clientId={effectiveQuery?.clientId}
+                    onSuccess={onSessionChange}
+                  />
+                )}
+              </div>
             ) : (
               <div>
                 <div className="m3-tabs" role="tablist" aria-label="Modo de cuenta" style={{ marginBottom: '0.75rem' }}>
@@ -246,6 +258,8 @@ export function AuthPortalView({
                     <LoginForm
                       key={`login-${defaultTenantId}`}
                       defaultTenantId={defaultTenantId}
+                      passkeysEnabled={passkeysEnabled}
+                      clientId={effectiveQuery?.clientId}
                       onSuccess={onSessionChange}
                     />
                   </div>

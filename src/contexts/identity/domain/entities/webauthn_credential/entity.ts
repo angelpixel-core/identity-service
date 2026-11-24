@@ -110,6 +110,25 @@ export class WebAuthnCredential {
     this.counter = nextCounter;
   }
 
+  /**
+   * Regla FIDO2 anti-clonación (US-36):
+   * - Para singleDevice con counter > 0, exige newCounter > storedCounter.
+   * - Para multiDevice con counter = 0, permite sin falso positivo y actualiza si crece.
+   */
+  public recordAssertionCounter(newCounter: number): void {
+    if (!Number.isInteger(newCounter) || newCounter < 0) {
+      throw new DomainValidationError('Counter must be a non-negative integer');
+    }
+    if (this.deviceType === 'singleDevice' && this.counter > 0 && newCounter <= this.counter) {
+      throw new DomainValidationError(
+        `Passkey clone detected: signCount regression (stored=${this.counter}, received=${newCounter})`
+      );
+    }
+    if (newCounter > this.counter) {
+      this.counter = newCounter;
+    }
+  }
+
   public getId(): string {
     return this.id;
   }

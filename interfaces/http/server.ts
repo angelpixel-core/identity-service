@@ -79,6 +79,10 @@ import {
   RevokePasskeyCommandHandler,
   VerifyPasskeyRegistrationCommandHandler,
 } from '../../src/contexts/identity/application/commands/register_passkey/handler';
+import {
+  BeginPasskeyAuthenticationCommandHandler,
+  VerifyPasskeyAuthenticationCommandHandler,
+} from '../../src/contexts/identity/application/commands/authenticate_passkey/handler';
 import { PasskeyController } from './rest/v1/identity/passkey_controller';
 import { TenantTransactionRunnerPort } from '../../src/contexts/identity/application/ports/database/tenant_transaction_runner';
 import { TenantAwareTransactionRunner } from '../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
@@ -749,7 +753,25 @@ export function createApp(deps?: AppDependencies): Express {
       auditLogger
     ),
     new ListPasskeysQueryHandler(webAuthnCredentialRepository),
-    new RevokePasskeyCommandHandler(webAuthnCredentialRepository, auditLogger)
+    new RevokePasskeyCommandHandler(webAuthnCredentialRepository, auditLogger),
+    new BeginPasskeyAuthenticationCommandHandler(
+      webAuthnCredentialRepository,
+      userRepository,
+      tenantPolicyRepository,
+      webAuthnVerifier,
+      cacheProvider,
+      resolveClientTenantContextHandler
+    ),
+    new VerifyPasskeyAuthenticationCommandHandler(
+      webAuthnCredentialRepository,
+      userRepository,
+      tenantPolicyRepository,
+      webAuthnVerifier,
+      cacheProvider,
+      tokenProvider,
+      refreshSessionRepository,
+      auditLogger
+    )
   );
 
   const authorizeController = new OAuth2AuthorizeController(
@@ -935,6 +957,16 @@ export function createApp(deps?: AppDependencies): Express {
     tenantContextMiddleware,
     authMiddleware,
     passkeyController.revokePasskey
+  );
+  app.post(
+    '/api/v1/auth/passkeys/login/options',
+    tenantContextMiddleware,
+    passkeyController.beginAuthentication
+  );
+  app.post(
+    '/api/v1/auth/passkeys/login/verify',
+    tenantContextMiddleware,
+    passkeyController.verifyAuthentication
   );
 
   // Rutas de Usuarios con Zero-Trust Guard & Anti-Enumeration (US-06)

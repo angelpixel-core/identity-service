@@ -32,6 +32,9 @@ export type SecurityAuditEventType =
   | 'PASSKEY_REGISTERED'
   | 'PASSKEY_REGISTRATION_REJECTED'
   | 'PASSKEY_REVOKED'
+  | 'PASSKEY_AUTH_SUCCESS'
+  | 'PASSKEY_AUTH_FAILED'
+  | 'PASSKEY_CLONE_DETECTED'
   // Compatibilidad hacia atrás (legacy snake_case)
   | 'client_authenticated'
   | 'client_authentication_failed'

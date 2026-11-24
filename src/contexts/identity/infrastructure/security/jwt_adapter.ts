@@ -70,12 +70,27 @@ export class JwtTokenAdapter implements TokenProviderPort {
           return reject(new Error('Token payload missing required claims'));
         }
 
+        const extraClaims: Record<string, unknown> = {};
+        if (Array.isArray((payload as Record<string, unknown>).amr)) {
+          extraClaims.amr = (payload as Record<string, unknown>).amr;
+        }
+        if (typeof (payload as Record<string, unknown>).client_id === 'string') {
+          extraClaims.client_id = (payload as Record<string, unknown>).client_id;
+        }
+        if (typeof (payload as Record<string, unknown>).kyc_verified === 'boolean') {
+          extraClaims.kyc_verified = (payload as Record<string, unknown>).kyc_verified;
+        }
+        if (typeof (payload as Record<string, unknown>).kyc_status === 'string') {
+          extraClaims.kyc_status = (payload as Record<string, unknown>).kyc_status;
+        }
+
         const result: AuthTokenClaims = {
           userId: payload.userId,
           email: payload.email,
           tenantId: payload.tenantId,
           ...(payload.roles && Array.isArray(payload.roles) ? { roles: payload.roles } : {}),
           ...(payload.actorType ? { actorType: payload.actorType } : {}),
+          ...(Object.keys(extraClaims).length > 0 ? { claims: extraClaims } : {}),
         };
 
         resolve(result);
