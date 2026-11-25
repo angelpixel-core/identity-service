@@ -1,8 +1,33 @@
-import { chromium } from 'playwright';
+import { chromium, Page } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 
 const SCREENSHOT_DIR = path.resolve(__dirname, '../docs/showcase/assets/screenshots');
+
+async function captureWithFocus(page: Page, selector: string, filename: string): Promise<void> {
+  await page.evaluate((sel) => {
+    const el = document.querySelector(sel) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'instant' });
+      el.style.outline = '2px solid #0b57d0';
+      el.style.outlineOffset = '3px';
+      el.style.borderRadius = '8px';
+    }
+  }, selector);
+  await page.waitForTimeout(250);
+  await page.screenshot({
+    path: path.join(SCREENSHOT_DIR, filename),
+    fullPage: false,
+  });
+  await page.evaluate((sel) => {
+    const el = document.querySelector(sel) as HTMLElement | null;
+    if (el) {
+      el.style.outline = '';
+      el.style.outlineOffset = '';
+      el.style.borderRadius = '';
+    }
+  }, selector);
+}
 
 async function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) {
@@ -155,6 +180,69 @@ async function runCapture() {
       fullPage: false,
     });
 
+    // US-31: Public Auth Config Inspector in /tenant -> Política de Identidad
+    console.log('📸 Ensuring portal-web <-> acme-corp binding & capturing US-31 Public Auth Config Inspector...');
+    const us31RootRes = await fetch('http://localhost:4000/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'system' },
+      body: JSON.stringify({
+        email: `showcase.us31.root.${Date.now()}@angelpixel.io`,
+        password: 'RootShowcasePassword2026!',
+      }),
+    });
+    const us31Root = await us31RootRes.json();
+    await fetch('http://localhost:4000/api/v1/clients/portal-web/bindings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${us31Root.token}`,
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        tenantId: 'acme-corp',
+        customDomain: 'portal.acme-corp.local',
+        allowedRedirectUris: ['http://localhost:3000/callback'],
+        allowedCorsOrigins: ['http://localhost:3000'],
+      }),
+    });
+    await fetch('http://localhost:4000/api/v1/tenants/acme-corp/federation/providers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${us31Root.token}`,
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        providerKey: 'okta-corp',
+        displayName: 'Okta Corporate',
+        protocol: 'oidc',
+        issuerUrl: 'https://acme.okta.com/oauth2/default',
+        clientId: 'okta-b2b-showcase-01',
+        clientSecret: 'okta_showcase_secret_2026',
+        scopes: ['openid', 'email', 'profile'],
+      }),
+    });
+
+    await page.click('button[role="tab"]:has-text("Política de Identidad")');
+    await page.waitForSelector('[data-testid="tenant-policy-panel"]', { timeout: 10000 });
+    await captureWithFocus(page, '[data-testid="tenant-policy-panel"]', 'us30_tenant_policy_editor.png');
+
+    await page.waitForSelector('[data-testid="public-auth-config-inspect-btn"]', { timeout: 10000 });
+    await page.click('[data-testid="public-auth-config-inspect-btn"]');
+    await page.waitForSelector('[data-testid="public-auth-config-json-viewer"]', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'us31_tenant_auth_config_inspector.png'),
+      fullPage: false,
+    });
+
+    // US-33: Capture /tenant -> Proveedores IdP
+    console.log('📸 Capturing US-33 in /tenant...');
+    await page.click('button[role="tab"]:has-text("Proveedores IdP")');
+    await page.waitForSelector('[data-testid="idp-providers-list"]', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    await captureWithFocus(page, '[data-testid="idp-providers-list"]', 'us33_tenant_federated_providers.png');
+
     // 3d. EPIC-09 / US-26: M3 /platform Console (Root Superadmin in system tenant)
     console.log('📸 Provisioning Root Superadmin session and capturing /platform M3 UI surfaces...');
     const rootEmail = `showcase.root.${Date.now()}@angelpixel.io`;
@@ -251,6 +339,23 @@ async function runCapture() {
       fullPage: false,
     });
 
+    // US-30: Tenant Policies in /platform
+    console.log('📸 Capturing US-30 Tenant Policies in /platform...');
+    await page.click('button[role="tab"]:has-text("Tenant Policies")');
+    await page.waitForSelector('[data-testid="platform-policies-panel"]', { timeout: 10000 });
+    await captureWithFocus(page, '[data-testid="platform-policies-panel"]', 'us30_platform_tenant_policies.png');
+
+    // US-33: Proveedores IdP in /platform
+    console.log('📸 Capturing US-33 Proveedores IdP in /platform...');
+    await page.click('button[role="tab"]:has-text("Proveedores IdP")');
+    await page.waitForSelector('[data-testid="tenant-federated-providers-panel"]', { timeout: 10000 });
+    await page.waitForSelector('[data-testid="idp-providers-list"]', { timeout: 10000 });
+    await captureWithFocus(
+      page,
+      '[data-testid="tenant-federated-providers-panel"]',
+      'us33_platform_federated_providers.png'
+    );
+
     // 4. US-07: OpenID Connect Discovery Metadata Endpoint
     console.log('📸 Capturing us07_oidc_discovery.png from http://localhost:4000/.well-known/openid-configuration...');
     await page.goto('http://localhost:4000/.well-known/openid-configuration', { waitUntil: 'networkidle', timeout: 10000 });
@@ -262,6 +367,183 @@ async function runCapture() {
       path: path.join(SCREENSHOT_DIR, 'us07_oidc_discovery.png'),
       fullPage: false,
     });
+
+    // 4b. US-31: Public Dynamic Auth Config JSON Pretty-Print
+    console.log('📸 Capturing us31_public_auth_config.png from http://localhost:4000/api/v1/auth/config...');
+    await page.goto(
+      'http://localhost:4000/api/v1/auth/config?client_id=portal-web&tenant_id=acme-corp',
+      { waitUntil: 'networkidle', timeout: 10000 }
+    );
+    await page.waitForTimeout(300);
+    await page.mouse.click(105, 12);
+    await page.waitForTimeout(300);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'us31_public_auth_config.png'),
+      fullPage: false,
+    });
+
+    // 4c. US-32: Dynamic Onboarding in /auth (Phone E.164 + KYC & Password Disabled)
+    console.log('📸 Capturing US-32 Dynamic Onboarding states in /auth...');
+    const us32Ts = Date.now();
+    const us32PhoneTenant = `us32-phone-${us32Ts}`;
+    const us32NoPassTenant = `us32-nopass-${us32Ts}`;
+    for (const tid of [us32PhoneTenant, us32NoPassTenant]) {
+      await fetch('http://localhost:4000/api/v1/clients/portal-web/bindings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${rootSessionPayload.token}`,
+          'x-tenant-id': 'system',
+        },
+        body: JSON.stringify({
+          tenantId: tid,
+          customDomain: `${tid}.showcase.local`,
+          allowedRedirectUris: ['http://localhost:3000/callback'],
+          allowedCorsOrigins: ['http://localhost:3000'],
+        }),
+      });
+    }
+    await fetch(`http://localhost:4000/api/v1/tenants/${us32PhoneTenant}/policy`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${rootSessionPayload.token}`,
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        requiredAttributes: { phone: true },
+        kycPolicy: { required: true, minLevel: 'biometric_liveness' },
+        allowedAuthMethods: { password: true, passkeys: false, federatedOidc: true },
+      }),
+    });
+    await fetch(`http://localhost:4000/api/v1/tenants/${us32NoPassTenant}/policy`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${rootSessionPayload.token}`,
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        requiredAttributes: { phone: false },
+        kycPolicy: { required: false, minLevel: 'basic' },
+        allowedAuthMethods: { password: false, passkeys: false, federatedOidc: true },
+      }),
+    });
+
+    await page.goto('http://localhost:3000/auth', { waitUntil: 'networkidle', timeout: 15000 });
+    await page.evaluate(() => localStorage.removeItem('identity_session'));
+
+    await page.goto(
+      `http://localhost:3000/auth?client_id=portal-web&tenant_id=${us32PhoneTenant}`,
+      { waitUntil: 'networkidle', timeout: 15000 }
+    );
+    await page.waitForSelector('[data-testid="register-phone-input"]', { timeout: 10000 });
+    await page.waitForSelector('[data-testid="register-kyc-notice"]', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'us32_auth_dynamic_phone_kyc.png'),
+      fullPage: false,
+    });
+
+    await page.goto(
+      `http://localhost:3000/auth?client_id=portal-web&tenant_id=${us32NoPassTenant}`,
+      { waitUntil: 'networkidle', timeout: 15000 }
+    );
+    await page.waitForSelector('[data-testid="auth-password-disabled-banner"]', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'us32_auth_password_disabled.png'),
+      fullPage: false,
+    });
+
+    // 4d. US-34: Dynamic Tenant Federation Buttons in /auth -> Federación
+    console.log('📸 Capturing US-34 Dynamic Federation buttons in /auth...');
+    await page.goto(
+      'http://localhost:3000/auth?client_id=portal-web&tenant_id=acme-corp',
+      { waitUntil: 'networkidle', timeout: 15000 }
+    );
+    await page.click('button[aria-haspopup="listbox"]');
+    await page.click('ul[role="listbox"] button:has-text("Federación")');
+    await page.waitForSelector('[data-testid="fed-login-okta-corp"]', { timeout: 10000 });
+    await captureWithFocus(page, '[data-testid="fed-login-okta-corp"]', 'us34_auth_dynamic_federation.png');
+
+    // 4d. US-35: WebAuthn / FIDO2 Passkey Registration with CDP Virtual Authenticator
+    console.log('📸 Preparing US-35 tenant policy (passkeys: true) & CDP Virtual Authenticator...');
+    const us35Tenant = `tusherramientas-us35-${Date.now()}`;
+    const us35RootRes = await fetch('http://localhost:4000/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'system' },
+      body: JSON.stringify({
+        email: `showcase.us35.root.${Date.now()}@angelpixel.io`,
+        password: 'RootShowcasePassword2026!',
+      }),
+    });
+    const us35Root = await us35RootRes.json();
+
+    await fetch('http://localhost:4000/api/v1/clients/portal-web/bindings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${us35Root.token}`,
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        tenantId: us35Tenant,
+        allowedRedirectUris: ['http://localhost:3000/callback'],
+        allowedCorsOrigins: ['http://localhost:3000'],
+      }),
+    });
+
+    await fetch(`http://localhost:4000/api/v1/tenants/${us35Tenant}/policy`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${us35Root.token}`,
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        requiredAttributes: { phone: false },
+        kycPolicy: { required: false, minLevel: 'basic' },
+        allowedAuthMethods: { password: true, passkeys: true, federatedOidc: false },
+      }),
+    });
+
+    const us35Context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: { width: 1440, height: 900 },
+    });
+    const us35Page = await us35Context.newPage();
+    const cdp = await us35Context.newCDPSession(us35Page);
+    await cdp.send('WebAuthn.enable');
+    const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+      options: {
+        protocol: 'ctap2',
+        transport: 'internal',
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+      },
+    });
+
+    await us35Page.goto(
+      `http://localhost:3000/auth?client_id=portal-web&tenant_id=${us35Tenant}`,
+      { waitUntil: 'networkidle', timeout: 15000 }
+    );
+    await us35Page.fill('input[type="email"]', `passkey.user.${Date.now()}@tusherramientas.com`);
+    await us35Page.fill('input[type="password"]', 'EnterpriseSecurity2026!');
+    await us35Page.click('button[type="submit"]');
+    await us35Page.waitForSelector('button:has-text("Cerrar sesión"), [data-testid="passkeys-panel"]', {
+      timeout: 10000,
+    });
+    await us35Page.waitForSelector('[data-testid="register-passkey-btn"]', { timeout: 10000 });
+    await us35Page.click('[data-testid="register-passkey-btn"]');
+    await us35Page.waitForSelector('[data-testid="passkeys-success"]', { timeout: 10000 });
+    await us35Page.waitForSelector('[data-testid="passkeys-list"]', { timeout: 10000 });
+    await captureWithFocus(us35Page, '[data-testid="passkeys-panel"]', 'us35_auth_passkey_registration.png');
+
+    await cdp.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId });
+    await cdp.send('WebAuthn.disable');
+    await us35Context.close();
 
     // 5. US-21: Prometheus & OpenTelemetry Structured Metrics Exposition
     console.log('📸 Capturing us21_prometheus_metrics.png from http://localhost:4000/metrics...');
