@@ -3,6 +3,7 @@ import { FederatedIdentityRepositoryPort } from '../../../domain/ports/repositor
 import { TokenProviderPort } from '../../ports/security/token_provider';
 import { RefreshSessionRepositoryPort } from '../../../domain/ports/repositories/refresh_session_repository_port';
 import { SecurityAuditLoggerPort } from '../../ports/security/audit_logger';
+import { KycClaimsResolver } from '../manage_kyc_verification/handler';
 import { TenantId } from '../../../domain/value_objects/tenant_id/value';
 import { Email } from '../../../domain/value_objects/email/value';
 import { User } from '../../../domain/entities/user/aggregate';
@@ -17,7 +18,8 @@ export class LinkOrProvisionFederatedUserCommandHandler {
     private readonly federatedIdentityRepository: FederatedIdentityRepositoryPort,
     private readonly tokenProvider: TokenProviderPort,
     private readonly refreshSessionRepository: RefreshSessionRepositoryPort,
-    private readonly auditLogger?: SecurityAuditLoggerPort
+    private readonly auditLogger?: SecurityAuditLoggerPort,
+    private readonly kycClaimsResolver?: KycClaimsResolver
   ) { }
 
   public async execute(
@@ -167,6 +169,10 @@ export class LinkOrProvisionFederatedUserCommandHandler {
     const effectiveClientId = clientId || `${userProfile.provider}-federated-client`;
     const nowEpoch = Math.floor(Date.now() / 1000);
 
+    const kycClaims = this.kycClaimsResolver
+      ? await this.kycClaimsResolver.resolveClaims(user.getId(), user.getTenantId().getValue())
+      : null;
+
     const accessToken = await this.tokenProvider.generateToken({
       userId: user.getId(),
       email: user.getEmail().getValue(),
@@ -180,6 +186,7 @@ export class LinkOrProvisionFederatedUserCommandHandler {
         token_type: 'Bearer',
         auth_time: nowEpoch,
         provider: userProfile.provider,
+        ...(kycClaims ?? {}),
       },
     });
 

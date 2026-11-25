@@ -1,12 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
-import { M3Button } from '../../../../design-system/components/M3Primitives';
+import { M3Button, M3Chip } from '../../../../design-system/components/M3Primitives';
 import { AuthSession, UserProfile } from '../../domain/types';
+
+export type KycBadgeStatus = 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
 
 export interface UserProfileCardProps {
   fetchProfile: () => Promise<UserProfile>;
   initialProfile?: UserProfile;
   session?: Partial<AuthSession>;
+  kycStatus?: KycBadgeStatus;
   onLogout?: () => void;
+}
+
+function formatKycBadge(status: KycBadgeStatus): {
+  label: string;
+  tone: 'success' | 'warning' | 'error' | 'neutral';
+} {
+  if (status === 'VERIFIED') return { label: 'KYC: Verificado', tone: 'success' };
+  if (status === 'PENDING') return { label: 'KYC: Pendiente', tone: 'warning' };
+  if (status === 'REJECTED') return { label: 'KYC: Rechazado', tone: 'error' };
+  return { label: 'KYC: Sin verificar', tone: 'neutral' };
 }
 
 function formatProviderLabel(provider?: string): string | null {
@@ -24,6 +37,7 @@ export function UserProfileCard({
   fetchProfile,
   initialProfile,
   session,
+  kycStatus,
   onLogout,
 }: UserProfileCardProps) {
   const [profile, setProfile] = useState<UserProfile | null>(initialProfile ?? null);
@@ -119,7 +133,16 @@ export function UserProfileCard({
         ) : null}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
           <h2 style={{ margin: 0 }}>{displayName || 'User Profile'}</h2>
-          <span className="badge-tenant">Tenant: {profile.tenantId}</span>
+          <div className="m3-cluster">
+            <span className="badge-tenant">Tenant: {profile.tenantId}</span>
+            {kycStatus && (
+              <M3Chip
+                label={formatKycBadge(kycStatus).label}
+                tone={formatKycBadge(kycStatus).tone}
+                testId="profile-kyc-badge"
+              />
+            )}
+          </div>
         </div>
       </header>
       <section className="profile-details">

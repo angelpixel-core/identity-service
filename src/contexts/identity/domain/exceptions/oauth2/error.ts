@@ -15,6 +15,7 @@ export type OAuth2ErrorCode =
   | 'invalid_credentials'
   | 'invalid_webauthn_challenge'
   | 'invalid_webauthn_response'
+  | 'invalid_signature'
   | 'invalid_scope';
 
 /**

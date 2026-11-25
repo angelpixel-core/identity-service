@@ -13,6 +13,7 @@ import { WebAuthnVerifierPort } from '../../ports/security/webauthn_verifier_por
 import { UserRepositoryPort } from '../../ports/user/repository';
 import { ResolveClientTenantContextQueryHandler } from '../../queries/resolve_client_tenant_context/handler';
 import { InMemorySecurityAuditLogger } from '../../../infrastructure/logging/memory_security_audit_logger';
+import { KycClaimsResolver } from '../manage_kyc_verification/handler';
 
 const AUTH_CHALLENGE_TTL_SECONDS = 300;
 
@@ -183,7 +184,8 @@ export class VerifyPasskeyAuthenticationCommandHandler {
     private readonly cacheProvider: CacheProviderPort,
     private readonly tokenProvider: TokenProviderPort,
     private readonly refreshSessionRepository?: RefreshSessionRepositoryPort,
-    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger()
+    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger(),
+    private readonly kycClaimsResolver?: KycClaimsResolver
   ) {}
 
   public async execute(cmd: VerifyPasskeyAuthenticationCommand): Promise<PasskeyAuthSuccessDTO> {
@@ -330,6 +332,10 @@ export class VerifyPasskeyAuthenticationCommandHandler {
 
     const amr = ['hwk', 'user'] as const;
     const effectiveClientId = cmd.clientId ?? stored.clientId;
+    const kycClaims = this.kycClaimsResolver
+      ? await this.kycClaimsResolver.resolveClaims(user.getId(), user.getTenantId().getValue())
+      : null;
+
     const accessToken = await this.tokenProvider.generateToken({
       userId: user.getId(),
       email: user.getEmail().getValue(),
@@ -339,6 +345,7 @@ export class VerifyPasskeyAuthenticationCommandHandler {
       claims: {
         amr: [...amr],
         ...(effectiveClientId ? { client_id: effectiveClientId } : {}),
+        ...(kycClaims ?? {}),
       },
     });
 

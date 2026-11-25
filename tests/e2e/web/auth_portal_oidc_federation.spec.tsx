@@ -393,4 +393,73 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
       expect(screen.getByText(/passkey-e2e@acme-corp\.com/)).toBeInTheDocument();
     });
   });
+
+  it('Scenario 9 (US-37): displays KYC badge in UserProfileCard and starts KYC verification session in /auth', async () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_kyc_user_01',
+        userId: '11111111-1111-4111-8111-111111111111',
+        email: 'kyc-e2e@tusherramientas.com',
+        tenantId: 'tusherramientas-a',
+        roles: ['member'],
+      })
+    );
+    window.history.pushState({}, '', '/auth');
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/v1/auth/me') {
+        return Promise.resolve(
+          mockJsonResponse({
+            id: '11111111-1111-4111-8111-111111111111',
+            email: 'kyc-e2e@tusherramientas.com',
+            tenantId: 'tusherramientas-a',
+          })
+        );
+      }
+      if (url === '/api/v1/auth/kyc/status') {
+        return Promise.resolve(
+          mockJsonResponse({
+            status: 'UNVERIFIED',
+            level: 'biometric_liveness',
+            kycVerified: false,
+            providerRef: null,
+          })
+        );
+      }
+      if (url === '/api/v1/auth/kyc/sessions' && init?.method === 'POST') {
+        return Promise.resolve(
+          mockJsonResponse(
+            {
+              status: 'PENDING',
+              level: 'biometric_liveness',
+              kycVerified: false,
+              providerRef: 'kyc_ref_e2e_01',
+              sessionUrl: '/auth?kyc_session=kyc_ref_e2e_01',
+              mode: 'deterministic_dev',
+            },
+            201
+          )
+        );
+      }
+      if (url === '/api/v1/auth/passkeys') {
+        return Promise.resolve(mockJsonResponse({ count: 0, passkeys: [] }));
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-kyc-badge')).toHaveTextContent('KYC: Sin verificar');
+      expect(screen.getByTestId('start-kyc-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('start-kyc-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('kyc-session-notice')).toHaveTextContent('kyc_ref_e2e_01');
+      expect(screen.getByTestId('profile-kyc-badge')).toHaveTextContent('KYC: Pendiente');
+    });
+  });
 });

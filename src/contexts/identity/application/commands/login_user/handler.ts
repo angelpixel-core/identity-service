@@ -8,6 +8,7 @@ import { TenantPolicyRepositoryPort } from '../../../domain/ports/tenant_policy_
 import { Email } from '../../../domain/value_objects/email/value';
 import { TenantId } from '../../../domain/value_objects/tenant_id/value';
 import { OAuth2AuthenticationError } from '../../../domain/exceptions/oauth2/error';
+import { KycClaimsResolver } from '../manage_kyc_verification/handler';
 
 export interface LoginUserCommand {
   readonly tenantId: string;
@@ -36,7 +37,8 @@ export class LoginUserCommandHandler {
     private readonly hashProvider: HashProviderPort,
     private readonly tokenProvider: TokenProviderPort,
     private readonly policyRepository?: TenantPolicyRepositoryPort,
-    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger()
+    private readonly auditLogger: SecurityAuditLoggerPort = new InMemorySecurityAuditLogger(),
+    private readonly kycClaimsResolver?: KycClaimsResolver
   ) {}
 
   public async execute(cmd: LoginUserCommand): Promise<LoginUserResponseDTO> {
@@ -104,12 +106,17 @@ export class LoginUserCommandHandler {
       );
     }
 
+    const kycClaims = this.kycClaimsResolver
+      ? await this.kycClaimsResolver.resolveClaims(user.getId(), user.getTenantId().getValue())
+      : null;
+
     const accessToken = await this.tokenProvider.generateToken({
       userId: user.getId(),
       email: user.getEmail().getValue(),
       tenantId: user.getTenantId().getValue(),
       roles: user.getRoles(),
       actorType: user.isSuperadmin() ? 'platform_operator' : 'user',
+      ...(kycClaims ? { claims: kycClaims } : {}),
     });
 
     await this.auditLogger.logEvent({

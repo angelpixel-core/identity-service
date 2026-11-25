@@ -35,6 +35,9 @@ export type SecurityAuditEventType =
   | 'PASSKEY_AUTH_SUCCESS'
   | 'PASSKEY_AUTH_FAILED'
   | 'PASSKEY_CLONE_DETECTED'
+  | 'KYC_SESSION_STARTED'
+  | 'KYC_VERIFICATION_UPDATED'
+  | 'KYC_WEBHOOK_SIGNATURE_INVALID'
   // Compatibilidad hacia atrás (legacy snake_case)
   | 'client_authenticated'
   | 'client_authentication_failed'

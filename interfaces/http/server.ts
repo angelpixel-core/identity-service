@@ -84,6 +84,18 @@ import {
   VerifyPasskeyAuthenticationCommandHandler,
 } from '../../src/contexts/identity/application/commands/authenticate_passkey/handler';
 import { PasskeyController } from './rest/v1/identity/passkey_controller';
+import { UserKycVerificationRepositoryPort } from '../../src/contexts/identity/domain/ports/user_kyc_verification_repository_port';
+import { PostgresUserKycVerificationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/kyc/postgres_user_kyc_verification_repository';
+import { InMemoryUserKycVerificationRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/kyc/in_memory_user_kyc_verification_repository';
+import { KycVerificationPort } from '../../src/contexts/identity/application/ports/kyc/kyc_verification_port';
+import { DeterministicKycAdapter } from '../../src/contexts/identity/infrastructure/kyc/deterministic_kyc_adapter';
+import {
+  GetKycStatusQueryHandler,
+  KycClaimsResolver,
+  ProcessKycWebhookCommandHandler,
+  StartKycVerificationCommandHandler,
+} from '../../src/contexts/identity/application/commands/manage_kyc_verification/handler';
+import { KycController } from './rest/v1/identity/kyc_controller';
 import { TenantTransactionRunnerPort } from '../../src/contexts/identity/application/ports/database/tenant_transaction_runner';
 import { TenantAwareTransactionRunner } from '../../src/contexts/identity/infrastructure/persistence/database/tenant_aware_transaction_runner';
 import { AuthController } from './rest/v1/identity/controllers';
@@ -182,6 +194,9 @@ export interface AppDependencies {
   healthCheckPort?: HealthCheckPort;
   keyVaultHealthCheck?: () => Promise<boolean>;
   webAuthnVerifier?: WebAuthnVerifierPort;
+  userKycRepository?: UserKycVerificationRepositoryPort;
+  kycVerificationPort?: KycVerificationPort;
+  kycWebhookSecret?: string;
 }
 
 /**
@@ -334,6 +349,17 @@ export function createApp(deps?: AppDependencies): Express {
   const webAuthnVerifier: WebAuthnVerifierPort =
     deps?.webAuthnVerifier ?? new SimpleWebAuthnVerifierAdapter();
 
+  const userKycRepository: UserKycVerificationRepositoryPort =
+    deps?.userKycRepository ??
+    (activePoolForBindings && process.env.NODE_ENV !== 'test'
+      ? new PostgresUserKycVerificationRepository(activePoolForBindings)
+      : new InMemoryUserKycVerificationRepository());
+
+  const kycVerificationPort: KycVerificationPort =
+    deps?.kycVerificationPort ?? new DeterministicKycAdapter();
+
+  const kycClaimsResolver = new KycClaimsResolver(userKycRepository, tenantPolicyRepository);
+
   let authCodeRepository = deps?.authCodeRepository;
   if (!authCodeRepository) {
     authCodeRepository = new InMemoryAuthorizationCodeRepository();
@@ -484,7 +510,8 @@ export function createApp(deps?: AppDependencies): Express {
     userRepository,
     hashProvider,
     tokenProvider,
-    tenantPolicyRepository
+    tenantPolicyRepository,
+    kycClaimsResolver
   );
 
   const loginUserHandler = new LoginUserCommandHandler(
@@ -492,7 +519,8 @@ export function createApp(deps?: AppDependencies): Express {
     hashProvider,
     tokenProvider,
     tenantPolicyRepository,
-    auditLogger
+    auditLogger,
+    kycClaimsResolver
   );
 
   const getProfileHandler = new GetUserProfileQueryHandler(
@@ -686,7 +714,8 @@ export function createApp(deps?: AppDependencies): Express {
     federatedIdentityRepository,
     tokenProvider,
     refreshSessionRepository,
-    auditLogger
+    auditLogger,
+    kycClaimsResolver
   );
   const federationController = new FederationController(
     generateFederatedLoginUrlHandler,
@@ -770,8 +799,21 @@ export function createApp(deps?: AppDependencies): Express {
       cacheProvider,
       tokenProvider,
       refreshSessionRepository,
-      auditLogger
+      auditLogger,
+      kycClaimsResolver
     )
+  );
+
+  const kycWebhookSecret = deps?.kycWebhookSecret ?? process.env.KYC_WEBHOOK_SECRET;
+  const kycController = new KycController(
+    new StartKycVerificationCommandHandler(
+      userKycRepository,
+      kycVerificationPort,
+      tenantPolicyRepository,
+      auditLogger
+    ),
+    new ProcessKycWebhookCommandHandler(userKycRepository, kycWebhookSecret, auditLogger),
+    new GetKycStatusQueryHandler(userKycRepository, tenantPolicyRepository)
   );
 
   const authorizeController = new OAuth2AuthorizeController(
@@ -967,6 +1009,23 @@ export function createApp(deps?: AppDependencies): Express {
     '/api/v1/auth/passkeys/login/verify',
     tenantContextMiddleware,
     passkeyController.verifyAuthentication
+  );
+  app.post(
+    '/api/v1/auth/kyc/sessions',
+    tenantContextMiddleware,
+    authMiddleware,
+    kycController.startSession
+  );
+  app.get(
+    '/api/v1/auth/kyc/status',
+    tenantContextMiddleware,
+    authMiddleware,
+    kycController.getStatus
+  );
+  app.post(
+    '/api/v1/auth/kyc/webhooks/result',
+    tenantContextMiddleware,
+    kycController.handleWebhookResult
   );
 
   // Rutas de Usuarios con Zero-Trust Guard & Anti-Enumeration (US-06)

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { AuthSession, UserProfile } from '../../identity/domain/types';
 import { RegisterForm } from '../../identity/ui/components/register_form';
 import { LoginForm } from '../../identity/ui/components/login_form';
-import { UserProfileCard } from '../../identity/ui/components/user_profile_card';
+import { KycBadgeStatus, UserProfileCard } from '../../identity/ui/components/user_profile_card';
 import { PasskeysPanel } from '../../identity/ui/components/PasskeysPanel';
+import { KycVerificationPanel } from '../../identity/ui/components/KycVerificationPanel';
 import { OidcDiscoveryPanel } from './OidcDiscoveryPanel';
 import { PkceAndSessionsPanel } from './PkceAndSessionsPanel';
 import { FederationPanel } from './FederationPanel';
@@ -71,6 +72,7 @@ export function AuthPortalView({
   const [accountMode, setAccountMode] = useState<'register' | 'login'>('register');
   const [menuOpen, setMenuOpen] = useState(false);
   const [authConfig, setAuthConfig] = useState<DynamicAuthConfig | null>(null);
+  const [kycStatus, setKycStatus] = useState<KycBadgeStatus | undefined>(undefined);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const effectiveQuery = authConfigQuery ?? readAuthConfigQueryFromUrl();
@@ -191,7 +193,18 @@ export function AuthPortalView({
           <div>
             {session ? (
               <div>
-                <UserProfileCard fetchProfile={fetchProfile} session={session} onLogout={onLogout} />
+                <UserProfileCard
+                  fetchProfile={fetchProfile}
+                  session={session}
+                  kycStatus={kycStatus}
+                  onLogout={onLogout}
+                />
+                <KycVerificationPanel
+                  session={session}
+                  kycRequired={Boolean(authConfig?.kycRequired)}
+                  kycMinLevel={authConfig?.kycMinLevel}
+                  onStatusChange={setKycStatus}
+                />
                 {passkeysEnabled && (
                   <PasskeysPanel session={session} clientId={effectiveQuery?.clientId} />
                 )}

@@ -11,6 +11,7 @@ import { TenantId } from '../../../domain/value_objects/tenant_id/value';
 import { TenantPolicy } from '../../../domain/entities/tenant_policy/entity';
 import { TenantPolicyRepositoryPort } from '../../../domain/ports/tenant_policy_repository_port';
 import { OAuth2AuthenticationError } from '../../../domain/exceptions/oauth2/error';
+import { KycClaimsResolver } from '../manage_kyc_verification/handler';
 import {
   DomainValidationError,
   ConflictError,
@@ -27,7 +28,8 @@ export class RegisterUserCommandHandler {
     private readonly userRepository: UserRepositoryPort,
     private readonly hashProvider: HashProviderPort,
     private readonly tokenProvider: TokenProviderPort,
-    private readonly policyRepository?: TenantPolicyRepositoryPort
+    private readonly policyRepository?: TenantPolicyRepositoryPort,
+    private readonly kycClaimsResolver?: KycClaimsResolver
   ) {}
 
   public async execute(command: RegisterUserCommand): Promise<RegisterUserResponseDTO> {
@@ -87,12 +89,17 @@ export class RegisterUserCommandHandler {
 
     await this.userRepository.save(newUser);
 
+    const kycClaims = this.kycClaimsResolver
+      ? await this.kycClaimsResolver.resolveClaims(newUser.getId(), newUser.getTenantId().getValue())
+      : null;
+
     const accessToken = await this.tokenProvider.generateToken({
       userId: newUser.getId(),
       email: newUser.getEmail().getValue(),
       tenantId: newUser.getTenantId().getValue(),
       roles: newUser.getRoles(),
       actorType: newUser.isSuperadmin() ? 'platform_operator' : 'user',
+      ...(kycClaims ? { claims: kycClaims } : {}),
     });
 
     const phoneValue = newUser.getPhone()?.getValue();
