@@ -102,6 +102,52 @@ async function runCapture() {
       fullPage: false,
     });
 
+    // 3c-bis. EPIC-02 / US-28: Client Lifecycle & Zero-Downtime Secret Rotation in /tenant
+    console.log('📸 Capturing US-28 Client Lifecycle & Secret Rotation in /tenant...');
+    await page.click('[data-testid="register-client-details"] summary');
+    await page.fill('#new-client-name', `Showcase Billing Worker ${Date.now()}`);
+    await page.selectOption('#new-client-profile', 'm2m');
+    await page.fill('#new-client-origins', 'https://billing.acme-corp.com');
+    await page.fill('#new-client-scopes', 'read:invoices write:billing');
+    await page.click('[data-testid="register-client-submit"]');
+    await page.waitForSelector('[data-testid="client-secret-once-banner"]', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'us28_tenant_client_created.png'),
+      fullPage: false,
+    });
+
+    const firstRotateBtn = page.locator('[data-testid^="rotate-secret-"]').first();
+    const rotateTestId = await firstRotateBtn.getAttribute('data-testid');
+    const targetClientId = rotateTestId?.replace('rotate-secret-', '') ?? '';
+    await firstRotateBtn.click();
+    await page.waitForSelector('[data-testid="client-secret-once-banner"]', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'us28_tenant_secret_rotation.png'),
+      fullPage: false,
+    });
+
+    if (targetClientId) {
+      await page.click(`[data-testid="toggle-client-${targetClientId}"]`);
+      await page.waitForSelector(`[data-testid="toggle-client-${targetClientId}"]:has-text("Reactivar")`, { timeout: 10000 });
+      await page.waitForTimeout(400);
+      await page.screenshot({
+        path: path.join(SCREENSHOT_DIR, 'us28_tenant_client_suspended.png'),
+        fullPage: false,
+      });
+
+      // US-29: Inspect Client-Tenant Bindings & Custom Domains in /tenant
+      console.log('📸 Capturing US-29 Client-Tenant Bindings in /tenant...');
+      await page.click(`[data-testid="view-bindings-${targetClientId}"]`);
+      await page.waitForSelector(`[data-testid="tenant-bindings-${targetClientId}"]`, { timeout: 10000 });
+      await page.waitForTimeout(400);
+      await page.screenshot({
+        path: path.join(SCREENSHOT_DIR, 'us29_tenant_client_bindings.png'),
+        fullPage: false,
+      });
+    }
+
     await page.click('button[role="tab"]:has-text("Laboratorio RLS")');
     await page.waitForTimeout(600);
     await page.screenshot({
@@ -184,6 +230,24 @@ async function runCapture() {
     await page.waitForTimeout(600);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, 'ui_platform_sre.png'),
+      fullPage: false,
+    });
+
+    // US-29: N:M Client-Tenant Bindings in /platform
+    console.log('📸 Capturing US-29 Bindings N:M in /platform...');
+    await page.click('button[role="tab"]:has-text("Bindings N:M")');
+    await page.waitForSelector('[data-testid="platform-bindings-panel"]', { timeout: 10000 });
+    const bindingSuffix = Date.now();
+    await page.fill('#binding-client-id', 'portal-web');
+    await page.fill('#binding-tenant-id', `showcase-tenant-${bindingSuffix}`);
+    await page.fill('#binding-domain', `portal-${bindingSuffix}.tusherramientas.com`);
+    await page.fill('#binding-origins', `https://portal-${bindingSuffix}.tusherramientas.com`);
+    await page.fill('#binding-redirects', `https://portal-${bindingSuffix}.tusherramientas.com/callback`);
+    await page.click('[data-testid="create-binding-submit"]');
+    await page.waitForSelector('[data-testid^="toggle-binding-"]', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'us29_platform_bindings_nm.png'),
       fullPage: false,
     });
 
