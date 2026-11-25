@@ -6,8 +6,8 @@ version: "1.0.0"
 openapi_version: "3.1.0"
 status: "production-ready"
 total_epics: 9
-total_user_stories: 27
-total_tests_passing: 713
+total_user_stories: 29
+total_tests_passing: 804
 architecture_stack:
   backend: "Node.js 20 + TypeScript + Express"
   database: "PostgreSQL 16 (Row-Level Security RLS)"
@@ -15,7 +15,7 @@ architecture_stack:
   frontend: "React SPA + Vite"
   observability: "OpenTelemetry + Prometheus Metrics + W3C Tracing"
 created_at: "2026-11-17"
-updated_at: "2026-11-17"
+updated_at: "2026-11-24"
 tags:
   - showcase
   - architecture
@@ -33,10 +33,10 @@ tags:
 [![PostgreSQL 16 RLS](https://img.shields.io/badge/PostgreSQL-16%20RLS-336791.svg)](#)
 [![Redis Cache](https://img.shields.io/badge/Redis-7%20In--Memory-DC382D.svg)](#)
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-W3C%20Tracing%20%26%20Metrics-orange.svg)](#)
-[![Tests Passing](https://img.shields.io/badge/Tests-713%20Passing%20(100%25)-success.svg)](#)
+[![Tests Passing](https://img.shields.io/badge/Tests-804%20Passing%20(100%25)-success.svg)](#)
 [![Security Standard](https://img.shields.io/badge/Compliance-FinTech%20%26%20Zero--Trust-informational.svg)](#)
 
-Bienvenido al **Interactive Showcase & Walkthrough de Arquitectura** de `identity-service`. Este espacio documenta, demuestra y permite interactuar paso a paso con las **27 Historias de Usuario (User Stories)** distribuidas a lo largo de los **9 Épicos (Epics)** del servicio de identidad de grado empresarial.
+Bienvenido al **Interactive Showcase & Walkthrough de Arquitectura** de `identity-service`. Este espacio documenta, demuestra y permite interactuar paso a paso con las **29 Historias de Usuario (User Stories)** distribuidas a lo largo de los **9 Épicos (Epics)** del servicio de identidad de grado empresarial.
 
 ---
 
@@ -141,7 +141,7 @@ flowchart TD
 
 ---
 
-## 🧭 Matriz Interactiva de Navegación del Showcase (27 Historias de Usuario)
+## 🧭 Matriz Interactiva de Navegación del Showcase (29 Historias de Usuario)
 
 Cada documento modular contiene:
 - Explicación de la arquitectura y decisiones de diseño (ADRs).
@@ -152,7 +152,7 @@ Cada documento modular contiene:
 | Épico | Historias de Usuario (US) | Enfoque Tecnológico | Guía Paso a Paso |
 | :--- | :--- | :--- | :---: |
 | **Epic 01: Multi-Tenant Identity & Lifecycle** | **US-01:** Registro de Usuarios Multi-Tenant<br>**US-02:** Perfil Autenticado y Caché In-Memory | Argon2id, Zod, Redis Caching, PII Masking | [Ver Capítulo 01 ➡️](./01-identity-management.md) |
-| **Epic 02: Dynamic Client Registry & M2M Auth** | **US-03:** Registro Dinámico de Clientes & CORS<br>**US-04:** Autenticación M2M (Client Credentials) | OAuth2 Client Credentials, Origin Validation, Scopes | [Ver Capítulo 02 ➡️](./02-client-registry.md) |
+| **Epic 02: Dynamic Client Registry & M2M Auth** | **US-03:** Registro Dinámico de Clientes & CORS<br>**US-04:** Autenticación M2M (Client Credentials)<br>**US-28:** Ciclo de Vida & Rotación Zero-Downtime de Secretos<br>**US-29:** Bindings N:M Multi-Tenant & Dominios Custom | OAuth2 Client Credentials, Origin Validation, Scopes, Argon2id Secret Rotation, Multi-Domain N:M Bindings | [Ver Capítulo 02 ➡️](./02-client-registry.md) |
 | **Epic 03: Tenant Isolation & Zero-Trust Access** | **US-05:** Aislamiento con PostgreSQL RLS<br>**US-06:** Guardia Cross-Tenant Zero-Trust | Row Level Security (RLS), `app.current_tenant_id` | [Ver Capítulo 03 ➡️](./03-rls-isolation.md) |
 | **Epic 04: OIDC Identity Server & Session Security** | **US-07:** Servidor OIDC & JWKS Criptográfico<br>**US-08:** Flujo de Autorización con PKCE<br>**US-09:** Rotación de Refresh Tokens & Revocación | RFC 7636 (PKCE), Asymmetric RSA JWKS, Token Revocation | [Ver Capítulo 04 ➡️](./04-oidc-server-sessions.md) |
 | **Epic 05: Identity Federation & External Providers** | **US-10:** Conectores Sociales (Google & Microsoft)<br>**US-11:** Vinculación JIT de Cuentas Externas | OpenID Connect Federation, Account Linking, JIT Provisioning | [Ver Capítulo 05 ➡️](./05-identity-federation.md) |
@@ -167,7 +167,7 @@ Cada documento modular contiene:
 
 El 100% de los componentes e integraciones han sido validados exhaustivamente:
 
-- **713 Tests Automatizados Ejecutados** (Unitarios, Integración, RLS en Postgres, E2E).
+- **804 Tests Automatizados Ejecutados (`npm test`)** (599 Unitarios en 83 suites + 205 de Integración/RLS en 39 suites).
 - **0 Vulnerabilidades en Auditoría de Dependencias**.
 - **100% de Cobertura en Políticas RLS y Aislamiento de Inquilinos**.
 - **Contratos de API OpenAPI 3.1 Validados Estrictamente**.

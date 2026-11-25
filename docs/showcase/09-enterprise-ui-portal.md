@@ -115,6 +115,20 @@ Intento de salto cross-tenant hacia `beta-corp` desde `acme-corp`, interceptado 
 
 ![Consola /tenant — Bloqueo Cross-Tenant 403](./assets/screenshots/us25_tenant_rls_cross_tenant_403.png)
 
+#### 4. Ciclo de Vida de Clientes & Rotación Zero-Downtime (`US-28` en `Clientes & CORS`)
+Extensión de `ClientRegistryPanel.tsx` sobre `POST /api/v1/clients`, `PATCH /api/v1/clients/:clientId` y `POST /api/v1/clients/:clientId/rotate-secret` (ver recorrido técnico y `curl` reales en [Capítulo 02: Dynamic Client Registry](./02-client-registry.md#-us-28-gestión-del-ciclo-de-vida-de-clientes--rotación-zero-downtime-de-secretos)):
+
+![Creación de cliente confidencial y secreto único](./assets/screenshots/us28_tenant_client_created.png)
+
+![Rotación de secreto con ventana de gracia](./assets/screenshots/us28_tenant_secret_rotation.png)
+
+![Suspensión de aplicación cliente](./assets/screenshots/us28_tenant_client_suspended.png)
+
+#### 5. Bindings Multi-Dominio & Tenant Autorizados (`US-29` en `Clientes & CORS`)
+Inspección en `/tenant` mediante el botón **`Dominios`** de `ClientRegistryPanel.tsx` (`tenant-bindings-<clientId>`), mostrando los dominios y bindings activos del inquilino (ver detalle en [Capítulo 02: Dynamic Client Registry](./02-client-registry.md#-us-29-bindings-multi-tenant--multi-dominio-nm--resolución-explícita-de-tenant)):
+
+![Inspección de dominios y bindings autorizados en /tenant](./assets/screenshots/us29_tenant_client_bindings.png)
+
 ---
 
 ## 🛡️ US-26: Consola `/platform` — Gobernanza Root, Bóveda Criptográfica, Auditoría & SRE
@@ -150,13 +164,18 @@ Tarjetas en vivo de métricas Prometheus (`/metrics`), `traceparent` W3C copiabl
 
 ![Consola /platform — Observabilidad SRE](./assets/screenshots/us21_sre_metrics.png)
 
+#### 5. Bindings N:M Client ↔ Tenant / Dominios Custom (`US-29` — `ClientBindingsPanel.tsx`)
+Gestión transversal para operadores `system:superadmin` de vinculaciones N:M entre clientes SaaS, inquilinos, dominios personalizados y listas blancas de `redirect_uris` / CORS:
+
+![Consola Root de Bindings N:M en /platform](./assets/screenshots/us29_platform_bindings_nm.png)
+
 ---
 
 ## 📸 US-27: Showcase Interactivo & Evidencia Visual (`docs/showcase/01..09`)
 
 `US-27` cierra `EPIC-09` integrando walkthroughs visuales y capturas Playwright en alta densidad Retina (`deviceScaleFactor: 2`) contra el backend (`:4000`) y el frontend (`:3000`) reales a lo largo de los **9 capítulos** del Showcase:
 
-- **Automatización Playwright (`scripts/capture-showcase.ts` / `npm run showcase:capture`):** Genera las 9 capturas base `ui_*.png` (`ui_auth_account.png`, `ui_auth_oidc_jwks.png`, `ui_auth_pkce_sessions.png`, `ui_auth_federation.png`, `ui_tenant_clients_m2m.png`, `ui_tenant_rls_lab.png`, `ui_platform_posture.png`, `ui_platform_vault_audit.png`, `ui_platform_sre.png`) sin mocks ni exposición de secretos en claro.
+- **Automatización Playwright (`scripts/capture-showcase.ts` / `npm run showcase:capture`):** Genera las 9 capturas base `ui_*.png` (`ui_auth_account.png`, `ui_auth_oidc_jwks.png`, `ui_auth_pkce_sessions.png`, `ui_auth_federation.png`, `ui_tenant_clients_m2m.png`, `ui_tenant_rls_lab.png`, `ui_platform_posture.png`, `ui_platform_vault_audit.png`, `ui_platform_sre.png`), las 3 capturas del ciclo de vida de clientes `US-28` (`us28_tenant_client_created.png`, `us28_tenant_secret_rotation.png`, `us28_tenant_client_suspended.png`) y las 2 capturas de bindings N:M `US-29` (`us29_tenant_client_bindings.png`, `us29_platform_bindings_nm.png`) sin mocks ni exposición de secretos en claro.
 - **Cobertura Integral `01..09`:** Cada capítulo (`01`–`08`) incluye la sección `### 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador`, y el capítulo `09` consolida la arquitectura M3, Storybook 10 y el walkthrough detallado de `US-23` a `US-27` con verificación de enlaces (`0` enlaces rotos).
 
 ---

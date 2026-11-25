@@ -11,15 +11,21 @@ user_stories:
   - id: "US-04"
     name: "Machine-to-Machine (M2M) Authentication via Client Credentials"
     status: "completed"
+  - id: "US-28"
+    name: "Client Lifecycle Management & Secret Rotation"
+    status: "completed"
+  - id: "US-29"
+    name: "Multi-Tenant / Multi-Domain Client Bindings & Explicit Tenant Resolution"
+    status: "completed"
 architecture_pattern: "Vertical Slice + Hexagonal (DDD) + ADR-0004"
 security_standards:
   - "RFC 6749 (OAuth 2.0)"
   - "RFC 7636 (PKCE)"
   - "W3C Cross-Origin Resource Sharing (CORS)"
   - "Zero-Downtime Dynamic Configuration"
-  - "Confidential Client Secret Entropy"
+  - "Confidential Client Secret Entropy & Dual-Grace Rotation"
 created_at: "2026-11-17"
-updated_at: "2026-11-17"
+updated_at: "2026-11-24"
 tags:
   - showcase
   - walkthrough
@@ -28,6 +34,11 @@ tags:
   - client-registry
   - cors
   - m2m
+  - lifecycle
+  - secret-rotation
+  - multi-domain
+  - n-to-m-binding
+  - tenant-resolution
 ---
 
 # 🌐 Epic 02: Dynamic Client Registry & Machine-to-Machine (M2M) Auth
@@ -48,6 +59,8 @@ Este capítulo documenta y demuestra el funcionamiento del **Épico 02: Registro
 | :--- | :--- | :---: |
 | **US-03** | Registro Dinámico de Clientes y Validación en Tiempo Real de Orígenes CORS | ✅ En Producción |
 | **US-04** | Autenticación Machine-to-Machine (M2M) con OAuth2 Client Credentials | ✅ En Producción |
+| **US-28** | Gestión del Ciclo de Vida de Clientes y Rotación Zero-Downtime de Secretos | ✅ En Producción |
+| **US-29** | Bindings Multi-Tenant / Multi-Dominio (N:M) y Resolución Explícita de Tenant | ✅ En Producción |
 
 ---
 
@@ -667,6 +680,338 @@ npx jest tests/integration/identity/interfaces/test_oauth2_token_m2m.ts
 - **Validaciones de Protocolo:** Rechazo ante `grant_type` no soportado o ausencia de `client_id`.
 - **Gobernanza de Clientes:** Rechazo si un cliente público intenta el flujo M2M o si el cliente está desactivado.
 - **Defensa en Profundidad:** Rechazo de scopes no autorizados y redacción de secretos en eventos de auditoría.
+
+---
+
+## 🔄 US-28: Gestión del Ciclo de Vida de Clientes & Rotación Zero-Downtime de Secretos
+
+### 1. Arquitectura, Invariantes de Dominio & RLS *Fail-Closed*
+
+`US-28` extiende el agregado `ClientApplication` para gobernar el ciclo de vida completo de aplicaciones cliente (`spa`, `web`, `native`, `m2m`) desde `/api/v1/clients` bajo aislamiento **PostgreSQL RLS *Fail-Closed*** por `tenant_id` (y acceso transversal auditado para `system:superadmin` según `ADR-0009`):
+
+1. **Perfiles Públicos vs. Confidenciales:** Los clientes `web` y `m2m` generan un `clientSecret` de alta entropía hasheado con `Argon2id` (devuelto en claro **una sola vez** al crear o rotar). Los clientes `spa` y `native` son estrictamente públicos (PKCE) y rechazan `rotate-secret` con `HTTP 400 invalid_client_operation`.
+2. **Rotación Zero-Downtime con Ventana de Gracia Dual:** `POST /api/v1/clients/:clientId/rotate-secret` desplaza el hash vigente a `previousSecretHash` con vencimiento `secretGraceExpiresAt = now + gracePeriodSeconds`. Mientras `now < secretGraceExpiresAt`, tanto el secreto anterior como el nuevo son válidos en `/api/v1/oauth2/token`, permitiendo despliegues escalonados sin cortes.
+3. **Suspensión Inmediata:** `PATCH /api/v1/clients/:clientId` con `{ "status": "suspended" }` cambia `isActive` a `false` y bloquea al instante cualquier emisión de tokens (`HTTP 401 invalid_client`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Tenant Admin (/tenant)
+    participant Gateway as Express API Gateway
+    participant Controller as OAuth2ClientController
+    participant Domain as ClientApplication Aggregate
+    participant DB as PostgreSQL 16 (RLS Fail-Closed)
+    participant Audit as AuditLogger (NDJSON)
+
+    Admin->>Gateway: POST /api/v1/clients/:clientId/rotate-secret (gracePeriodSeconds: 300)
+    Gateway->>Controller: tenantContextMiddleware + authMiddleware
+    Controller->>DB: findByClientId(clientId, tenantId)
+    DB-->>Controller: ClientApplication (active, confidential)
+    Controller->>Domain: rotateSecret(newArgon2Hash, 300)
+    Domain-->>Controller: previousSecretHash = current, secretGraceExpiresAt = now + 300s
+    Controller->>DB: save(client)
+    Controller->>Audit: emit("CLIENT_SECRET_ROTATED", redacted)
+    Controller-->>Admin: 200 OK (clientSecret [una vez], secretGraceExpiresAt)
+
+    Note over Admin,DB: Durante 300s, tanto el secreto anterior como el nuevo autentican en /api/v1/oauth2/token
+```
+
+#### A. Glosario de Actores y Eventos Forenses
+
+| Participante / Evento | Tipo | Responsabilidad |
+| :--- | :--- | :--- |
+| **`OAuth2ClientController`** | `participant` | Controlador HTTP para `POST /api/v1/clients`, `GET /api/v1/clients`, `PATCH /api/v1/clients/:clientId` y `POST /api/v1/clients/:clientId/rotate-secret`. |
+| **`ClientApplication`** | `participant` | Agregado de dominio que impone invariantes de perfil (`spa`/`native` vs `web`/`m2m`), estado (`active`/`suspended`) y ventana dual. |
+| **`AuditLogger` (NDJSON)** | `participant` | Registra eventos inmutables `CLIENT_CREATED`, `CLIENT_UPDATED`, `CLIENT_SUSPENDED`, `CLIENT_REACTIVATED` y `CLIENT_SECRET_ROTATED` redactando secretos (`[REDACTED]`). |
+
+---
+
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
+
+#### Escenario A: Registro de Cliente Confidencial `m2m` (`POST /api/v1/clients` → `201 Created`)
+
+```bash
+curl -s -X POST "http://localhost:4000/api/v1/clients" \
+  -H "Authorization: Bearer $TENANT_TOKEN" \
+  -H "X-Tenant-ID: acme-corp" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientName": "Showcase Billing M2M",
+    "clientProfile": "m2m",
+    "allowedOrigins": ["https://billing.acme-corp.com"],
+    "scopes": ["identity:read", "billing:write"]
+  }' | jq .
+```
+
+##### Respuesta Real Obtenida (`HTTP 201 Created` — secreto expuesto una sola vez):
+```json
+{
+  "id": "ea8faa81-6589-4747-9a31-5e8e59c3452f",
+  "tenantId": "acme-corp",
+  "clientId": "showcase-billing-m2m-49d69c",
+  "clientName": "Showcase Billing M2M",
+  "clientType": "confidential",
+  "clientProfile": "m2m",
+  "status": "active",
+  "isActive": true,
+  "allowedOrigins": ["https://billing.acme-corp.com"],
+  "redirectUris": [],
+  "allowedGrantTypes": ["client_credentials"],
+  "scopes": ["identity:read", "billing:write"],
+  "secretGraceExpiresAt": null,
+  "createdAt": "2026-11-25T02:09:57.868Z",
+  "updatedAt": "2026-11-25T02:09:57.868Z",
+  "clientSecret": "DjMjFcZgjyMmuKqXmC22u9ZseKWcwNv1R3pS-j_ZTYc"
+}
+```
+
+> [!IMPORTANT]
+> Consultas posteriores a `GET /api/v1/clients` proyectan los metadatos del cliente **sin** `clientSecret` ni hashes internos (`secretHash` / `previousSecretHash`).
+
+#### Escenario B: Rotación Zero-Downtime con Gracia Dual (`300s`)
+
+```bash
+curl -s -X POST "http://localhost:4000/api/v1/clients/showcase-billing-m2m-49d69c/rotate-secret" \
+  -H "Authorization: Bearer $TENANT_TOKEN" \
+  -H "X-Tenant-ID: acme-corp" \
+  -H "Content-Type: application/json" \
+  -d '{ "gracePeriodSeconds": 300 }' | jq .
+```
+
+##### Respuesta Real Obtenida (`HTTP 200 OK`):
+```json
+{
+  "clientId": "showcase-billing-m2m-49d69c",
+  "clientSecret": "AWARl92S_BXLmfyeEy1Ew_DkeMZObGOqqawKMuf47PU",
+  "secretGraceExpiresAt": "2026-11-25T02:14:57.895Z",
+  "updatedAt": "2026-11-25T02:09:57.895Z"
+}
+```
+
+Durante la ventana de 300 segundos, ambas llamadas a `POST /api/v1/oauth2/token` (`grant_type: "client_credentials"`) con el secreto anterior y con el secreto nuevo devuelven `HTTP 200 OK`:
+```json
+{ "token_type": "Bearer", "expires_in": 3600, "scope": "identity:read" }
+```
+
+#### Escenario C: Suspensión Inmediata (`PATCH /api/v1/clients/:clientId`) & Bloqueo OAuth2
+
+```bash
+curl -s -X PATCH "http://localhost:4000/api/v1/clients/showcase-billing-m2m-49d69c" \
+  -H "Authorization: Bearer $TENANT_TOKEN" \
+  -H "X-Tenant-ID: acme-corp" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "suspended" }' | jq .
+```
+
+Al suspender (`status: "suspended"`, `isActive: false`), cualquier intento posterior en `POST /api/v1/oauth2/token` es bloqueado inmediatamente con `HTTP 401 Unauthorized`:
+```json
+{
+  "error": "invalid_client",
+  "error_description": "Client application \"showcase-billing-m2m-49d69c\" is currently deactivated"
+}
+```
+
+#### Escenario D: Seguridad Negativa — Rotación en Cliente Público (`spa`)
+
+Intentar `POST /api/v1/clients/:clientId/rotate-secret` sobre un cliente público (`clientProfile: "spa"`) devuelve `HTTP 400 Bad Request`:
+```json
+{
+  "error": "invalid_client_operation",
+  "error_description": "Public client application \"showcase-public-spa-9af08b\" cannot rotate client_secret",
+  "message": "Public client application \"showcase-public-spa-9af08b\" cannot rotate client_secret"
+}
+```
+
+---
+
+### 3. 🌐 Demostración Interactiva en la UI (Navegador — `US-28`)
+
+En [`http://localhost:3000/tenant`](http://localhost:3000/tenant) (pestaña **`Clientes & CORS`**, `ClientRegistryPanel.tsx`), los administradores del tenant pueden operar todo el ciclo de vida sin reiniciar servicios (y los operadores `system:superadmin` desde `/platform` bajo auditoría `ADR-0009`):
+
+1. **Registro de Aplicación Cliente:** Desplegar **`Registrar Nueva Aplicación Cliente (US-28)`**, elegir perfil (`m2m`, `web`, `spa`, `native`) y pulsar **`Registrar Cliente`** para recibir el banner de copia única (`client-secret-once-banner`).
+
+![Creación de cliente confidencial y secreto único](./assets/screenshots/us28_tenant_client_created.png)
+
+2. **Rotación Zero-Downtime:** Pulsar **`Rotar Secreto`** sobre un cliente confidencial para emitir un nuevo secreto con ventana de gracia dual (`secretGraceExpiresAt`).
+
+![Rotación de secreto con ventana de gracia](./assets/screenshots/us28_tenant_secret_rotation.png)
+
+3. **Suspensión y Reactivación:** Pulsar **`Suspender`** cambia el chip de estado a `m2m · SUSPENDED` y bloquea nuevos tokens al instante.
+
+![Suspensión de aplicación cliente](./assets/screenshots/us28_tenant_client_suspended.png)
+
+*(Ver también la consola completa en el [Capítulo 09: Portal Visual Enterprise M3](./09-enterprise-ui-portal.md)).*
+
+---
+
+### 4. Cobertura de Pruebas Automatizadas (`US-28` — TDD 4 Capas)
+
+El ciclo de vida completo de `US-28` está verificado en las 4 capas (**4 suites / 13 tests pasando**):
+
+```bash
+npx jest \
+  tests/unit/identity/domain/test_client_lifecycle_and_rotation.ts \
+  tests/integration/identity/oauth2/test_clients_lifecycle_api.ts \
+  tests/acceptance/step_defs/test_client_lifecycle_and_rotation_steps.ts \
+  tests/e2e/web/tenant_console.spec.tsx
+```
+
+- **Unit (`test_client_lifecycle_and_rotation.ts`):** invariantes público vs. confidencial, ventana de gracia dual y bloqueo por suspensión (3/3 passing).
+- **Integration (`test_clients_lifecycle_api.ts`):** `/api/v1/clients*` con PostgreSQL RLS activo y rechazo `400 invalid_client_operation` en clientes `spa` (2/2 passing).
+- **Acceptance BDD (`client_lifecycle_and_rotation.feature` / `test_client_lifecycle_and_rotation_steps.ts`):** alta confidencial, rotación con gracia dual y bloqueo al suspender (3/3 passing).
+- **E2E Web (`tenant_console.spec.tsx`):** consola `/tenant` completa incluyendo Scenario 5 (`US-28`) (5/5 passing).
+
+---
+
+## 🌐 US-29: Bindings Multi-Tenant / Multi-Dominio (N:M) & Resolución Explícita de Tenant
+
+### 1. Arquitectura, Invariantes N:M & Resolución Explícita (`ResolveClientTenantContext`)
+
+`US-29` habilita que una misma aplicación SaaS (`client_id`) atienda múltiples dominios personalizados y se vincule de forma explícita y verificada con varios inquilinos (`tenants`) bajo una relación **N:M** persistida en `client_tenant_bindings` (PostgreSQL RLS *Fail-Closed*):
+
+1. **Cero Inferencia Implícita de Tenant:** El sistema **nunca** deduce `tenant_id` únicamente a partir de encabezados HTTP implícitos (`Origin` / `Referer`). Exige un par explícito `client_id` + (`tenant_id` o `domain`) respaldado por un `ClientTenantBinding` activo y un `ClientApplication` activo.
+2. **Unicidad e Integridad de Listas Blancas:** Cada pareja `(clientId, tenantId)` y cada `customDomain` (normalizado en minúsculas sin protocolo/puerto/ruta) son únicos. Tanto `redirect_uri` como `Origin` deben coincidir exactamente con `allowedRedirectUris` y `allowedCorsOrigins` del binding resuelto.
+3. **Auditoría Forense (`AuditLogger` NDJSON):** Registra `CLIENT_TENANT_BINDING_CREATED`, `CLIENT_TENANT_BINDING_UPDATED`, `CLIENT_TENANT_BINDING_REVOKED` y `CLIENT_TENANT_BINDING_VIOLATION`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor App as SaaS App (tienda-a.tusherramientas.com)
+    participant Gateway as Express API Gateway
+    participant Resolver as ResolveClientTenantContext
+    participant Repo as PostgresClientTenantBindingRepo
+    participant Audit as AuditLogger (NDJSON)
+
+    App->>Gateway: GET /api/v1/auth/config?client_id=...&domain=tienda-a...&redirect_uri=...
+    Gateway->>Resolver: Resolver (client_id, tenant_id | domain)
+    Resolver->>Repo: findActiveByClientAndDomain(clientId, domain)
+    alt Binding Activo Encontrado & redirect_uri Válido
+        Repo-->>Resolver: ClientTenantBinding (tenantId: tusherramientas-a)
+        Resolver-->>Gateway: Contexto explícito validado
+        Gateway-->>App: 200 OK (tenantId, customDomain, allowedAuthMethods, providers)
+    else Tenant / Dominio Sin Binding Activo
+        Resolver->>Audit: emit("CLIENT_TENANT_BINDING_VIOLATION")
+        Resolver-->>App: 403 Forbidden (forbidden_tenant_client_binding)
+    else redirect_uri Perteneciente a Otro Binding
+        Resolver->>Audit: emit("CLIENT_TENANT_BINDING_VIOLATION")
+        Resolver-->>App: 400 Bad Request (invalid_redirect_uri)
+    end
+```
+
+---
+
+### 2. Ejecución en Vivo & Verificación Interactiva Paso a Paso
+
+#### Escenario A: Vinculación N:M de Un Mismo `client_id` a Dos Tenants/Dominios (`POST /api/v1/clients/:clientId/bindings`)
+
+```bash
+curl -s -X POST "http://localhost:4000/api/v1/clients/showcase-saas-1795574075808-1a2e66/bindings" \
+  -H "Authorization: Bearer $ROOT_TOKEN" \
+  -H "X-Tenant-ID: system" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantId": "tusherramientas-a-1795574075808",
+    "customDomain": "tienda-a-1795574075808.tusherramientas.com",
+    "allowedRedirectUris": ["https://tienda-a-1795574075808.tusherramientas.com/callback"],
+    "allowedCorsOrigins": ["https://tienda-a-1795574075808.tusherramientas.com"]
+  }' | jq .
+```
+
+##### Respuesta Real Obtenida (`HTTP 201 Created`) y Listado `GET /bindings` (`count: 2`):
+```json
+{
+  "count": 2,
+  "bindings": [
+    {
+      "id": "3c0d4d7d-382e-4ddc-b6fd-cfe4091c274e",
+      "clientId": "showcase-saas-1795574075808-1a2e66",
+      "tenantId": "tusherramientas-a-1795574075808",
+      "customDomain": "tienda-a-1795574075808.tusherramientas.com",
+      "allowedRedirectUris": ["https://tienda-a-1795574075808.tusherramientas.com/callback"],
+      "allowedCorsOrigins": ["https://tienda-a-1795574075808.tusherramientas.com"],
+      "isActive": true
+    },
+    {
+      "id": "65937a2f-288c-4728-9fbe-d8fba01c253e",
+      "clientId": "showcase-saas-1795574075808-1a2e66",
+      "tenantId": "toolbox-b-1795574075808",
+      "customDomain": "toolbox-b-1795574075808.com",
+      "allowedRedirectUris": ["https://toolbox-b-1795574075808.com/callback"],
+      "allowedCorsOrigins": ["https://toolbox-b-1795574075808.com"],
+      "isActive": true
+    }
+  ]
+}
+```
+
+#### Escenario B: Resolución Explícita por Dominio (`GET /api/v1/auth/config` → `200 OK`)
+
+```bash
+curl -s "http://localhost:4000/api/v1/auth/config?client_id=showcase-saas-1795574075808-1a2e66&domain=tienda-a-1795574075808.tusherramientas.com" | jq .
+```
+
+```json
+{
+  "bindingId": "3c0d4d7d-382e-4ddc-b6fd-cfe4091c274e",
+  "clientId": "showcase-saas-1795574075808-1a2e66",
+  "tenantId": "tusherramientas-a-1795574075808",
+  "customDomain": "tienda-a-1795574075808.tusherramientas.com",
+  "requiredFields": ["email", "password"],
+  "allowedAuthMethods": { "password": true, "passkeys": false, "federatedOidc": true },
+  "kycRequired": false,
+  "kycMinLevel": "basic"
+}
+```
+
+#### Escenario C: Seguridad Negativa — Tenant Sin Binding (`403`) & Redirect Cruzado (`400`)
+
+1. Consultar `GET /api/v1/auth/config?client_id=...&tenant_id=academia-beisbol` (sin binding) devuelve **`HTTP 403 Forbidden`**:
+```json
+{
+  "error": "forbidden_tenant_client_binding",
+  "error_description": "Client \"showcase-saas-1795574075808-1a2e66\" is not bound to the requested tenant/domain",
+  "message": "Client \"showcase-saas-1795574075808-1a2e66\" is not bound to the requested tenant/domain"
+}
+```
+2. Enviar el `redirect_uri` de `toolbox-b` sobre el dominio de `tienda-a` devuelve **`HTTP 400 Bad Request`**:
+```json
+{
+  "error": "invalid_redirect_uri",
+  "error_description": "redirect_uri \"https://toolbox-b-1795574075808.com/callback\" is not authorized for this client-tenant binding",
+  "message": "redirect_uri \"https://toolbox-b-1795574075808.com/callback\" is not authorized for this client-tenant binding"
+}
+```
+
+---
+
+### 3. 🌐 Demostración Interactiva en la UI (Navegador — `US-29`)
+
+1. **Superficie `/tenant` (`Clientes & CORS` → `Dominios`):** Los administradores de inquilino inspeccionan los bindings y dominios autorizados de cada cliente (`tenant-bindings-<clientId>`).
+
+![Inspección de dominios y bindings autorizados en /tenant](./assets/screenshots/us29_tenant_client_bindings.png)
+
+2. **Consola Root `/platform` (`Bindings N:M` — `ClientBindingsPanel.tsx`):** Operadores `system:superadmin` gestionan vinculaciones N:M entre clientes, tenants, dominios personalizados y listas blancas de `redirect_uris` / CORS.
+
+![Consola Root de Bindings N:M en /platform](./assets/screenshots/us29_platform_bindings_nm.png)
+
+---
+
+### 4. Cobertura de Pruebas Automatizadas (`US-29` — TDD 4 Capas)
+
+Verificada en las 4 capas (**4 suites / 13 tests pasando**):
+
+```bash
+npx jest \
+  tests/unit/identity/domain/test_client_tenant_binding.ts \
+  tests/integration/identity/oauth2/test_client_tenant_bindings_api.ts \
+  tests/acceptance/step_defs/test_client_tenant_bindings_steps.ts \
+  tests/e2e/web/platform_console.spec.tsx
+```
+
+- **Unit (`test_client_tenant_binding.ts`):** normalización de `customDomain`, rechazo de protocolo/puerto/ruta y validación exacta de `redirect_uri` / `Origin` (3/3 passing).
+- **Integration (`test_client_tenant_bindings_api.ts`):** CRUD `/api/v1/clients/:clientId/bindings` y resolución `/api/v1/auth/config` (1/1 passing).
+- **Acceptance BDD (`client_tenant_bindings.feature` / `test_client_tenant_bindings_steps.ts`):** resolución N:M, bloqueo `403` y rechazo `400 invalid_redirect_uri` (3/3 passing).
+- **E2E Web (`platform_console.spec.tsx`):** consola `/platform` completa incluyendo Scenario 6 (`US-29`) (6/6 passing).
 
 ---
 
