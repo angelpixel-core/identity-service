@@ -1,12 +1,12 @@
 ---
 title: "Enterprise Multi-Tenant Identity & Access Management Service (Showcase Hub)"
-description: "Interactive Showcase & Walkthrough de Arquitectura paso a paso por las Historias de Usuario y 9 Épicos de Identity Service."
+description: "Interactive Showcase & Walkthrough de Arquitectura paso a paso por las Historias de Usuario y 10 Épicos de Identity Service."
 project: "identity-service"
 version: "1.0.0"
 openapi_version: "3.1.0"
 status: "production-ready"
-total_epics: 9
-total_user_stories: 29
+total_epics: 10
+total_user_stories: 34
 total_tests_passing: 804
 architecture_stack:
   backend: "Node.js 20 + TypeScript + Express"
@@ -15,7 +15,7 @@ architecture_stack:
   frontend: "React SPA + Vite"
   observability: "OpenTelemetry + Prometheus Metrics + W3C Tracing"
 created_at: "2026-11-17"
-updated_at: "2026-11-24"
+updated_at: "2026-11-25"
 tags:
   - showcase
   - architecture
@@ -36,7 +36,7 @@ tags:
 [![Tests Passing](https://img.shields.io/badge/Tests-804%20Passing%20(100%25)-success.svg)](#)
 [![Security Standard](https://img.shields.io/badge/Compliance-FinTech%20%26%20Zero--Trust-informational.svg)](#)
 
-Bienvenido al **Interactive Showcase & Walkthrough de Arquitectura** de `identity-service`. Este espacio documenta, demuestra y permite interactuar paso a paso con las **29 Historias de Usuario (User Stories)** distribuidas a lo largo de los **9 Épicos (Epics)** del servicio de identidad de grado empresarial.
+Bienvenido al **Interactive Showcase & Walkthrough de Arquitectura** de `identity-service`. Este espacio documenta, demuestra y permite interactuar paso a paso con las **34 Historias de Usuario (User Stories)** distribuidas a lo largo de los **10 Épicos (Epics)** del servicio de identidad de grado empresarial.
 
 ---
 
@@ -141,7 +141,7 @@ flowchart TD
 
 ---
 
-## 🧭 Matriz Interactiva de Navegación del Showcase (29 Historias de Usuario)
+## 🧭 Matriz Interactiva de Navegación del Showcase (31 Historias de Usuario)
 
 Cada documento modular contiene:
 - Explicación de la arquitectura y decisiones de diseño (ADRs).
@@ -155,11 +155,12 @@ Cada documento modular contiene:
 | **Epic 02: Dynamic Client Registry & M2M Auth** | **US-03:** Registro Dinámico de Clientes & CORS<br>**US-04:** Autenticación M2M (Client Credentials)<br>**US-28:** Ciclo de Vida & Rotación Zero-Downtime de Secretos<br>**US-29:** Bindings N:M Multi-Tenant & Dominios Custom | OAuth2 Client Credentials, Origin Validation, Scopes, Argon2id Secret Rotation, Multi-Domain N:M Bindings | [Ver Capítulo 02 ➡️](./02-client-registry.md) |
 | **Epic 03: Tenant Isolation & Zero-Trust Access** | **US-05:** Aislamiento con PostgreSQL RLS<br>**US-06:** Guardia Cross-Tenant Zero-Trust | Row Level Security (RLS), `app.current_tenant_id` | [Ver Capítulo 03 ➡️](./03-rls-isolation.md) |
 | **Epic 04: OIDC Identity Server & Session Security** | **US-07:** Servidor OIDC & JWKS Criptográfico<br>**US-08:** Flujo de Autorización con PKCE<br>**US-09:** Rotación de Refresh Tokens & Revocación | RFC 7636 (PKCE), Asymmetric RSA JWKS, Token Revocation | [Ver Capítulo 04 ➡️](./04-oidc-server-sessions.md) |
-| **Epic 05: Identity Federation & External Providers** | **US-10:** Conectores Sociales (Google & Microsoft)<br>**US-11:** Vinculación JIT de Cuentas Externas | OpenID Connect Federation, Account Linking, JIT Provisioning | [Ver Capítulo 05 ➡️](./05-identity-federation.md) |
+| **Epic 05: Identity Federation & External Providers** | **US-10:** Conectores Sociales (Google & Microsoft)<br>**US-11:** Vinculación JIT de Cuentas Externas<br>**US-33:** Registro de Proveedores por Tenant (`AES-256-GCM`)<br>**US-34:** Adaptador OIDC Genérico Multi-Tenant | OpenID Connect Federation, Account Linking, JIT Provisioning, AES-256-GCM Secret Cipher, SSRF Guard, Dynamic OIDC | [Ver Capítulo 05 ➡️](./05-identity-federation.md) |
 | **Epic 06: Cloud Infrastructure & Automated Delivery** | **US-12:** Infraestructura como Código (Terraform)<br>**US-13:** Ingress Seguro con Let's Encrypt<br>**US-14:** Helm Chart de Grado Empresarial<br>**US-15:** Pipeline Automatizado de CI/CD | Terraform HCL, Kubernetes Ingress, Helm v3, GitHub Actions | [Ver Capítulo 06 ➡️](./06-cloud-infrastructure.md) |
 | **Epic 07: FinTech Compliance & Defense in Depth** | **US-16:** Secretos Azure KeyVault CSI<br>**US-17:** Conexiones TLS Encriptadas (mTLS/SSL)<br>**US-18:** Network Policies Zero-Trust en K8s<br>**US-19:** Registro de Auditoría Inmutable (WORM) | K8s Secrets Store CSI, TLS 1.3, Calico/K8s NetPol, WORM Audit | [Ver Capítulo 07 ➡️](./07-fintech-compliance.md) |
 | **Epic 08: Distributed Observability & Resiliency** | **US-20:** Trazabilidad Distribuida W3C TraceContext<br>**US-21:** Telemetría OpenTelemetry & Métricas RED<br>**US-22:** Sondas de Salud e Inspección de Infraestructura | OpenTelemetry SDK, Prometheus Metrics, RFC K8s Probes | [Ver Capítulo 08 ➡️](./08-distributed-observability.md) |
 | **Epic 09: Enterprise M3 Visual Portal** | **US-23:** Sistema de Diseño M3, Storybook 10 & Bounded Shell<br>**US-24:** Superficie `/auth`: Portal, OIDC/JWKS, PKCE S256 & Federación<br>**US-25:** Superficie `/tenant`: Client Registry, M2M & RLS Lab<br>**US-26:** Consola `/platform`: Gobernanza Root, Bóveda, Auditoría & SRE<br>**US-27:** Showcase Interactivo & Capturas Playwright Retina (`01..09`) | React 19, Material Design 3 Tokens, Storybook 10, Playwright, SRE | [Ver Capítulo 09 ➡️](./09-enterprise-ui-portal.md) |
+| **Epic 10: Políticas Dinámicas por Tenant y Onboarding Adaptativo** | **US-30:** Agregado `TenantPolicy` & Lockout Guard<br>**US-31:** Contrato Público Dinámico (`/api/v1/auth/config` + `ETag`)<br>**US-32:** Onboarding Dinámico & Validación E.164 en `/auth` | Public Discovery, `ETag` / `304`, Anti-Enumeration Binding Guard, Lockout Guard, E.164 Phone Validation, ADR-0010 | [Ver Capítulo 10 ➡️](./10-tenant-policies-onboarding.md) |
 
 ---
 

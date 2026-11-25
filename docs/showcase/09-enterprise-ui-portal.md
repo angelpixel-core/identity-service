@@ -86,6 +86,19 @@ Estado en vivo de **Google OIDC** y **Microsoft Entra ID**, popover informativo 
 
 ![Flujo Federación Social en /auth](./assets/screenshots/us24_auth_federation_providers.png)
 
+#### 5. Onboarding Dinámico por Política (`US-32` en `/auth`)
+Adaptación en tiempo real del formulario `/auth` según `/api/v1/auth/config` (campo `Teléfono (E.164)` + aviso KYC, y bloqueo cuando `password: false`; ver detalle en [Capítulo 10: Políticas Dinámicas por Tenant](./10-tenant-policies-onboarding.md#-us-32-onboarding-dinámico-y-validación-estricta-en-auth-y-backend)):
+
+![Onboarding dinámico en /auth con Teléfono E.164 obligatorio y aviso KYC](./assets/screenshots/us32_auth_dynamic_phone_kyc.png)
+
+![Onboarding en /auth con método password deshabilitado por política](./assets/screenshots/us32_auth_password_disabled.png)
+
+#### 5. Federación OIDC Dinámica Multi-Tenant (`US-34`)
+- Renderizado dinámico de botones de IdP corporativos (como **Okta Corporate**) a partir de `GET /api/v1/auth/config` sin exponer secretos del cliente en el navegador.
+- Inicio de flujo federado contra `/api/v1/auth/federation/:provider/login` con `state` HMAC-SHA256 y verificación E2E en `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 10).
+
+![Botón Dinámico de Okta Corporate en /auth (US-34)](./assets/screenshots/us34_auth_dynamic_federation.png)
+
 ---
 
 ## 🏢 US-25: Superficie `/tenant` — Client Registry, M2M Playground & Laboratorio RLS/Cross-Tenant
@@ -129,6 +142,25 @@ Inspección en `/tenant` mediante el botón **`Dominios`** de `ClientRegistryPan
 
 ![Inspección de dominios y bindings autorizados en /tenant](./assets/screenshots/us29_tenant_client_bindings.png)
 
+#### 6. Inspector Público `/api/v1/auth/config` (`US-31` en `Política de Identidad`)
+Consulta en vivo del contrato público sin secretos desde `TenantPolicyPanel.tsx` mostrando `HTTP 200`, `ETag`, `Cache-Control` y su proyección JSON (ver detalle en [Capítulo 10: Políticas Dinámicas por Tenant](./10-tenant-policies-onboarding.md#-us-31-contrato-público-dinámico-del-flujo-de-autenticación-get-apiv1authconfig)):
+
+![Inspector Público /api/v1/auth/config en /tenant](./assets/screenshots/us31_tenant_auth_config_inspector.png)
+
+![Contrato JSON GET /api/v1/auth/config en Chromium](./assets/screenshots/us31_public_auth_config.png)
+
+#### 5. Editor de Política de Tenant (`US-30`)
+- Configuración interactiva de `requiredAttributes.phone`, `kycPolicy` y `allowedAuthMethods` con *Lockout Guard* (impide deshabilitar todos los métodos) y modo lectura estricto para `member`.
+- Trazabilidad E2E: `tests/e2e/web/tenant_console.spec.tsx` (Scenario 6).
+
+![Editor de Política de Tenant en Tenant Console (US-30)](./assets/screenshots/us30_tenant_policy_editor.png)
+
+#### 6. Panel de Proveedores Federados por Tenant (`US-33`)
+- Registro y eliminación de proveedores OIDC corporativos propios del tenant con cifrado `AES-256-GCM` en servidor, validación `https://` anti-SSRF y cero exposición de `clientSecret` en el cliente.
+- Trazabilidad E2E: `tests/e2e/web/tenant_console.spec.tsx` (Scenario 8).
+
+![Panel de Proveedores Federados en Tenant Console (US-33)](./assets/screenshots/us33_tenant_federated_providers.png)
+
 ---
 
 ## 🛡️ US-26: Consola `/platform` — Gobernanza Root, Bóveda Criptográfica, Auditoría & SRE
@@ -169,13 +201,25 @@ Gestión transversal para operadores `system:superadmin` de vinculaciones N:M en
 
 ![Consola Root de Bindings N:M en /platform](./assets/screenshots/us29_platform_bindings_nm.png)
 
+#### 5. Gestión Global de Políticas por Tenant (`US-30`)
+- Administración cross-tenant exclusiva para `system:superadmin` sobre políticas de atributos requeridos, KYC y métodos de autenticación por inquilino.
+- Trazabilidad E2E: `tests/e2e/web/platform_console.spec.tsx` (Scenario 7).
+
+![Gestión de Políticas por Tenant en Platform Console (US-30)](./assets/screenshots/us30_platform_tenant_policies.png)
+
+#### 6. Gobierno Multi-Tenant de Proveedores IdP (`US-33`)
+- Supervisión global y gestión de proveedores OIDC corporativos por tenant con proyección *zero-secret* y auditoría forense redactada.
+- Trazabilidad E2E: `tests/e2e/web/platform_console.spec.tsx` (Scenario 8).
+
+![Gestión Multi-Tenant de Proveedores IdP en Platform Console (US-33)](./assets/screenshots/us33_platform_federated_providers.png)
+
 ---
 
 ## 📸 US-27: Showcase Interactivo & Evidencia Visual (`docs/showcase/01..09`)
 
 `US-27` cierra `EPIC-09` integrando walkthroughs visuales y capturas Playwright en alta densidad Retina (`deviceScaleFactor: 2`) contra el backend (`:4000`) y el frontend (`:3000`) reales a lo largo de los **9 capítulos** del Showcase:
 
-- **Automatización Playwright (`scripts/capture-showcase.ts` / `npm run showcase:capture`):** Genera las 9 capturas base `ui_*.png` (`ui_auth_account.png`, `ui_auth_oidc_jwks.png`, `ui_auth_pkce_sessions.png`, `ui_auth_federation.png`, `ui_tenant_clients_m2m.png`, `ui_tenant_rls_lab.png`, `ui_platform_posture.png`, `ui_platform_vault_audit.png`, `ui_platform_sre.png`), las 3 capturas del ciclo de vida de clientes `US-28` (`us28_tenant_client_created.png`, `us28_tenant_secret_rotation.png`, `us28_tenant_client_suspended.png`) y las 2 capturas de bindings N:M `US-29` (`us29_tenant_client_bindings.png`, `us29_platform_bindings_nm.png`) sin mocks ni exposición de secretos en claro.
+- **Automatización Playwright (`scripts/capture-showcase.ts` / `npm run showcase:capture`):** Genera las 9 capturas base `ui_*.png` (`ui_auth_account.png`, `ui_auth_oidc_jwks.png`, `ui_auth_pkce_sessions.png`, `ui_auth_federation.png`, `ui_tenant_clients_m2m.png`, `ui_tenant_rls_lab.png`, `ui_platform_posture.png`, `ui_platform_vault_audit.png`, `ui_platform_sre.png`), las 3 capturas del ciclo de vida de clientes `US-28` (`us28_tenant_client_created.png`, `us28_tenant_secret_rotation.png`, `us28_tenant_client_suspended.png`), las 2 capturas de bindings N:M `US-29` (`us29_tenant_client_bindings.png`, `us29_platform_bindings_nm.png`), las 2 capturas de contrato público `US-31` (`us31_tenant_auth_config_inspector.png`, `us31_public_auth_config.png`) y las 2 capturas de onboarding dinámico `US-32` (`us32_auth_dynamic_phone_kyc.png`, `us32_auth_password_disabled.png`) sin mocks ni exposición de secretos en claro.
 - **Cobertura Integral `01..09`:** Cada capítulo (`01`–`08`) incluye la sección `### 🖥️ Interfaz Visual (UI) & Walkthrough en Navegador`, y el capítulo `09` consolida la arquitectura M3, Storybook 10 y el walkthrough detallado de `US-23` a `US-27` con verificación de enlaces (`0` enlaces rotos).
 
 ---

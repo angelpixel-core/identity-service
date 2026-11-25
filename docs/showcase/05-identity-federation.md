@@ -1,13 +1,19 @@
 ---
 title: "Capítulo 05: Federación de Identidad OIDC & Aprovisionamiento JIT"
 epic: "EPIC-05"
-description: "Documentación interactiva, walkthrough técnico y recetas de verificación para Conectores OIDC Externos (Google & Microsoft Entra ID), vinculación automática de cuentas (Account Linking) y aprovisionamiento Just-In-Time (US-10 y US-11)."
+description: "Documentación interactiva, walkthrough técnico y recetas de verificación para Conectores OIDC Externos (Google & Microsoft Entra ID), Account Linking/JIT (US-10, US-11), Registro de Proveedores Federados por Tenant con AES-256-GCM (US-33) y Adaptador OIDC Genérico Multi-Tenant (US-34)."
 user_stories:
   - id: "US-10"
     name: "Conectores OIDC Externos (Google & Microsoft Entra ID)"
     status: "completed"
   - id: "US-11"
     name: "Vinculación Automática de Cuentas & Aprovisionamiento JIT"
+    status: "completed"
+  - id: "US-33"
+    name: "Per-Tenant Federated Provider Registry (AES-256-GCM & Zero-Secret)"
+    status: "completed"
+  - id: "US-34"
+    name: "Generic OIDC Adapter & Multi-Tenant Runtime Resolution"
     status: "completed"
 architecture_pattern: "Vertical Slice + Hexagonal (DDD) + Ports & Adapters"
 security_standards:
@@ -16,9 +22,11 @@ security_standards:
   - "Cryptographic Replay Defense (OIDC Nonce)"
   - "Remote JWKS Signature Verification (RS256 with Exponential Backoff & Cooldown)"
   - "Verified Email Account Linking Guard (Anti-Pre-Hijacking)"
-  - "PostgreSQL 16 Row-Level Security (federated_identities)"
+  - "PostgreSQL 16 Row-Level Security (federated_identities & tenant_federated_providers)"
+  - "AES-256-GCM Secret Encryption at Rest (Per-Tenant IdP Secrets)"
+  - "SSRF / HTTPS Issuer Guard & Cross-Tenant IdP Isolation"
 created_at: "2026-11-18"
-updated_at: "2026-11-18"
+updated_at: "2026-11-25"
 tags:
   - federation
   - oidc
@@ -26,6 +34,10 @@ tags:
   - microsoft-entra
   - account-linking
   - jit-provisioning
+  - per-tenant-idp
+  - aes-256-gcm
+  - generic-oidc-adapter
+  - okta
 ---
 
 # Capítulo 05: Federación de Identidad OIDC & Aprovisionamiento JIT
@@ -46,6 +58,8 @@ Este capítulo documenta la arquitectura e implementación del **Épico 05: Fede
 | :--- | :--- | :---: |
 | **US-10** | Conectores OIDC Externos (Google & Microsoft Entra ID) con Validación Criptográfica de Estado y JWKS | ✅ En Producción |
 | **US-11** | Vinculación Automática de Cuentas (Account Linking) y Aprovisionamiento Just-In-Time (JIT) Multi-Tenant | ✅ En Producción |
+| **US-33** | Registro de Proveedores Federados por Tenant (`AES-256-GCM`, Zero-Secret Projection y SSRF Guard) | ✅ En Producción |
+| **US-34** | Adaptador OIDC Genérico y Resolución Multi-Tenant en Tiempo de Ejecución (`/auth/config` & `/auth/federation/:provider`) | ✅ En Producción |
 
 ---
 
@@ -630,6 +644,214 @@ npx jest tests/acceptance/step_defs/test_federated_account_linking_steps.ts
   }
 }
 ```
+
+---
+
+## 🏢 US-33: Registro de Proveedores Federados por Tenant (`AES-256-GCM` & Zero-Secret)
+
+### 1. Arquitectura Hexagonal, Cifrado `AES-256-GCM` & Guardrails
+
+`US-33` habilita a cada organización (`tenant_admin` o `system:superadmin`) a registrar sus propios proveedores OIDC corporativos (como Okta, Auth0 o Keycloak) sin intervención manual en código ni exposición de secretos:
+
+1. **Agregado `TenantFederatedProvider` & Validación Anti-SSRF:** Normaliza `providerKey`, valida que `issuerUrl` utilice `https://` (rechazando IPs privadas de metadata o HTTP inseguro) y exige roles autorizados dentro del contexto del tenant.
+2. **Cifrado en Reposo (`AesGcmSecretCipher`) & Proyección *Zero-Secret*:** El `clientSecret` se cifra en el servidor con **AES-256-GCM** e IV aleatorio por operación antes de persistirse en `tenant_federated_providers` (con PostgreSQL RLS). Las respuestas de `POST` y `GET` devuelven exclusivamente `hasClientSecret: true`, sin exponer jamás el secreto plano ni el ciphertext.
+3. **Invalidación de Caché & Auditoría Redactada:** Cada mutación invalida automáticamente la caché de `GET /api/v1/auth/config` (`US-31`) y registra el evento de seguridad con secretos redactados.
+
+```mermaid
+flowchart LR
+    Admin["tenant_admin / system:superadmin"] -->|"POST/GET/DELETE /api/v1/tenants/:tenantId/federation/providers"| Guard["RBAC & Cross-Tenant Guard"]
+    Guard -->|"Otro tenant"| Deny["HTTP 403 Forbidden"]
+    Guard -->|"Autorizado"| Entity["TenantFederatedProvider (HTTPS / Anti-SSRF)"]
+    Entity -->|"HTTP / IP privada"| Bad["HTTP 400 validation_error"]
+    Entity -->|"Válido"| Cipher["AesGcmSecretCipher (AES-256-GCM + Random IV)"]
+    Cipher --> DB[("PostgreSQL tenant_federated_providers (RLS)")]
+    DB -->|"Proyección Zero-Secret"| Resp["201 / 200 (hasClientSecret: true) + Cache Invalidation"]
+```
+
+---
+
+### 2. Evidencia Real en Vivo (`http://localhost:4000`)
+
+#### A. Registro de Proveedor OIDC (`POST /api/v1/tenants/acme-corp/federation/providers` → `201 Created`)
+
+```json
+{
+  "id": "f17dc444-99cc-4238-b3bf-2acdfb8321ed",
+  "tenantId": "acme-corp",
+  "providerKey": "okta-live-1795624228823",
+  "displayName": "Okta Corporate Live",
+  "protocol": "oidc",
+  "issuerUrl": "https://acme.okta.com/oauth2/default",
+  "authorizationEndpoint": "https://acme.okta.com/oauth2/default/v1/authorize",
+  "tokenEndpoint": "https://acme.okta.com/oauth2/default/v1/token",
+  "jwksUri": "https://acme.okta.com/oauth2/default/v1/keys",
+  "clientId": "okta-b2b-live",
+  "hasClientSecret": true,
+  "scopes": ["openid", "profile", "email"],
+  "enabled": true,
+  "createdAt": "2026-11-25T16:30:28.952Z",
+  "updatedAt": "2026-11-25T16:30:28.952Z"
+}
+```
+
+#### B. Listado Aislado al Tenant (`GET /api/v1/tenants/acme-corp/federation/providers` → `200 OK`)
+
+```json
+{
+  "tenantId": "acme-corp",
+  "count": 2,
+  "providers": [
+    {
+      "id": "7475d112-b8e1-403b-9cd2-4620948e512b",
+      "tenantId": "acme-corp",
+      "providerKey": "okta-corp",
+      "displayName": "Okta Corporate",
+      "protocol": "oidc",
+      "issuerUrl": "https://acme.okta.com/oauth2/default",
+      "authorizationEndpoint": null,
+      "tokenEndpoint": null,
+      "jwksUri": null,
+      "clientId": "okta-b2b-showcase-01",
+      "hasClientSecret": true,
+      "scopes": ["openid", "email", "profile"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+#### C. Guardrail Anti-SSRF / HTTPS Negativo (`400 Bad Request` — `validation_error`)
+
+```json
+{
+  "error": "validation_error",
+  "message": "Invalid issuerUrl \"http://169.254.169.254/latest/meta-data\": must use https:// (or http://localhost in dev/test)"
+}
+```
+
+#### D. Aislamiento Cross-Tenant Negativo (`403 Forbidden`)
+
+Un administrador de `acme-corp` intentando registrar un IdP en `globex` recibe:
+
+```json
+{
+  "error": "Forbidden: Token does not belong to the requested tenant context"
+}
+```
+
+---
+
+### 3. Recorrido Visual en Consola (`/tenant` y `/platform`)
+
+![Panel de Proveedores Federados en Tenant Console](./assets/screenshots/us33_tenant_federated_providers.png)
+
+![Gestión Multi-Tenant de Proveedores IdP en Platform Console](./assets/screenshots/us33_platform_federated_providers.png)
+
+---
+
+## 🔌 US-34: Adaptador OIDC Genérico y Resolución Multi-Tenant en Tiempo de Ejecución
+
+### 1. Arquitectura de Resolución Multi-Tenant & `GenericOidcAdapter`
+
+`US-34` conecta el registro de proveedores por tenant (`US-33`) con el flujo público de `/auth` (`US-31`), eliminando adaptadores rígidos por proveedor:
+
+1. **`TenantFederatedProviderResolver`:** Resuelve dinámicamente el proveedor solicitado por `tenant_id` y `providerKey`, descifrando en memoria el `clientSecret` mediante `AesGcmSecretCipher` cuando existe un override del tenant y haciendo *fallback* a los proveedores globales (`google`, `microsoft`).
+2. **`GenericOidcAdapter`:** Descubre `.well-known/openid-configuration` (con caché TTL en memoria), construye la URL de autorización con `state` firmado HMAC-SHA256 y `nonce` criptográfico, canjea el `code` en `token_endpoint` y verifica el `id_token` RS256 contra `jwks_uri`.
+3. **Claim `provider` & Guardrails:** Emite el JWT final con el claim `provider` correspondiente (ej. `"okta-corp"`), rechaza tokens externos sin correo verificado (`401 invalid_grant`) y bloquea proveedores no registrados o deshabilitados en el tenant (`400 invalid_request`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Usuario en /auth
+    participant Config as GET /api/v1/auth/config
+    participant Login as GET /api/v1/auth/federation/:provider/login
+    participant Resolver as TenantFederatedProviderResolver
+    participant Adapter as GenericOidcAdapter (Discovery + JWKS)
+    participant IdP as IdP Corporativo (ej. Okta)
+
+    User->>Config: ?client_id=portal-web&tenant_id=acme-corp
+    Config-->>User: federatedProviders: [google, microsoft, okta-corp] (Zero-Secret)
+    User->>Login: /federation/okta-corp/login?tenant_id=acme-corp
+    Login->>Resolver: resolve(acme-corp, okta-corp)
+    Resolver->>Adapter: Config + clientSecret descifrado en memoria
+    Adapter-->>User: authorizationUrl + state (HMAC-SHA256) + nonce
+    User->>IdP: Autenticación en Okta Corporate
+    IdP-->>Login: callback?code=...&state=...
+    Login->>Adapter: exchangeCode & verify RS256 id_token (JWKS + nonce)
+    Adapter-->>User: JWT (tenant_id=acme-corp, provider=okta-corp) + Refresh Cookie
+```
+
+---
+
+### 2. Evidencia Real en Vivo (`http://localhost:4000`)
+
+#### A. Descubrimiento Dinámico (`GET /api/v1/auth/config?client_id=portal-web&tenant_id=acme-corp` → `200 OK`)
+
+```json
+{
+  "bindingId": "c50f9e3d-e0ae-4de4-b4e4-3ee2d1ed6023",
+  "clientId": "portal-web",
+  "tenantId": "acme-corp",
+  "customDomain": "portal.acme-corp.local",
+  "allowedRedirectUris": ["http://localhost:3000/callback"],
+  "allowedCorsOrigins": ["http://localhost:3000"],
+  "requiredFields": ["email", "password"],
+  "allowedAuthMethods": {
+    "password": true,
+    "passkeys": false,
+    "federatedOidc": true
+  },
+  "federatedProviders": [
+    { "id": "google", "displayName": "Google", "protocol": "oidc" },
+    { "id": "microsoft", "displayName": "Microsoft", "protocol": "oidc" },
+    { "id": "okta-corp", "displayName": "Okta Corporate", "protocol": "oidc" }
+  ],
+  "kycRequired": false,
+  "kycMinLevel": "basic"
+}
+```
+
+#### B. Inicio de Login Federado Multi-Tenant (`GET /api/v1/auth/federation/:provider/login` → `200 OK`)
+
+```json
+{
+  "url": "https://acme.okta.com/oauth2/default/v1/authorize?client_id=okta-b2b-live&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fcallback&response_type=code&scope=openid+profile+email&state=eyJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsInJlZGlyZWN0VXJpIjoiaHR0cDovL2xvY2FsaG9zdDozMDAwL2NhbGxiYWNrIiwicHJvdmlkZXIiOiJva3RhLWxpdmUtMTc5NTYyNDIyODgyMyIsIm5vbmNlIjoiYTk1MThmMjEzNDk1NGJmYzAxOTRkZThiMDNhNmU1OTkiLCJjcmVhdGVkQXQiOjE3OTU2MjQyMjg5ODIsImV4cGlyZXNBdCI6MTc5NTYyNDgyODk4Mn0.IkXnzQt1Jf7AToamwSRfYt2H6-wBUtR-2qqRV3O4irE&nonce=a9518f2134954bfc0194de8b03a6e599",
+  "state": "eyJ0ZW5hbnRJZCI6ImFjbWUtY29ycCIsInJlZGlyZWN0VXJpIjoiaHR0cDovL2xvY2FsaG9zdDozMDAwL2NhbGxiYWNrIiwicHJvdmlkZXIiOiJva3RhLWxpdmUtMTc5NTYyNDIyODgyMyIsIm5vbmNlIjoiYTk1MThmMjEzNDk1NGJmYzAxOTRkZThiMDNhNmU1OTkiLCJjcmVhdGVkQXQiOjE3OTU2MjQyMjg5ODIsImV4cGlyZXNBdCI6MTc5NTYyNDgyODk4Mn0.IkXnzQt1Jf7AToamwSRfYt2H6-wBUtR-2qqRV3O4irE",
+  "nonce": "a9518f2134954bfc0194de8b03a6e599"
+}
+```
+
+#### C. Negativo Proveedor No Registrado en el Tenant (`400 Bad Request` — `invalid_request`)
+
+```json
+{
+  "error": "invalid_request",
+  "error_description": "Unsupported identity provider: \"unknown-idp-999\""
+}
+```
+
+---
+
+### 3. Recorrido Visual en `/auth`
+
+![Botón Dinámico de Okta Corporate en /auth](./assets/screenshots/us34_auth_dynamic_federation.png)
+
+---
+
+### 4. Cobertura TDD Consolidada (`US-33` + `US-34` — `10 passed, 10 total` / `49 passed, 49 total`)
+
+| Capa | Suite | Resultado |
+| :--- | :--- | :---: |
+| **Unit (Domain)** | `tests/unit/identity/domain/test_tenant_federated_provider.ts` | `3/3 passed` |
+| **Unit (Infra)** | `tests/unit/identity/infrastructure/federation/test_generic_oidc_adapter.ts` | `2/2 passed` |
+| **Unit (Application)** | `tests/unit/identity/application/federation/test_federated_handlers.ts` | `8/8 passed` |
+| **Integration (US-33 API)** | `tests/integration/identity/interfaces/test_tenant_federated_providers_api.ts` | `3/3 passed` |
+| **Integration (US-34 API)** | `tests/integration/identity/federation/test_generic_tenant_oidc_api.ts` | `3/3 passed` |
+| **Acceptance (BDD US-33)** | `tests/acceptance/step_defs/test_per_tenant_federated_providers_steps.ts` | `3/3 passed` |
+| **Acceptance (BDD US-34)** | `tests/acceptance/step_defs/test_generic_tenant_oidc_federation_steps.ts` | `3/3 passed` |
+| **E2E Web (Tenant Console)** | `tests/e2e/web/tenant_console.spec.tsx` (incluye Scenario 8 `US-33`) | `7/7 passed` |
+| **E2E Web (Platform Console)** | `tests/e2e/web/platform_console.spec.tsx` (incluye Scenario 8 `US-33`) | `7/7 passed` |
+| **E2E Web (Auth Portal)** | `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (incluye Scenario 10 `US-34`) | `10/10 passed` |
 
 ---
 
