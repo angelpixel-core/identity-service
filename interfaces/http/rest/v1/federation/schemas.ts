@@ -14,4 +14,8 @@ export const FederatedCallbackQuerySchema = z.object({
   state: z.string({ error: 'state is required' }).min(1, 'state is required'),
 });
 
-export const ProviderParamSchema = z.enum(['google', 'microsoft']);
+export const ProviderParamSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/, 'Invalid identity provider key');

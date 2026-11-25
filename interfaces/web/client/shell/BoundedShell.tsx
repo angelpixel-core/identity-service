@@ -42,7 +42,14 @@ export function isRootSuperadminSession(session: AuthSession): boolean {
   return roles.includes('superadmin');
 }
 
-export type PlatformNavTab = 'posture' | 'vault' | 'bindings' | 'policies' | 'audit' | 'sre';
+export type PlatformNavTab =
+  | 'posture'
+  | 'vault'
+  | 'bindings'
+  | 'policies'
+  | 'federation'
+  | 'audit'
+  | 'sre';
 
 export interface BoundedShellProps {
   session: AuthSession | null;
@@ -205,6 +212,14 @@ export function BoundedShell({
         href: '/platform#policies',
         icon: RAIL_ICONS.policies,
         active: activePlatformTab === 'policies',
+      },
+      {
+        id: 'federation',
+        label: 'Proveedores IdP',
+        shortCode: 'IDP',
+        href: '/platform#federation',
+        icon: RAIL_ICONS.bindings,
+        active: activePlatformTab === 'federation',
       },
       {
         id: 'audit',

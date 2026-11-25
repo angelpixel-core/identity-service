@@ -45,7 +45,10 @@ export class FederationStateManager {
     if (!params.redirectUri || params.redirectUri.trim() === '') {
       throw new Error('redirectUri is required to generate federation state');
     }
-    if (!params.provider || (params.provider !== 'google' && params.provider !== 'microsoft')) {
+    if (
+      !params.provider ||
+      !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(params.provider.trim().toLowerCase())
+    ) {
       throw new Error(`Invalid provider: "${params.provider}"`);
     }
 

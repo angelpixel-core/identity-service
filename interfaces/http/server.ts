@@ -60,7 +60,17 @@ import {
 } from '../../src/contexts/identity/application/commands/manage_client_tenant_binding/handler';
 import { ResolveClientTenantContextQueryHandler } from '../../src/contexts/identity/application/queries/resolve_client_tenant_context/handler';
 import { GetPublicAuthConfigQueryHandler } from '../../src/contexts/identity/application/queries/get_public_auth_config/handler';
-import { DefaultTenantFederatedProvidersAdapter } from '../../src/contexts/identity/application/ports/federation/tenant_federated_providers_port';
+import { CompositeTenantFederatedProvidersAdapter } from '../../src/contexts/identity/application/ports/federation/tenant_federated_providers_port';
+import { TenantFederatedProviderRepositoryPort } from '../../src/contexts/identity/domain/ports/repositories/tenant_federated_provider_repository_port';
+import { SecretCipherPort } from '../../src/contexts/identity/domain/ports/security/secret_cipher_port';
+import { AesGcmSecretCipher } from '../../src/contexts/identity/infrastructure/security/aes_gcm_secret_cipher';
+import { InMemoryTenantFederatedProviderRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/tenant_federated_provider/in_memory_repository';
+import { PostgresTenantFederatedProviderRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/tenant_federated_provider/postgres_repository';
+import { RegisterTenantFederatedProviderCommandHandler } from '../../src/contexts/identity/application/commands/register_tenant_federated_provider/handler';
+import { RemoveTenantFederatedProviderCommandHandler } from '../../src/contexts/identity/application/commands/remove_tenant_federated_provider/handler';
+import { ListTenantFederatedProvidersQueryHandler } from '../../src/contexts/identity/application/queries/list_tenant_federated_providers/handler';
+import { TenantFederationController } from './rest/v1/identity/tenant_federation_controller';
+import { TenantFederatedProviderResolver } from '../../src/contexts/identity/application/services/tenant_federated_provider_resolver';
 import { ClientBindingsController } from './rest/v1/oauth2/client_bindings_controller';
 import { TenantPolicyRepositoryPort } from '../../src/contexts/identity/domain/ports/tenant_policy_repository_port';
 import { PostgresTenantPolicyRepository } from '../../src/contexts/identity/infrastructure/persistence/repositories/tenant_policy/postgres_tenant_policy_repository';
@@ -180,6 +190,9 @@ export interface AppDependencies {
   transactionRunner?: TenantTransactionRunnerPort;
   auditLogger?: SecurityAuditLoggerPort;
   federatedIdentityRepository?: FederatedIdentityRepositoryPort;
+  tenantFederatedProviderRepository?: TenantFederatedProviderRepositoryPort;
+  tenantFederatedProviderResolver?: TenantFederatedProviderResolver;
+  secretCipher?: SecretCipherPort;
   googleOidcAdapter?: ExternalIdentityProviderPort;
   microsoftEntraAdapter?: ExternalIdentityProviderPort;
   federationStateManager?: FederationStateManager;
@@ -389,6 +402,17 @@ export function createApp(deps?: AppDependencies): Express {
       federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
     }
   }
+
+  let tenantFederatedProviderRepository = deps?.tenantFederatedProviderRepository;
+  if (!tenantFederatedProviderRepository) {
+    const activePool = getPool();
+    if (activePool && process.env.NODE_ENV !== 'test') {
+      tenantFederatedProviderRepository = new PostgresTenantFederatedProviderRepository(activePool);
+    } else {
+      tenantFederatedProviderRepository = new InMemoryTenantFederatedProviderRepository();
+    }
+  }
+  const secretCipher = deps?.secretCipher ?? new AesGcmSecretCipher();
 
   let transactionRunner = deps?.transactionRunner;
   if (!transactionRunner) {
@@ -700,14 +724,24 @@ export function createApp(deps?: AppDependencies): Express {
     }
   }
 
+  const tenantFederatedProviderResolver =
+    deps?.tenantFederatedProviderResolver ??
+    new TenantFederatedProviderResolver(
+      tenantFederatedProviderRepository,
+      secretCipher,
+      federationProviders
+    );
+
   const generateFederatedLoginUrlHandler = new GenerateFederatedLoginUrlQueryHandler(
     federationProviders,
-    federationStateManager
+    federationStateManager,
+    tenantFederatedProviderResolver
   );
   const processFederatedCallbackHandler = new ProcessFederatedCallbackCommandHandler(
     federationProviders,
     federationStateManager,
-    auditLogger
+    auditLogger,
+    tenantFederatedProviderResolver
   );
   const linkOrProvisionFederatedUserHandler = new LinkOrProvisionFederatedUserCommandHandler(
     userRepository,
@@ -733,12 +767,29 @@ export function createApp(deps?: AppDependencies): Express {
     clientRepository,
     auditLogger
   );
-  const federatedProvidersPort = new DefaultTenantFederatedProvidersAdapter(federationProviders);
+  const federatedProvidersPort = new CompositeTenantFederatedProvidersAdapter(
+    federationProviders,
+    tenantFederatedProviderRepository
+  );
   const getPublicAuthConfigHandler = new GetPublicAuthConfigQueryHandler(
     resolveClientTenantContextHandler,
     tenantPolicyRepository,
     federatedProvidersPort,
     cacheProvider
+  );
+  const tenantFederationController = new TenantFederationController(
+    new ListTenantFederatedProvidersQueryHandler(tenantFederatedProviderRepository),
+    new RegisterTenantFederatedProviderCommandHandler(
+      tenantFederatedProviderRepository,
+      secretCipher,
+      auditLogger,
+      cacheProvider
+    ),
+    new RemoveTenantFederatedProviderCommandHandler(
+      tenantFederatedProviderRepository,
+      auditLogger,
+      cacheProvider
+    )
   );
   const clientBindingsController = new ClientBindingsController(
     clientTenantBindingRepository,
@@ -1175,6 +1226,24 @@ export function createApp(deps?: AppDependencies): Express {
     tenantContextMiddleware,
     authMiddleware,
     tenantPolicyController.upsertPolicy
+  );
+  app.get(
+    '/api/v1/tenants/:tenantId/federation/providers',
+    tenantContextMiddleware,
+    authMiddleware,
+    tenantFederationController.listProviders
+  );
+  app.post(
+    '/api/v1/tenants/:tenantId/federation/providers',
+    tenantContextMiddleware,
+    authMiddleware,
+    tenantFederationController.upsertProvider
+  );
+  app.delete(
+    '/api/v1/tenants/:tenantId/federation/providers/:providerKey',
+    tenantContextMiddleware,
+    authMiddleware,
+    tenantFederationController.removeProvider
   );
   app.post(
     '/api/v1/oauth2/clients/validate',

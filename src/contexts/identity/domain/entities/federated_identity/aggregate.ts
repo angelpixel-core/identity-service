@@ -139,7 +139,10 @@ export class FederatedIdentity {
   }
 
   private validateProvider(provider: FederatedProviderId): void {
-    if (provider !== 'google' && provider !== 'microsoft') {
+    if (
+      typeof provider !== 'string' ||
+      !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(provider.trim().toLowerCase())
+    ) {
       throw new DomainValidationError(`Invalid or unsupported federated provider: "${provider}"`);
     }
   }

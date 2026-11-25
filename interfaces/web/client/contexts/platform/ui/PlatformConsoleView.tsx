@@ -6,8 +6,16 @@ import { AuditExplorerPanel } from './AuditExplorerPanel';
 import { SreObservabilityPanel } from './SreObservabilityPanel';
 import { ClientBindingsPanel } from './ClientBindingsPanel';
 import { TenantPoliciesPanel } from './TenantPoliciesPanel';
+import { TenantFederatedProvidersPanel } from '../../tenant/ui/TenantFederatedProvidersPanel';
 
-export type PlatformTab = 'posture' | 'vault' | 'bindings' | 'policies' | 'audit' | 'sre';
+export type PlatformTab =
+  | 'posture'
+  | 'vault'
+  | 'bindings'
+  | 'policies'
+  | 'federation'
+  | 'audit'
+  | 'sre';
 
 export interface PlatformConsoleViewProps {
   session: AuthSession;
@@ -20,6 +28,7 @@ const PLATFORM_TABS: readonly { id: PlatformTab; label: string }[] = [
   { id: 'vault', label: 'Bóveda Criptográfica' },
   { id: 'bindings', label: 'Bindings N:M' },
   { id: 'policies', label: 'Tenant Policies' },
+  { id: 'federation', label: 'Proveedores IdP' },
   { id: 'audit', label: 'Auditoría Forense' },
   { id: 'sre', label: 'Observabilidad SRE' },
 ];
@@ -72,6 +81,9 @@ export function PlatformConsoleView({
       {activeTab === 'vault' && <VaultAndRotationPanel session={session} />}
       {activeTab === 'bindings' && <ClientBindingsPanel session={session} />}
       {activeTab === 'policies' && <TenantPoliciesPanel session={session} />}
+      {activeTab === 'federation' && (
+        <TenantFederatedProvidersPanel session={session} allowTenantSwitch />
+      )}
       {activeTab === 'audit' && <AuditExplorerPanel session={session} />}
       {activeTab === 'sre' && <SreObservabilityPanel />}
     </div>

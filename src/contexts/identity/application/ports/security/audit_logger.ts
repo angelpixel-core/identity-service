@@ -38,6 +38,8 @@ export type SecurityAuditEventType =
   | 'KYC_SESSION_STARTED'
   | 'KYC_VERIFICATION_UPDATED'
   | 'KYC_WEBHOOK_SIGNATURE_INVALID'
+  | 'TENANT_IDP_REGISTERED'
+  | 'TENANT_IDP_REMOVED'
   // Compatibilidad hacia atrás (legacy snake_case)
   | 'client_authenticated'
   | 'client_authentication_failed'

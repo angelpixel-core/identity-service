@@ -30,6 +30,11 @@ interface DynamicAuthConfig {
   };
   readonly kycRequired: boolean;
   readonly kycMinLevel: string;
+  readonly federatedProviders?: readonly {
+    readonly id: string;
+    readonly displayName: string;
+    readonly protocol: 'oidc' | 'oauth2';
+  }[];
 }
 
 export interface AuthPortalViewProps {
@@ -286,6 +291,8 @@ export function AuthPortalView({
         {activeTab === 'pkce' && <PkceAndSessionsPanel />}
         {activeTab === 'federation' && federationEnabled && (
           <FederationPanel
+            defaultTenantId={defaultTenantId}
+            federatedProviders={authConfig?.federatedProviders}
             onFederatedSession={(fedSession) => {
               onSessionChange(fedSession);
               setActiveTab('account');

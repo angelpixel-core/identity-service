@@ -23,7 +23,7 @@ export interface AuthSession {
   readonly phone?: string | null;
   readonly name?: string;
   readonly picture?: string;
-  readonly provider?: 'google' | 'microsoft' | 'local';
+  readonly provider?: string;
 }
 
 export interface UserProfile {
@@ -35,7 +35,7 @@ export interface UserProfile {
   readonly phone?: string | null;
   readonly name?: string;
   readonly picture?: string;
-  readonly provider?: 'google' | 'microsoft' | 'local';
+  readonly provider?: string;
   readonly createdAt?: Date | string;
   readonly updatedAt?: Date | string;
 }

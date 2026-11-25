@@ -1,4 +1,4 @@
-export type FederatedProviderId = 'google' | 'microsoft';
+export type FederatedProviderId = string;
 
 export interface FederatedUserProfile {
   provider: FederatedProviderId;

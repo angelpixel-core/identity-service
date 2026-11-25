@@ -4,8 +4,9 @@ import { ClientRegistryPanel } from './ClientRegistryPanel';
 import { M2mPlaygroundPanel } from './M2mPlaygroundPanel';
 import { RlsAndCrossTenantLabPanel } from './RlsAndCrossTenantLabPanel';
 import { TenantPolicyPanel } from './TenantPolicyPanel';
+import { TenantFederatedProvidersPanel } from './TenantFederatedProvidersPanel';
 
-export type TenantTab = 'clients' | 'policy' | 'm2m' | 'rls';
+export type TenantTab = 'clients' | 'policy' | 'federation' | 'm2m' | 'rls';
 
 export interface TenantConsoleViewProps {
   session: AuthSession;
@@ -14,6 +15,7 @@ export interface TenantConsoleViewProps {
 const TENANT_TABS: readonly { id: TenantTab; label: string }[] = [
   { id: 'clients', label: 'Clientes & CORS' },
   { id: 'policy', label: 'Política de Identidad' },
+  { id: 'federation', label: 'Proveedores IdP' },
   { id: 'm2m', label: 'M2M Playground' },
   { id: 'rls', label: 'Laboratorio RLS / Cross-Tenant' },
 ];
@@ -47,6 +49,7 @@ export function TenantConsoleView({ session }: TenantConsoleViewProps) {
 
       {activeTab === 'clients' && <ClientRegistryPanel session={session} />}
       {activeTab === 'policy' && <TenantPolicyPanel session={session} />}
+      {activeTab === 'federation' && <TenantFederatedProvidersPanel session={session} />}
       {activeTab === 'm2m' && <M2mPlaygroundPanel />}
       {activeTab === 'rls' && <RlsAndCrossTenantLabPanel session={session} />}
     </div>

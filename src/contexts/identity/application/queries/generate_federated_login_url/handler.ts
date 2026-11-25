@@ -3,6 +3,7 @@ import {
   FederatedProviderId,
 } from '../../../domain/ports/external_identity_provider_port';
 import { FederationStateManager } from '../../../infrastructure/federation/federation_state_manager';
+import { TenantFederatedProviderResolver } from '../../services/tenant_federated_provider_resolver';
 import { GenerateFederatedLoginUrlQuery } from './query';
 
 export interface GenerateFederatedLoginUrlResult {
@@ -14,13 +15,16 @@ export interface GenerateFederatedLoginUrlResult {
 export class GenerateFederatedLoginUrlQueryHandler {
   private readonly providers: Map<FederatedProviderId, ExternalIdentityProviderPort>;
   private readonly stateManager: FederationStateManager;
+  private readonly providerResolver?: TenantFederatedProviderResolver;
 
   constructor(
     providers: ExternalIdentityProviderPort[],
-    stateManager: FederationStateManager
+    stateManager: FederationStateManager,
+    providerResolver?: TenantFederatedProviderResolver
   ) {
     this.providers = new Map(providers.map((p) => [p.providerId, p]));
     this.stateManager = stateManager;
+    this.providerResolver = providerResolver;
   }
 
   public async execute(query: GenerateFederatedLoginUrlQuery): Promise<GenerateFederatedLoginUrlResult> {
@@ -28,13 +32,15 @@ export class GenerateFederatedLoginUrlQueryHandler {
       throw new Error('Provider is required');
     }
 
-    const adapter = this.providers.get(query.provider);
-    if (!adapter) {
-      throw new Error(`Unsupported identity provider: "${query.provider}"`);
-    }
-
     if (!query.tenantId || query.tenantId.trim() === '') {
       throw new Error('tenantId is required');
+    }
+
+    const adapter = this.providerResolver
+      ? await this.providerResolver.resolve(query.tenantId, query.provider)
+      : this.providers.get(query.provider);
+    if (!adapter) {
+      throw new Error(`Unsupported identity provider: "${query.provider}"`);
     }
 
     if (!query.redirectUri || query.redirectUri.trim() === '') {

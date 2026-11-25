@@ -47,7 +47,7 @@ export class FederationController {
       if (!providerResult.success) {
         res.status(400).json({
           error: 'invalid_request',
-          error_description: `Unsupported identity provider: "${req.params.provider}". Allowed: google, microsoft`,
+          error_description: `Unsupported identity provider: "${req.params.provider}"`,
         });
         return;
       }

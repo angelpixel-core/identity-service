@@ -292,4 +292,156 @@ describe('Web UI E2E Spec: US-25 /tenant Console (Clients, M2M & RLS Lab)', () =
       expect(screen.getByTestId('tenant-policy-origin-chip')).toHaveTextContent('Personalizada');
     });
   });
+
+  it('Scenario 7 (US-31): inspects /api/v1/auth/config with ETag and JSON viewer in TenantPolicyPanel', async () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_tenant_admin_02',
+        userId: 'usr_admin_02',
+        email: 'admin@acme-corp.com',
+        tenantId: 'acme-corp',
+        roles: ['tenant_admin'],
+      })
+    );
+    window.history.pushState({}, '', '/tenant');
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string) => {
+      if (url === '/api/v1/tenants/acme-corp/policy') {
+        return Promise.resolve(
+          mockJsonResponse({
+            tenantId: 'acme-corp',
+            requiredAttributes: { phone: false },
+            kycPolicy: { required: false, minLevel: 'basic' },
+            allowedAuthMethods: { password: true, passkeys: true, federatedOidc: true },
+            updatedAt: '2026-11-24T12:00:00.000Z',
+            updatedBy: 'system',
+            isDefault: true,
+          })
+        );
+      }
+      if (url.startsWith('/api/v1/auth/config')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'content-type': 'application/json',
+            etag: '"w/us31-etag-001"',
+            'cache-control': 'private, max-age=60',
+          }),
+          json: async () => ({
+            tenantId: 'acme-corp',
+            clientId: 'portal-web',
+            requiredFields: ['email', 'password'],
+            allowedAuthMethods: { password: true, passkeys: true, federatedOidc: true },
+            kycRequired: false,
+            kycMinLevel: 'basic',
+          }),
+        });
+      }
+      return Promise.resolve(mockJsonResponse({ clients: [] }));
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /Política de Identidad/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('public-auth-config-inspect-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('public-auth-config-inspect-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('public-auth-config-etag-chip')).toHaveTextContent('w/us31-etag-001');
+      expect(screen.getByTestId('public-auth-config-json-viewer')).toHaveTextContent('portal-web');
+    });
+  });
+
+  it('Scenario 8 (US-33): enforces read-only for member and registers/removes IdP for tenant_admin', async () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_member_02',
+        userId: 'usr_member_02',
+        email: 'member@acme-corp.com',
+        tenantId: 'acme-corp',
+        roles: ['member'],
+      })
+    );
+    window.history.pushState({}, '', '/tenant');
+
+    let providers: Array<Record<string, unknown>> = [];
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/v1/tenants/acme-corp/federation/providers' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(mockJsonResponse({ tenantId: 'acme-corp', count: providers.length, providers }));
+      }
+      if (url === '/api/v1/tenants/acme-corp/federation/providers' && init?.method === 'POST') {
+        const parsed = JSON.parse(String(init.body ?? '{}'));
+        const item = {
+          id: 'idp-e2e-01',
+          tenantId: 'acme-corp',
+          providerKey: parsed.providerKey,
+          displayName: parsed.displayName,
+          protocol: parsed.protocol ?? 'oidc',
+          issuerUrl: parsed.issuerUrl,
+          clientId: parsed.clientId,
+          hasClientSecret: true,
+          scopes: parsed.scopes ?? ['openid', 'email', 'profile'],
+          enabled: true,
+        };
+        providers = [item];
+        return Promise.resolve(mockJsonResponse(item, 201));
+      }
+      if (url === '/api/v1/tenants/acme-corp/federation/providers/okta-corp' && init?.method === 'DELETE') {
+        providers = [];
+        return Promise.resolve(mockJsonResponse({ removed: true, providerKey: 'okta-corp' }));
+      }
+      return Promise.resolve(mockJsonResponse({ clients: [] }));
+    });
+
+    const { unmount } = render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /Proveedores IdP/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('idp-readonly-banner')).toBeInTheDocument();
+      expect(screen.queryByTestId('idp-register-submit')).not.toBeInTheDocument();
+    });
+
+    unmount();
+
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_admin_03',
+        userId: 'usr_admin_03',
+        email: 'admin@acme-corp.com',
+        tenantId: 'acme-corp',
+        roles: ['tenant_admin'],
+      })
+    );
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /Proveedores IdP/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('idp-register-submit')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Client Secret/i), {
+      target: { value: 'okta_e2e_secret_01' },
+    });
+    fireEvent.click(screen.getByTestId('idp-register-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('idp-success-banner')).toBeInTheDocument();
+      expect(screen.getByTestId('idp-providers-list')).toHaveTextContent('Secret: AES-256-GCM (hidden)');
+    });
+
+    fireEvent.click(screen.getByTestId('idp-remove-okta-corp'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('idp-providers-list')).toHaveTextContent('Sin proveedores federados personalizados');
+    });
+  });
 });

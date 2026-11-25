@@ -378,4 +378,65 @@ describe('Web UI E2E Spec: US-26 /platform Console (Governance, Vault, Audit & S
       expect(screen.getByTestId('platform-policy-origin-chip')).toHaveTextContent('Personalizada');
     });
   });
+
+  it('Scenario 8 (US-33): manages per-tenant federated providers in /platform Proveedores IdP view', async () => {
+    localStorage.setItem(
+      'identity_session',
+      JSON.stringify({
+        token: 'jwt_root_superadmin_02',
+        userId: 'usr_root_02',
+        email: 'admin@angelpixel.io',
+        tenantId: 'system',
+        roles: ['superadmin'],
+      })
+    );
+    window.history.pushState({}, '', '/platform');
+
+    let providers: Array<Record<string, unknown>> = [];
+
+    (globalThis as any).fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/v1/platform/posture') {
+        return Promise.resolve(mockJsonResponse(SAMPLE_POSTURE));
+      }
+      if (url.endsWith('/federation/providers') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(mockJsonResponse({ tenantId: 'acme-corp', count: providers.length, providers }));
+      }
+      if (url.endsWith('/federation/providers') && init?.method === 'POST') {
+        const parsed = JSON.parse(String(init.body ?? '{}'));
+        const item = {
+          id: 'idp-plat-01',
+          tenantId: 'acme-corp',
+          providerKey: parsed.providerKey,
+          displayName: parsed.displayName,
+          protocol: parsed.protocol ?? 'oidc',
+          issuerUrl: parsed.issuerUrl,
+          clientId: parsed.clientId,
+          hasClientSecret: true,
+          scopes: parsed.scopes ?? ['openid'],
+          enabled: true,
+        };
+        providers = [item];
+        return Promise.resolve(mockJsonResponse(item, 201));
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /Proveedores IdP/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tenant-federated-providers-panel')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Tenant Objetivo/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Client Secret/i), {
+      target: { value: 'platform_okta_secret_01' },
+    });
+    fireEvent.click(screen.getByTestId('idp-register-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('idp-success-banner')).toBeInTheDocument();
+      expect(screen.getByTestId('idp-providers-list')).toHaveTextContent('okta-corp');
+    });
+  });
 });

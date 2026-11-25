@@ -23,8 +23,16 @@ interface FederationStatusPayload {
   };
 }
 
+export interface DynamicFederatedProviderSummary {
+  readonly id: string;
+  readonly displayName: string;
+  readonly protocol: 'oidc' | 'oauth2';
+}
+
 export interface FederationPanelProps {
   onFederatedSession: (session: AuthSession) => void;
+  federatedProviders?: readonly DynamicFederatedProviderSummary[];
+  defaultTenantId?: string;
 }
 
 interface FederatedCallbackResult {
@@ -60,17 +68,21 @@ interface FederatedCallbackResult {
 
 const DEFAULT_DEV_REDIRECT_URI = 'https://portal.angelpixel.io/callback';
 
-function buildLiveRedirectUri(selectedProvider: 'google' | 'microsoft'): string {
+function buildLiveRedirectUri(selectedProvider: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
   return `${origin}/api/v1/auth/federation/${selectedProvider}/callback`;
 }
 
 /**
- * Federación de Identidad Externa (Google & Microsoft Entra ID - US-10 & US-11).
+ * Federación de Identidad Externa (Google, Microsoft Entra ID & IdPs por Tenant - US-10, US-11, US-34).
  */
-export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
-  const [provider, setProvider] = useState<'google' | 'microsoft'>('google');
-  const [tenantId, setTenantId] = useState('acme-corp');
+export function FederationPanel({
+  onFederatedSession,
+  federatedProviders,
+  defaultTenantId = 'acme-corp',
+}: FederationPanelProps) {
+  const [provider, setProvider] = useState<string>('google');
+  const [tenantId, setTenantId] = useState(defaultTenantId);
   const [redirectUri, setRedirectUri] = useState(DEFAULT_DEV_REDIRECT_URI);
   const [authCode, setAuthCode] = useState('dev_google_jit_2026');
   const [stateToken, setStateToken] = useState('');
@@ -146,13 +158,14 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
     };
   }, []);
 
-  const handleStartLogin = async (selectedProvider: 'google' | 'microsoft') => {
+  const handleStartLogin = async (selectedProvider: string) => {
     setProvider(selectedProvider);
     setBusy(true);
     setError(null);
     setAuthorizationUrl(null);
     try {
-      const isLive = Boolean(providerStatus?.providers[selectedProvider]?.configured);
+      const statusMap = providerStatus?.providers as Record<string, ProviderStatusEntry> | undefined;
+      const isLive = Boolean(statusMap?.[selectedProvider]?.configured);
       const effectiveRedirectUri =
         isLive &&
         (redirectUri === DEFAULT_DEV_REDIRECT_URI ||
@@ -355,15 +368,33 @@ export function FederationPanel({ onFederatedSession }: FederationPanelProps) {
       />
 
       <div className="m3-actions-row">
-        <M3Button variant="outlined" onClick={() => handleStartLogin('google')} disabled={busy}>
-          Continuar con Google
-        </M3Button>
-        <M3Button variant="outlined" onClick={() => handleStartLogin('microsoft')} disabled={busy}>
-          Continuar con Microsoft Entra ID
-        </M3Button>
+        {federatedProviders && federatedProviders.length > 0 ? (
+          federatedProviders.map((item) => (
+            <M3Button
+              key={item.id}
+              variant="outlined"
+              onClick={() => handleStartLogin(item.id)}
+              disabled={busy}
+              data-testid={`fed-login-${item.id}`}
+            >
+              Continuar con {item.displayName}
+            </M3Button>
+          ))
+        ) : (
+          <>
+            <M3Button variant="outlined" onClick={() => handleStartLogin('google')} disabled={busy}>
+              Continuar con Google
+            </M3Button>
+            <M3Button variant="outlined" onClick={() => handleStartLogin('microsoft')} disabled={busy}>
+              Continuar con Microsoft Entra ID
+            </M3Button>
+          </>
+        )}
       </div>
 
-      {authorizationUrl && providerStatus?.providers[provider]?.configured && (
+      {authorizationUrl &&
+        (providerStatus?.providers as Record<string, ProviderStatusEntry> | undefined)?.[provider]
+          ?.configured && (
         <div className="m3-stack" style={{ gap: '0.5rem' }}>
           <M3AlertBanner
             severity="info"

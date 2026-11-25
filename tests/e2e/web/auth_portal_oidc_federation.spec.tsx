@@ -462,4 +462,73 @@ describe('Web UI E2E Spec: US-24 /auth Portal (OIDC, PKCE, Refresh & Federation)
       expect(screen.getByTestId('profile-kyc-badge')).toHaveTextContent('KYC: Pendiente');
     });
   });
+
+  it('Scenario 10 (US-34): renders dynamic tenant federated provider buttons from /api/v1/auth/config and starts okta-corp login', async () => {
+    window.history.pushState({}, '', '/auth?client_id=portal-web&tenant_id=acme-corp');
+
+    const fetchMock = jest.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/auth/config')) {
+        return Promise.resolve(
+          mockJsonResponse({
+            tenantId: 'acme-corp',
+            clientId: 'portal-web',
+            requiredFields: ['email', 'password'],
+            allowedAuthMethods: { password: true, passkeys: false, federatedOidc: true },
+            federatedProviders: [
+              { id: 'google', displayName: 'Google', protocol: 'oidc' },
+              { id: 'okta-corp', displayName: 'Okta Corporate', protocol: 'oidc' },
+            ],
+            kycRequired: false,
+            kycMinLevel: 'basic',
+          })
+        );
+      }
+      if (url === '/api/v1/auth/federation/status') {
+        return Promise.resolve(
+          mockJsonResponse({
+            environment: 'test',
+            providers: {
+              google: { configured: false, mode: 'dev_emulator', envVar: 'GOOGLE_CLIENT_ID' },
+              microsoft: { configured: false, mode: 'dev_emulator', envVar: 'MICROSOFT_CLIENT_ID' },
+            },
+          })
+        );
+      }
+      if (url.startsWith('/api/v1/auth/federation/okta-corp/login')) {
+        return Promise.resolve(
+          mockJsonResponse({
+            url: 'https://acme.okta.com/oauth2/default/v1/authorize?state=okta_state_e2e',
+            state: 'okta_state_e2e',
+            nonce: 'okta_nonce_e2e',
+          })
+        );
+      }
+      return Promise.resolve(mockJsonResponse({}));
+    });
+    (globalThis as any).fetch = fetchMock;
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Flujo de Identidad/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Flujo de Identidad/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Federación/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('fed-login-okta-corp')).toHaveTextContent(
+        'Continuar con Okta Corporate'
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('fed-login-okta-corp'));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/auth/federation/okta-corp/login?tenant_id=acme-corp'),
+        expect.any(Object)
+      );
+    });
+  });
 });

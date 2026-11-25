@@ -4,6 +4,7 @@ import {
 } from '../../../domain/ports/external_identity_provider_port';
 import { FederationStateManager } from '../../../infrastructure/federation/federation_state_manager';
 import { SecurityAuditLoggerPort } from '../../ports/security/audit_logger';
+import { TenantFederatedProviderResolver } from '../../services/tenant_federated_provider_resolver';
 import { ProcessFederatedCallbackCommand } from './command';
 import { ProcessFederatedCallbackResult } from './dto';
 
@@ -11,15 +12,18 @@ export class ProcessFederatedCallbackCommandHandler {
   private readonly providers: Map<FederatedProviderId, ExternalIdentityProviderPort>;
   private readonly stateManager: FederationStateManager;
   private readonly auditLogger?: SecurityAuditLoggerPort;
+  private readonly providerResolver?: TenantFederatedProviderResolver;
 
   constructor(
     providers: ExternalIdentityProviderPort[],
     stateManager: FederationStateManager,
-    auditLogger?: SecurityAuditLoggerPort
+    auditLogger?: SecurityAuditLoggerPort,
+    providerResolver?: TenantFederatedProviderResolver
   ) {
     this.providers = new Map(providers.map((p) => [p.providerId, p]));
     this.stateManager = stateManager;
     this.auditLogger = auditLogger;
+    this.providerResolver = providerResolver;
   }
 
   public async execute(
@@ -54,7 +58,9 @@ export class ProcessFederatedCallbackCommandHandler {
       throw new Error(`Provider mismatch between URL (${command.provider}) and state (${statePayload.provider})`);
     }
 
-    const adapter = this.providers.get(providerId);
+    const adapter = this.providerResolver
+      ? await this.providerResolver.resolve(statePayload.tenantId, providerId)
+      : this.providers.get(providerId);
     if (!adapter) {
       throw new Error(`Unsupported identity provider: "${providerId}"`);
     }
