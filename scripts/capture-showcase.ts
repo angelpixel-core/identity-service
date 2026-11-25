@@ -541,9 +541,73 @@ async function runCapture() {
     await us35Page.waitForSelector('[data-testid="passkeys-list"]', { timeout: 10000 });
     await captureWithFocus(us35Page, '[data-testid="passkeys-panel"]', 'us35_auth_passkey_registration.png');
 
+    // 4e. US-36: WebAuthn Passkey Passwordless Login reusing CDP Virtual Authenticator
+    console.log('📸 Capturing US-36 WebAuthn passwordless login with CDP Virtual Authenticator...');
+    await us35Page.click('button:has-text("Cerrar sesión")');
+    await us35Page.goto(
+      `http://localhost:3000/auth?client_id=portal-web&tenant_id=${us35Tenant}`,
+      { waitUntil: 'networkidle', timeout: 15000 }
+    );
+    const switchLoginBtn = await us35Page.$('button:has-text("Iniciar sesión")');
+    if (switchLoginBtn) {
+      await switchLoginBtn.click();
+    }
+    await us35Page.waitForSelector('[data-testid="passkey-login-btn"]', { timeout: 10000 });
+    await us35Page.click('[data-testid="passkey-login-btn"]');
+    await us35Page.waitForSelector('button:has-text("Cerrar sesión")', { timeout: 10000 });
+    await captureWithFocus(us35Page, '[data-testid="passkeys-panel"], .portal-card', 'us36_auth_passkey_login.png');
+
     await cdp.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId });
     await cdp.send('WebAuthn.disable');
     await us35Context.close();
+
+    // 4f. US-37: KYC Verification Session & UserProfileCard Badge in /auth
+    console.log('📸 Capturing US-37 KYC verification session & badge in /auth...');
+    const us37Tenant = `tusherramientas-us37-${Date.now()}`;
+    await fetch('http://localhost:4000/api/v1/clients/portal-web/bindings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${us35Root.token}`,
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        tenantId: us37Tenant,
+        allowedRedirectUris: ['http://localhost:3000/callback'],
+        allowedCorsOrigins: ['http://localhost:3000'],
+      }),
+    });
+    await fetch(`http://localhost:4000/api/v1/tenants/${us37Tenant}/policy`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${us35Root.token}`,
+        'x-tenant-id': 'system',
+      },
+      body: JSON.stringify({
+        requiredAttributes: { phone: false },
+        kycPolicy: { required: true, minLevel: 'biometric_liveness' },
+        allowedAuthMethods: { password: true, passkeys: false, federatedOidc: false },
+      }),
+    });
+
+    const us37Context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: { width: 1440, height: 900 },
+    });
+    const us37Page = await us37Context.newPage();
+    await us37Page.goto(
+      `http://localhost:3000/auth?client_id=portal-web&tenant_id=${us37Tenant}`,
+      { waitUntil: 'networkidle', timeout: 15000 }
+    );
+    await us37Page.fill('input[type="email"]', `kyc.user.${Date.now()}@tusherramientas.com`);
+    await us37Page.fill('input[type="password"]', 'EnterpriseSecurity2026!');
+    await us37Page.click('button[type="submit"]');
+    await us37Page.waitForSelector('[data-testid="start-kyc-btn"]', { timeout: 10000 });
+    await us37Page.click('[data-testid="start-kyc-btn"]');
+    await us37Page.waitForSelector('[data-testid="kyc-session-notice"]', { timeout: 10000 });
+    await captureWithFocus(us37Page, '[data-testid="profile-kyc-badge"]', 'us37_auth_kyc_verification.png');
+    await us37Context.close();
 
     // 5. US-21: Prometheus & OpenTelemetry Structured Metrics Exposition
     console.log('📸 Capturing us21_prometheus_metrics.png from http://localhost:4000/metrics...');
