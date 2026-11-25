@@ -6,7 +6,7 @@ version: "1.0.0"
 openapi_version: "3.1.0"
 status: "production-ready"
 total_epics: 10
-total_user_stories: 34
+total_user_stories: 37
 total_tests_passing: 804
 architecture_stack:
   backend: "Node.js 20 + TypeScript + Express"
@@ -36,7 +36,7 @@ tags:
 [![Tests Passing](https://img.shields.io/badge/Tests-804%20Passing%20(100%25)-success.svg)](#)
 [![Security Standard](https://img.shields.io/badge/Compliance-FinTech%20%26%20Zero--Trust-informational.svg)](#)
 
-Bienvenido al **Interactive Showcase & Walkthrough de Arquitectura** de `identity-service`. Este espacio documenta, demuestra y permite interactuar paso a paso con las **34 Historias de Usuario (User Stories)** distribuidas a lo largo de los **10 Épicos (Epics)** del servicio de identidad de grado empresarial.
+Bienvenido al **Interactive Showcase & Walkthrough de Arquitectura** de `identity-service`. Este espacio documenta, demuestra y permite interactuar paso a paso con las **37 Historias de Usuario (User Stories)** distribuidas a lo largo de los **11 Épicos (Epics)** del servicio de identidad de grado empresarial.
 
 ---
 
@@ -161,6 +161,7 @@ Cada documento modular contiene:
 | **Epic 08: Distributed Observability & Resiliency** | **US-20:** Trazabilidad Distribuida W3C TraceContext<br>**US-21:** Telemetría OpenTelemetry & Métricas RED<br>**US-22:** Sondas de Salud e Inspección de Infraestructura | OpenTelemetry SDK, Prometheus Metrics, RFC K8s Probes | [Ver Capítulo 08 ➡️](./08-distributed-observability.md) |
 | **Epic 09: Enterprise M3 Visual Portal** | **US-23:** Sistema de Diseño M3, Storybook 10 & Bounded Shell<br>**US-24:** Superficie `/auth`: Portal, OIDC/JWKS, PKCE S256 & Federación<br>**US-25:** Superficie `/tenant`: Client Registry, M2M & RLS Lab<br>**US-26:** Consola `/platform`: Gobernanza Root, Bóveda, Auditoría & SRE<br>**US-27:** Showcase Interactivo & Capturas Playwright Retina (`01..09`) | React 19, Material Design 3 Tokens, Storybook 10, Playwright, SRE | [Ver Capítulo 09 ➡️](./09-enterprise-ui-portal.md) |
 | **Epic 10: Políticas Dinámicas por Tenant y Onboarding Adaptativo** | **US-30:** Agregado `TenantPolicy` & Lockout Guard<br>**US-31:** Contrato Público Dinámico (`/api/v1/auth/config` + `ETag`)<br>**US-32:** Onboarding Dinámico & Validación E.164 en `/auth` | Public Discovery, `ETag` / `304`, Anti-Enumeration Binding Guard, Lockout Guard, E.164 Phone Validation, ADR-0010 | [Ver Capítulo 10 ➡️](./10-tenant-policies-onboarding.md) |
+| **Epic 11: Passkeys (WebAuthn/FIDO2) & Verificación KYC Desacoplada** | **US-35:** Registro de Passkeys WebAuthn / FIDO2 (`publicKeyCose` + RLS)<br>**US-36:** Autenticación Passwordless, `signCount` & JWT `amr`<br>**US-37:** Verificación KYC (`KycVerificationPort`), HMAC Webhook & JWT `kyc_verified` | WebAuthn Level 2, Zero-Biometric-PII, RFC 9068 `amr`, HMAC Fail-Closed, ADR-0011 | [Ver Capítulo 11 ➡️](./11-passkeys-and-kyc.md) |
 
 ---
 

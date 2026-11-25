@@ -99,6 +99,24 @@ Adaptación en tiempo real del formulario `/auth` según `/api/v1/auth/config` (
 
 ![Botón Dinámico de Okta Corporate en /auth (US-34)](./assets/screenshots/us34_auth_dynamic_federation.png)
 
+#### 6. Registro de Passkeys WebAuthn / FIDO2 en `/auth` → `Cuenta` (`US-35`)
+- Botón **`Registrar Passkey / Biometría`** visible cuando `TenantPolicy.allowedAuthMethods.passkeys === true` (`US-30`), ejecutando `navigator.credentials.create()` y listando las credenciales registradas sin exponer material biométrico.
+- Trazabilidad E2E: `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 7).
+
+![Registro y Listado de Passkey WebAuthn en /auth (US-35)](./assets/screenshots/us35_auth_passkey_registration.png)
+
+#### 7. Autenticación Passwordless con Passkey en `/auth` (`US-36`)
+- Botón **`Iniciar sesión con Passkey`** (`[data-testid="passkey-login-btn"]`) en `LoginForm`, ejecutando `navigator.credentials.get()` y emitiendo JWT RFC 9068 con `amr: ["hwk", "user"]` + `RefreshSession` HttpOnly.
+- Trazabilidad E2E: `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 8).
+
+![Autenticación Passwordless con Passkey en /auth (US-36)](./assets/screenshots/us36_auth_passkey_login.png)
+
+#### 8. Verificación KYC y Badge en `UserProfileCard` en `/auth` (`US-37`)
+- Renderizado dinámico del badge KYC (`Sin verificar` → `Pendiente` → `Verificado`) y botón **`Iniciar Verificación KYC`** (`[data-testid="start-kyc-btn"]`) cuando `TenantPolicy.kycPolicy.required === true`.
+- Trazabilidad E2E: `tests/e2e/web/auth_portal_oidc_federation.spec.tsx` (Scenario 9).
+
+![Verificación KYC y Badge de Estado en /auth (US-37)](./assets/screenshots/us37_auth_kyc_verification.png)
+
 ---
 
 ## 🏢 US-25: Superficie `/tenant` — Client Registry, M2M Playground & Laboratorio RLS/Cross-Tenant
