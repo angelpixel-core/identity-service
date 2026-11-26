@@ -37,6 +37,9 @@ describe('Unit: FederationController (HTTP Interface)', () => {
 
   describe('login', () => {
     it('should reject with 400 when provider is unsupported', async () => {
+      mockLoginHandler.execute.mockRejectedValueOnce(
+        new Error('Unsupported identity provider: "facebook"')
+      );
       req = {
         params: { provider: 'facebook' },
         query: { tenant_id: 't-1', redirect_uri: 'https://app.io/cb' },

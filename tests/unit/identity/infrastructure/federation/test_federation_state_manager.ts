@@ -83,7 +83,7 @@ describe('Unit: FederationStateManager (Crypto & Anti-CSRF)', () => {
         stateManager.generateState({
           tenantId: 'alpha-corp',
           redirectUri: 'https://alpha.io/cb',
-          provider: 'github' as any,
+          provider: '   ' as any,
         })
       ).toThrow('Invalid provider');
     });

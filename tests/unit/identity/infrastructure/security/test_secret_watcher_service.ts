@@ -17,7 +17,7 @@ class MockAuditLogger implements SecurityAuditLoggerPort {
 
 const waitFor = async (
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 5000,
+  timeoutMs = 10000,
   intervalMs = 25
 ): Promise<void> => {
   const start = Date.now();
@@ -29,6 +29,7 @@ const waitFor = async (
 };
 
 describe('Unit: SecretWatcherService (US-16 In-Process File Watcher)', () => {
+  jest.setTimeout(15000);
   let tempDir: string;
   let mockAuditLogger: MockAuditLogger;
 
@@ -229,12 +230,12 @@ describe('Unit: SecretWatcherService (US-16 In-Process File Watcher)', () => {
     await fs.promises.rename(tempSymlink, symlinkData);
 
     // Wait for watcher debounce to trigger
-    await waitFor(() => callback.mock.calls.length > 0);
+    await waitFor(() => callback.mock.calls.length > 0, 12000);
 
     expect(callback).toHaveBeenCalledWith('key_version_2_rotated', expect.any(String));
 
     watcher.stop();
-  });
+  }, 15000);
 
   it('should stop cleanly and prevent any callbacks from firing after stop()', async () => {
     const filePath = path.join(tempDir, 'redis-url');

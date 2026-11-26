@@ -105,12 +105,12 @@ describe('Aggregate Root: FederatedIdentity (US-11 Unit)', () => {
       ).toThrow(DomainValidationError);
     });
 
-    it('should throw DomainValidationError if provider is unsupported', () => {
+    it('should throw DomainValidationError if provider is empty or whitespace', () => {
       expect(() =>
         FederatedIdentity.create({
           userId: validUserId,
           tenantId: validTenantId,
-          provider: 'github' as any,
+          provider: '   ' as any,
           externalSubjectId: validSubject,
           externalEmail: validEmail,
         })

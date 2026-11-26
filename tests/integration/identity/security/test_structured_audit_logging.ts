@@ -153,12 +153,19 @@ describe('Integration E2E: Structured Security Audit Logging & NDJSON Ingestion 
   describe('Scenario 4: Runtime Server Wiring Default Resolution', () => {
     it('should instantiate ConsoleSecurityAuditLogger by default when in production environment', () => {
       const prevEnv = process.env.NODE_ENV;
+      const prevIdpKey = process.env.IDP_SECRET_ENCRYPTION_KEY;
       try {
         process.env.NODE_ENV = 'production';
+        process.env.IDP_SECRET_ENCRYPTION_KEY = 'prod_test_key_for_audit_wiring_32_bytes!';
         const prodApp = createApp();
         expect(prodApp.locals.auditLogger).toBeInstanceOf(ConsoleSecurityAuditLogger);
       } finally {
         process.env.NODE_ENV = prevEnv;
+        if (prevIdpKey === undefined) {
+          delete process.env.IDP_SECRET_ENCRYPTION_KEY;
+        } else {
+          process.env.IDP_SECRET_ENCRYPTION_KEY = prevIdpKey;
+        }
       }
     });
   });
